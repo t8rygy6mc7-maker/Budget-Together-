@@ -14,6 +14,7 @@ enum CDModel {
     static let cap       = "CDCap"
     static let member    = "CDMember"
     static let recurring = "CDRecurring"
+    static let loan      = "CDLoan"
 
     static func make() -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
@@ -23,6 +24,7 @@ enum CDModel {
         let cap       = entity(named: CDModel.cap)
         let member    = entity(named: CDModel.member)
         let recurring = entity(named: CDModel.recurring)
+        let loan      = entity(named: CDModel.loan)
 
         household.properties = [
             attr("id",        .stringAttributeType),
@@ -38,6 +40,12 @@ enum CDModel {
             attr("memberID",   .stringAttributeType),   // CDMember.id of whoever spent it
             attr("memberRole", .stringAttributeType),   // legacy two-person field, migrated on first load
             attr("kind",       .stringAttributeType),   // EntryKind; nil predates income and reads as expense
+            attr("mood",       .stringAttributeType),   // Mood; nil means untagged, which is normal
+            attr("isPrivate",  .booleanAttributeType),  // kept out of the shared store
+            // Entries are found by this, not by the household relationship: a
+            // private entry lives in a different store from the household, and
+            // Core Data forbids relationships that span stores.
+            attr("householdID", .stringAttributeType),
             attr("createdAt",  .dateAttributeType),
         ]
         cap.properties = [
@@ -64,6 +72,14 @@ enum CDModel {
             attr("lastPostedMonth", .stringAttributeType),  // "yyyy-MM"; posts once per month
             attr("createdAt",       .dateAttributeType),
         ]
+        loan.properties = [
+            attr("id",             .stringAttributeType),
+            attr("name",           .stringAttributeType),
+            attr("balance",        .doubleAttributeType),
+            attr("rate",           .doubleAttributeType),    // annual %, 0 for interest-free
+            attr("monthlyPayment", .doubleAttributeType),
+            attr("createdAt",      .dateAttributeType),
+        ]
 
         // household <->> entries
         let (hToE, eToH) = relationship(name: "entries", inverseName: "household",
@@ -77,14 +93,18 @@ enum CDModel {
         // household <->> recurring
         let (hToR, rToH) = relationship(name: "recurring", inverseName: "household",
                                         from: household, to: recurring, toMany: true)
+        // household <->> loans
+        let (hToL, lToH) = relationship(name: "loans", inverseName: "household",
+                                        from: household, to: loan, toMany: true)
 
-        household.properties += [hToE, hToC, hToM, hToR]
+        household.properties += [hToE, hToC, hToM, hToR, hToL]
         entry.properties     += [eToH]
         cap.properties       += [cToH]
         member.properties    += [mToH]
         recurring.properties += [rToH]
+        loan.properties      += [lToH]
 
-        model.entities = [household, entry, cap, member, recurring]
+        model.entities = [household, entry, cap, member, recurring, loan]
         return model
     }
 
@@ -317,6 +337,7 @@ final class BudgetStore {
         /// Oldest first, which is the order the UI shows people in.
         var members: [Member] = []
         var recurring: [Recurring] = []
+        var loans: [Loan] = []
     }
 
     /// Value-type snapshot for the UI, newest entry first. `capsFor` selects
@@ -325,6 +346,7 @@ final class BudgetStore {
     func loadSnapshot(capsFor month: String = Fmt.isoMonth(Date())) -> Snapshot {
         guard let house = currentHousehold() else { return Snapshot() }
 
+        backfillHouseholdIDs(for: house)
         let rows = fetchEntryObjects(for: house)
         migrateLegacyMembersIfNeeded(in: house, entries: rows)
 
@@ -338,18 +360,24 @@ final class BudgetStore {
                 amount: obj.value(forKey: "amount") as? Double ?? 0,
                 memberID: obj.value(forKey: "memberID") as? String ?? "",
                 kind: EntryKind(rawValue: obj.value(forKey: "kind") as? String ?? "") ?? .expense,
+                mood: (obj.value(forKey: "mood") as? String).flatMap(Mood.init(rawValue:)),
+                isPrivate: obj.value(forKey: "isPrivate") as? Bool ?? false,
                 createdAt: obj.value(forKey: "createdAt") as? Date ?? .distantPast
             )
         }
         return Snapshot(entries: entries,
                         caps: loadCaps(for: house, month: month),
                         members: loadMembers(for: house),
-                        recurring: loadRecurring(for: house))
+                        recurring: loadRecurring(for: house),
+                        loans: loadLoans(for: house))
     }
 
     private func fetchEntryObjects(for house: NSManagedObject) -> [NSManagedObject] {
         let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.entry)
-        request.predicate = NSPredicate(format: "household == %@", house)
+        // Matched by id, not by relationship — private entries deliberately have
+        // no household relationship, because they live in another store.
+        let id = house.value(forKey: "id") as? String ?? ""
+        request.predicate = NSPredicate(format: "householdID == %@ OR household == %@", id, house)
         // Sorting in the store beats sorting in Swift, and `createdAt` breaks
         // ties within a day deterministically (entry ids are random UUIDs).
         request.sortDescriptors = [
@@ -382,6 +410,18 @@ final class BudgetStore {
             colorIndex: Int(obj.value(forKey: "colorIndex") as? Int64 ?? 0),
             createdAt: obj.value(forKey: "createdAt") as? Date ?? .distantPast
         )
+    }
+
+    /// Entries written before privacy existed are found only by relationship.
+    /// Stamp the id on them once so the new predicate keeps seeing them.
+    private func backfillHouseholdIDs(for house: NSManagedObject) {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.entry)
+        request.predicate = NSPredicate(format: "household == %@ AND householdID == nil", house)
+        let rows = (try? viewContext.fetch(request)) ?? []
+        guard !rows.isEmpty else { return }
+        let id = house.value(forKey: "id")
+        for row in rows { row.setValue(id, forKey: "householdID") }
+        save()
     }
 
     /// Households created before people were first-class stored the spender as a
@@ -463,7 +503,8 @@ final class BudgetStore {
     // MARK: Writes
 
     func addEntry(id: String, date: String, place: String, amount: Double,
-                  bucket: String, memberID: String, kind: EntryKind = .expense) {
+                  bucket: String, memberID: String, kind: EntryKind = .expense,
+                  mood: Mood? = nil, isPrivate: Bool = false) {
         guard let house = currentHousehold() else { return }
         let entry = NSManagedObject(entity: entity(CDModel.entry), insertInto: viewContext)
         entry.setValue(id, forKey: "id")
@@ -473,27 +514,77 @@ final class BudgetStore {
         entry.setValue(amount, forKey: "amount")
         entry.setValue(memberID, forKey: "memberID")
         entry.setValue(kind.rawValue, forKey: "kind")
+        entry.setValue(mood?.rawValue, forKey: "mood")
+        entry.setValue(isPrivate, forKey: "isPrivate")
+        entry.setValue(house.value(forKey: "id"), forKey: "householdID")
         entry.setValue(Date(), forKey: "createdAt")
-        entry.setValue(house, forKey: "household")
-        assign(entry, toStoreOf: house)
+        assignStore(entry, isPrivate: isPrivate, household: house)
         save()
+    }
+
+    /// Decides which store an entry lands in — the whole privacy guarantee.
+    ///
+    /// A private entry goes to the local private store and gets **no** household
+    /// relationship, because a relationship can't cross stores and the household
+    /// may live in the shared one. Everything else follows its household, so a
+    /// participant's shared entries still sync back to the owner.
+    private func assignStore(_ entry: NSManagedObject, isPrivate: Bool,
+                             household house: NSManagedObject) {
+        guard Self.cloudSyncEnabled else {
+            // Local-only mode: one store, so the relationship is safe and
+            // nothing leaves the device either way.
+            entry.setValue(house, forKey: "household")
+            return
+        }
+        guard isPrivate, let privateStore else {
+            entry.setValue(house, forKey: "household")
+            assign(entry, toStoreOf: house)
+            return
+        }
+        viewContext.assign(entry, to: privateStore)
     }
 
     /// Edits an existing entry in place. `createdAt` is deliberately untouched
     /// so an edit doesn't reshuffle the day's ordering under the user.
     func updateEntry(id: String, date: String, place: String, amount: Double,
-                     bucket: String, memberID: String, kind: EntryKind) {
+                     bucket: String, memberID: String, kind: EntryKind, mood: Mood?,
+                     isPrivate: Bool) {
         let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.entry)
         request.predicate = NSPredicate(format: "id == %@", id)
         request.fetchLimit = 1
         guard let entry = (try? viewContext.fetch(request))?.first else { return }
+
+        // Changing privacy means changing which store the row belongs in, and
+        // an object can't be reassigned once saved. Recreate it instead, so a
+        // shared entry turned private genuinely leaves the shared store.
+        if (entry.value(forKey: "isPrivate") as? Bool ?? false) != isPrivate {
+            let created = entry.value(forKey: "createdAt") as? Date
+            viewContext.delete(entry)
+            save()
+            addEntry(id: id, date: date, place: place, amount: amount, bucket: bucket,
+                     memberID: memberID, kind: kind, mood: mood, isPrivate: isPrivate)
+            if let created, let fresh = entryObject(id: id) {
+                fresh.setValue(created, forKey: "createdAt")   // keep its place in the day
+                save()
+            }
+            return
+        }
+
         entry.setValue(date, forKey: "date")
         entry.setValue(place, forKey: "place")
         entry.setValue(bucket, forKey: "bucket")
         entry.setValue(amount, forKey: "amount")
         entry.setValue(memberID, forKey: "memberID")
         entry.setValue(kind.rawValue, forKey: "kind")
+        entry.setValue(mood?.rawValue, forKey: "mood")
         save()
+    }
+
+    private func entryObject(id: String) -> NSManagedObject? {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.entry)
+        request.predicate = NSPredicate(format: "id == %@", id)
+        request.fetchLimit = 1
+        return (try? viewContext.fetch(request))?.first
     }
 
     // MARK: Members
@@ -595,6 +686,52 @@ final class BudgetStore {
     func deleteRecurring(id: String) {
         guard let obj = recurringObject(id: id) else { return }
         viewContext.delete(obj)
+        save()
+    }
+
+    // MARK: Loans
+
+    func loadLoans(for house: NSManagedObject) -> [Loan] {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.loan)
+        request.predicate = NSPredicate(format: "household == %@", house)
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
+        return ((try? viewContext.fetch(request)) ?? []).compactMap { obj in
+            guard let id = obj.value(forKey: "id") as? String else { return nil }
+            return Loan(
+                id: id,
+                name: obj.value(forKey: "name") as? String ?? "",
+                balance: obj.value(forKey: "balance") as? Double ?? 0,
+                rate: obj.value(forKey: "rate") as? Double ?? 0,
+                monthlyPayment: obj.value(forKey: "monthlyPayment") as? Double ?? 0,
+                createdAt: obj.value(forKey: "createdAt") as? Date ?? .distantPast
+            )
+        }
+    }
+
+    func saveLoan(_ loan: Loan) {
+        guard let house = currentHousehold() else { return }
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.loan)
+        request.predicate = NSPredicate(format: "id == %@", loan.id)
+        request.fetchLimit = 1
+        let obj = (try? viewContext.fetch(request))?.first ?? {
+            let new = NSManagedObject(entity: entity(CDModel.loan), insertInto: viewContext)
+            new.setValue(loan.id, forKey: "id")
+            new.setValue(loan.createdAt, forKey: "createdAt")
+            new.setValue(house, forKey: "household")
+            assign(new, toStoreOf: house)
+            return new
+        }()
+        obj.setValue(loan.name, forKey: "name")
+        obj.setValue(loan.balance, forKey: "balance")
+        obj.setValue(loan.rate, forKey: "rate")
+        obj.setValue(loan.monthlyPayment, forKey: "monthlyPayment")
+        save()
+    }
+
+    func deleteLoan(id: String) {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.loan)
+        request.predicate = NSPredicate(format: "id == %@", id)
+        for obj in (try? viewContext.fetch(request)) ?? [] { viewContext.delete(obj) }
         save()
     }
 

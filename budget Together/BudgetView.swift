@@ -3,6 +3,7 @@ import SwiftUI
 struct BudgetView: View {
     @EnvironmentObject var model: AppModel
     @State private var showRecurring = false
+    @State private var showLoans = false
 
     var body: some View {
         let totals = model.month.totals
@@ -42,6 +43,9 @@ struct BudgetView: View {
             .padding(.bottom, 12)
 
             recurringCard
+                .padding(.bottom, 9)
+
+            loansCard
                 .padding(.bottom, 16)
 
             VStack(spacing: 9) {
@@ -51,6 +55,35 @@ struct BudgetView: View {
             }
         }
         .sheet(isPresented: $showRecurring) { RecurringSheet().environmentObject(model) }
+        .sheet(isPresented: $showLoans) { LoansSheet().environmentObject(model) }
+    }
+
+    private var loansCard: some View {
+        Button { showLoans = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "graduationcap.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Palette.moodRoutine)
+                    .frame(width: 34, height: 34)
+                    .background(Palette.moodRoutine.opacity(0.16),
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Owed").font(.system(size: 14, weight: .semibold))
+                    Text(model.loans.isEmpty
+                         ? "Track student loans and other balances"
+                         : "\(Fmt.money(model.totalOwed)) across ^[\(model.loans.count) balance](inflect: true)")
+                        .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .card(border: Palette.cardBorderSoft, radius: 15)
+        }
+        .buttonStyle(.plain)
     }
 
     /// Entry point to the repeating items — bills are budget planning, not

@@ -101,10 +101,23 @@ enum Fmt {
         return value
     }
 
+    /// "1 day" / "25 days".
+    ///
+    /// SwiftUI's `^[…](inflect: true)` markup only applies when the literal
+    /// reaches `Text` as a `LocalizedStringKey`. Strings that are built up first
+    /// — concatenated, returned from a property, stored in a model — arrive as
+    /// plain `String` and render the markup verbatim, so they need this instead.
+    static func count(_ n: Int, _ singular: String, plural: String? = nil) -> String {
+        "\(n) " + (n == 1 ? singular : plural ?? singular + "s")
+    }
+
     // MARK: Dates
 
     /// Storage key for a day: "2026-07-24".
     static func isoDay(_ d: Date) -> String { isoDayFormatter.string(from: d) }
+
+    /// Back the other way, for date maths on stored keys.
+    static func day(from iso: String) -> Date? { isoDayFormatter.date(from: iso) }
 
     /// Storage key for a month: "2026-07". Entry dates begin with this, which is
     /// how the month filter works without parsing every date.

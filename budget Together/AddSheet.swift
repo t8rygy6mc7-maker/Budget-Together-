@@ -13,6 +13,8 @@ struct AddSheet: View {
     @State private var memberID = ""
     @State private var kind: EntryKind = .expense
     @State private var bucket = Bucket.fallback.id
+    @State private var mood: Mood?
+    @State private var isPrivate = false
     @State private var showPeople = false
 
     private static let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
@@ -36,6 +38,8 @@ struct AddSheet: View {
                 placeField
                 personPicker
                 categoryPicker
+                if kind == .expense { moodPicker }
+                privacyToggle
                 saveButton
                 if editing != nil { deleteButton }
             }
@@ -165,6 +169,63 @@ struct AddSheet: View {
         }
     }
 
+    /// Optional, and tapping the selected mood clears it. A forced answer would
+    /// be a guessed one, and the whole point is that the tag is honest.
+    private var moodPicker: some View {
+        VStack(spacing: 9) {
+            HStack {
+                Text("How did it feel?").font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.sub)
+                Text("optional").font(.system(size: 11)).foregroundStyle(Palette.muted)
+                Spacer()
+            }
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
+                ForEach(Mood.allCases) { candidate in
+                    let isSelected = mood == candidate
+                    Button { mood = isSelected ? nil : candidate } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: candidate.symbol)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(candidate.color)
+                            Text(candidate.label)
+                                .font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+                        }
+                        .frame(maxWidth: .infinity).padding(.vertical, 9)
+                        .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
+                        .fieldBackground(isSelected ? AnyShapeStyle(candidate.color.opacity(0.14))
+                                                    : AnyShapeStyle(Palette.card),
+                                         border: isSelected ? candidate.color : Palette.cardBorder,
+                                         radius: 14)
+                    }
+                    .accessibilityLabel(candidate.label)
+                    .accessibilityAddTraits(isSelected ? .isSelected : [])
+                }
+            }
+        }
+        .padding(.top, 14)
+    }
+
+    /// Only meaningful in a household with someone else in it — with one member
+    /// there's nobody to keep it from.
+    @ViewBuilder
+    private var privacyToggle: some View {
+        if model.members.count > 1 {
+            Toggle(isOn: $isPrivate) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Keep this private").font(.system(size: 13.5, weight: .semibold))
+                    Text(isPrivate
+                         ? "Stays on your device. It still counts toward the budget here, but never syncs to anyone else."
+                         : "Everyone on the budget will see it.")
+                        .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .fieldBackground(radius: 13)
+            .padding(.top, 14)
+        }
+    }
+
     private var saveButton: some View {
         let canSave = draft != nil
         return Button(action: save) {
@@ -277,17 +338,23 @@ struct AddSheet: View {
         place = editing.place
         bucket = editing.bucket
         kind = editing.kind
+        mood = editing.mood
+        isPrivate = editing.isPrivate
         memberID = editing.memberID
     }
 
     private func save() {
         guard let draft else { return }
+        // Income carries no mood — the question only makes sense for spending.
+        let tag = kind == .expense ? mood : nil
         if let editing {
             model.updateEntry(editing, place: draft.place, amount: draft.amount,
-                              bucket: bucket, memberID: draft.memberID, kind: kind)
+                              bucket: bucket, memberID: draft.memberID, kind: kind,
+                              mood: tag, isPrivate: isPrivate)
         } else {
             model.addEntry(place: draft.place, amount: draft.amount,
-                           bucket: bucket, memberID: draft.memberID, kind: kind)
+                           bucket: bucket, memberID: draft.memberID, kind: kind,
+                           mood: tag, isPrivate: isPrivate)
         }
         dismiss()
     }

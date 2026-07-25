@@ -81,7 +81,68 @@ enum EntryKind: String, CaseIterable, Hashable {
     var color: Color { self == .income ? Palette.green : Palette.text }
 }
 
+// MARK: - Feeling behind the spend
+
+/// Why the money went, as opposed to where. Optional on every entry — the tag
+/// is only useful if it's honest, and forcing one would guarantee noise.
+enum Mood: String, CaseIterable, Identifiable {
+    case joy, stress, boredom, routine, social, regret
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .joy:     "Joy"
+        case .stress:  "Stress"
+        case .boredom: "Boredom"
+        case .routine: "Routine"
+        case .social:  "Social"
+        case .regret:  "Regret"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .joy:     "sun.max.fill"
+        case .stress:  "bolt.fill"
+        case .boredom: "cloud.fill"
+        case .routine: "clock.fill"
+        case .social:  "person.2.fill"
+        case .regret:  "arrow.uturn.left"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .joy:     Palette.moodJoy
+        case .stress:  Palette.moodStress
+        case .boredom: Palette.moodBoredom
+        case .routine: Palette.moodRoutine
+        case .social:  Palette.moodSocial
+        case .regret:  Palette.moodRegret
+        }
+    }
+
+    /// Moods worth surfacing as a prompt to reflect on. Joy and social spending
+    /// aren't problems to be solved.
+    var isWorthNoticing: Bool {
+        self == .stress || self == .boredom || self == .regret
+    }
+}
+
+/// A mood paired with what was spent while feeling it.
+struct MoodTotal: Identifiable {
+    let mood: Mood
+    let total: Double
+    let count: Int
+    var id: String { mood.rawValue }
+}
+
 // MARK: - Spending buckets
+
+/// Whether a category is a standing commitment or discretionary. Anti-budget
+/// mode leans on this: obligations are handled, the rest is yours to spend.
+enum Cadence { case fixed, variable }
 
 struct Bucket: Identifiable {
     let id: String
@@ -93,8 +154,9 @@ struct Bucket: Identifiable {
     let tint: Color
     /// First word of `label`, for tight spots like bubbles and category chips.
     let short: String
+    let cadence: Cadence
 
-    init(id: String, label: String, hex: String, symbol: String) {
+    init(id: String, label: String, hex: String, symbol: String, cadence: Cadence = .variable) {
         let color = Color(hex: hex)
         self.id = id
         self.label = label
@@ -102,20 +164,24 @@ struct Bucket: Identifiable {
         self.color = color
         self.tint = color.opacity(0.16)
         self.short = String(label.split(separator: " ").first ?? "")
+        self.cadence = cadence
     }
 }
 
 extension Bucket {
     static let all: [Bucket] = [
-        Bucket(id: "housing",   label: "Housing",       hex: "E86A4A", symbol: "house.fill"),
+        Bucket(id: "housing",   label: "Housing",       hex: "E86A4A", symbol: "house.fill", cadence: .fixed),
         Bucket(id: "food",      label: "Food & Drink",  hex: "3FB984", symbol: "fork.knife"),
         Bucket(id: "transport", label: "Transport",     hex: "5B8DEF", symbol: "car.fill"),
         Bucket(id: "fun",       label: "Fun & Misc",    hex: "D45C87", symbol: "party.popper.fill"),
         Bucket(id: "shopping",  label: "Shopping",      hex: "E0C05B", symbol: "bag.fill"),
         Bucket(id: "personal",  label: "Health",        hex: "F6A5C8", symbol: "heart.fill"),
-        Bucket(id: "subs",      label: "Subscriptions", hex: "C69BFF", symbol: "repeat"),
-        Bucket(id: "savings",   label: "Savings",       hex: "5EEAD4", symbol: "banknote.fill"),
+        Bucket(id: "subs",      label: "Subscriptions", hex: "C69BFF", symbol: "repeat", cadence: .fixed),
+        Bucket(id: "savings",   label: "Savings",       hex: "5EEAD4", symbol: "banknote.fill", cadence: .fixed),
     ]
+
+    /// Discretionary categories — the ones anti-budget mode actually watches.
+    static let discretionary: [Bucket] = all.filter { $0.cadence == .variable }
 
     /// Where money comes from. Separate from `all` because these are never
     /// budgeted, ranked or charted as spending.
@@ -163,6 +229,11 @@ struct Entry: Identifiable {
     /// `Member.id` of whoever spent or earned it.
     var memberID: String
     var kind: EntryKind = .expense
+    /// How it felt, if the user said. Always optional.
+    var mood: Mood?
+    /// Kept out of the shared store entirely — never syncs to anyone else's
+    /// device. See `BudgetStore.addEntry` for how that's enforced.
+    var isPrivate: Bool = false
     /// Insertion timestamp — the tiebreaker when several entries share a date.
     var createdAt: Date
 
@@ -203,6 +274,53 @@ struct Recurring: Identifiable, Hashable {
             }
         }
         return "\(dayOfMonth)\(suffix) of each month"
+    }
+}
+
+// MARK: - Loans
+
+/// Money owed. Balances are entered by hand — there's no bank connection — so
+/// the app's job is to hold the number, track payments against it, and be
+/// honest about how long it'll take at the current rate.
+struct Loan: Identifiable, Hashable {
+    let id: String
+    var name: String
+    var balance: Double
+    /// Nominal annual rate as a percentage. 0 for interest-free.
+    var rate: Double
+    var monthlyPayment: Double
+    var createdAt: Date
+
+    /// Months to clear at the current payment, or `nil` when the payment can't
+    /// keep up with the interest — in which case the balance never falls and
+    /// saying "12 years" would be a lie.
+    var monthsToClear: Int? {
+        guard balance > 0, monthlyPayment > 0 else { return nil }
+        let monthly = rate / 100 / 12
+        guard monthly > 0 else { return Int(ceil(balance / monthlyPayment)) }
+        let interestOnly = balance * monthly
+        guard monthlyPayment > interestOnly else { return nil }
+        // Standard amortisation: n = -ln(1 - rB/p) / ln(1 + r)
+        let months = -log(1 - monthly * balance / monthlyPayment) / log(1 + monthly)
+        guard months.isFinite, months > 0 else { return nil }
+        return Int(ceil(months))
+    }
+
+    /// Total interest paid if nothing changes.
+    var projectedInterest: Double? {
+        guard let months = monthsToClear else { return nil }
+        return max(0, monthlyPayment * Double(months) - balance)
+    }
+
+    var payoffLabel: String {
+        guard let months = monthsToClear else {
+            return monthlyPayment > 0 ? "Payment doesn't cover the interest" : "No payment set"
+        }
+        if months < 12 { return Fmt.count(months, "month") + " to clear" }
+        let years = months / 12
+        let rest = months % 12
+        return rest == 0 ? Fmt.count(years, "year") + " to clear"
+                         : "\(years)y \(rest)m to clear"
     }
 }
 

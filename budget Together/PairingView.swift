@@ -11,9 +11,19 @@ struct PairingView: View {
     @EnvironmentObject var model: AppModel
     @State private var name = "Together"
     @State private var yourName = ""
+    @State private var monthlyTotal = ""
     @FocusState private var focusedField: Field?
 
-    private enum Field { case budget, you }
+    private enum Field { case budget, you, total }
+
+    /// Says what the number will actually do, so it doesn't read as a
+    /// commitment the user has to get right.
+    private var planNote: String {
+        guard let total = Fmt.amount(from: monthlyTotal) else {
+            return "Sets your starting caps. Leave it blank for a standard plan, or change any of it later."
+        }
+        return "We'll split \(Fmt.money(total)) across the categories to start. Adjust any of them later."
+    }
 
     var body: some View {
         ScrollView(showsIndicators: false) {
@@ -65,13 +75,31 @@ struct PairingView: View {
                         .padding(.horizontal, 14).padding(.vertical, 13)
                         .fieldBackground(radius: 13)
 
-                    Text("You can add everyone else once you're in.")
+                    Text("Roughly per month")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.sub)
+                        .padding(.top, 2)
+
+                    HStack(spacing: 2) {
+                        Text("$").mono(14, weight: .regular).foregroundStyle(Palette.muted)
+                        TextField("", text: $monthlyTotal,
+                                  prompt: Text("e.g. 800").foregroundStyle(Palette.muted))
+                            .focused($focusedField, equals: .total)
+                            .keyboardType(.decimalPad)
+                            .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 13)
+                    .fieldBackground(radius: 13)
+
+                    Text(planNote)
                         .font(.system(size: 12))
                         .foregroundStyle(Palette.muted)
+                        .fixedSize(horizontal: false, vertical: true)
 
                     Button {
                         focusedField = nil
-                        model.createHousehold(name: name, ownerName: yourName)
+                        model.createHousehold(name: name, ownerName: yourName,
+                                              monthlyTotal: Fmt.amount(from: monthlyTotal))
                     } label: {
                         HStack(spacing: 8) {
                             Image(systemName: "plus")

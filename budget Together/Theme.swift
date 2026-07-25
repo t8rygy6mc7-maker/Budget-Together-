@@ -27,6 +27,15 @@ enum Palette {
     static let over      = Color(hex: "E86A4A")
     static let overText  = Color(hex: "F6A5C8")
 
+    // Mood palette. Deliberately desaturated against the bucket hues — a mood
+    // is context on a row, never the thing being measured.
+    static let moodJoy     = Color(hex: "F5C15E")
+    static let moodStress  = Color(hex: "F2555A")
+    static let moodBoredom = Color(hex: "8892B0")
+    static let moodRoutine = Color(hex: "7FB2FF")
+    static let moodSocial  = Color(hex: "C69BFF")
+    static let moodRegret  = Color(hex: "E0846A")
+
     static let tealGradient = LinearGradient(
         colors: [teal, green], startPoint: .topLeading, endPoint: .bottomTrailing
     )

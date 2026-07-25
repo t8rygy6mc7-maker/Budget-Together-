@@ -3,6 +3,8 @@ import SwiftUI
 struct HomeView: View {
     @EnvironmentObject var model: AppModel
     @State private var showPeople = false
+    @State private var showWins = false
+    @State private var showInsights = false
 
     /// Avatars shown before the stack collapses into a "+N" badge.
     private static let maxAvatars = 4
@@ -20,6 +22,111 @@ struct HomeView: View {
                     .accessibilityHint("Opens people")
             }
             .padding(.bottom, 18)
+
+            if model.isSimplified {
+                simplified
+            } else {
+                full
+            }
+        }
+        .sheet(isPresented: $showPeople) { PeopleSheet() }
+        .sheet(isPresented: $showWins) { WinsSheet() }
+        .sheet(isPresented: $showInsights) { InsightsSheet() }
+    }
+
+    /// The forecast in one line, as a way into the full breakdown. Hidden until
+    /// there's enough of the month behind it to mean anything.
+    @ViewBuilder
+    private var forecastStrip: some View {
+        if model.isCurrentMonth, model.forecast.isReliable {
+            let over = model.forecast.isOverPlan
+            Button { showInsights = true } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: over ? "chart.line.uptrend.xyaxis" : "chart.line.flattrend.xyaxis")
+                        .font(.system(size: 14, weight: .semibold))
+                        .foregroundStyle(over ? Palette.over : Palette.teal)
+                        .frame(width: 32, height: 32)
+                        .background((over ? Palette.over : Palette.teal).opacity(0.16),
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Heading for \(Fmt.money(model.forecast.projected))")
+                            .font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                        Text(over
+                             ? "\(Fmt.money(model.forecast.overBy)) over plan at this rate"
+                             : "\(Fmt.money(model.forecast.underBy)) under plan at this rate")
+                            .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Palette.muted)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .card(border: Palette.cardBorderSoft, radius: 15)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    // MARK: - Anti-budget
+
+    /// One number: what's left to spend freely. Obligations are stated as
+    /// handled rather than itemised, which is the entire point of the mode.
+    private var simplified: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Free to spend").font(.system(size: 13, weight: .medium))
+                .foregroundStyle(Palette.sub)
+            Text(Fmt.money(max(0, model.funLeft)))
+                .mono(52, weight: .semibold)
+                .foregroundStyle(model.funLeft < 0 ? Palette.over : Palette.text)
+                .padding(.bottom, 4)
+
+            ProgressBar(pct: min(100, model.funSpent / max(model.funMoney, 1) * 100),
+                        fill: Palette.tealGradient, height: 10)
+                .padding(.bottom, 10)
+
+            Text("\(Fmt.money(model.funSpent)) of \(Fmt.money(model.funMoney)) used")
+                .font(.system(size: 12.5, weight: .medium))
+                .foregroundStyle(Palette.sub)
+                .padding(.bottom, 20)
+
+            HStack(spacing: 0) {
+                statCell(model.isCurrentMonth ? "A day from here" : "Per day",
+                         Fmt.money(model.funDaily), Palette.teal)
+                divider
+                statCell("Days left", "\(model.daysLeft)", Palette.text)
+            }
+            .padding(.horizontal, 17).padding(.vertical, 15)
+            .card()
+            .padding(.bottom, 12)
+
+            HStack(spacing: 12) {
+                Image(systemName: "checkmark.circle.fill")
+                    .font(.system(size: 15, weight: .semibold))
+                    .foregroundStyle(Palette.green)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Obligations handled").font(.system(size: 13, weight: .semibold))
+                    Text("\(Fmt.money(model.committed)) of rent, subscriptions and savings is already set aside.")
+                        .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .card(border: Palette.cardBorderSoft, radius: 15)
+
+            forecastStrip.padding(.top, 9)
+            winsStrip.padding(.top, 9)
+
+            modeToggle
+        }
+    }
+
+    // MARK: - Full view
+
+    private var full: some View {
+        VStack(alignment: .leading, spacing: 0) {
 
             Text(model.isCurrentMonth ? "Spent this month" : "Spent in \(model.monthTitle)")
                 .font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.sub)
@@ -73,6 +180,9 @@ struct HomeView: View {
                 .padding(.top, 8)
             }
 
+            forecastStrip.padding(.top, 12)
+            winsStrip.padding(.top, 9)
+
             HStack {
                 Text("Recent").font(.system(size: 15, weight: .bold))
                 Spacer()
@@ -86,8 +196,60 @@ struct HomeView: View {
             VStack(spacing: 8) {
                 ForEach(model.month.entries.prefix(4)) { EntryRow(entry: $0) }
             }
+
+            modeToggle
         }
-        .sheet(isPresented: $showPeople) { PeopleSheet() }
+    }
+
+    // MARK: - Shared pieces
+
+    /// Streak and latest badge, as a way into the full wins sheet.
+    private var winsStrip: some View {
+        Button { showWins = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "flame.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(model.wins.streak > 0 ? Palette.teal : Palette.muted)
+                    .frame(width: 32, height: 32)
+                    .background(model.wins.streak > 0 ? Palette.teal.opacity(0.16) : Palette.chip,
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(model.wins.streak > 0
+                         ? "^[\(model.wins.streak) day](inflect: true) inside the daily allowance"
+                         : "Start a streak today")
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
+                    Text(model.wins.headline.map { "Latest badge: \($0.title)" }
+                         ?? "^[\(model.wins.badges.count) badge](inflect: true) to earn")
+                        .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .card(border: Palette.cardBorderSoft, radius: 15)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var modeToggle: some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.2)) { model.isSimplified.toggle() }
+        } label: {
+            HStack(spacing: 6) {
+                Image(systemName: model.isSimplified ? "list.bullet" : "wand.and.stars")
+                    .font(.system(size: 11, weight: .semibold))
+                Text(model.isSimplified ? "Show the full budget" : "Just show me my fun money")
+                    .font(.system(size: 12.5, weight: .semibold))
+            }
+            .foregroundStyle(Palette.teal)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 14)
+        }
+        .padding(.top, 8)
     }
 
     /// Overlapping avatars, capped so a big household doesn't push the title

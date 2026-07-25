@@ -171,7 +171,21 @@ struct EntryRow: View {
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(entry.place).font(.system(size: 14, weight: .semibold)).lineLimit(1)
-                Text(bucket.label).font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                HStack(spacing: 5) {
+                    Text(bucket.label).font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                    if entry.isPrivate {
+                        Image(systemName: "lock.fill")
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(Palette.label9)
+                            .accessibilityLabel("Private")
+                    }
+                    if let mood = entry.mood {
+                        Image(systemName: mood.symbol)
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundStyle(mood.color)
+                            .accessibilityLabel(mood.label)
+                    }
+                }
             }
 
             Spacer(minLength: 4)

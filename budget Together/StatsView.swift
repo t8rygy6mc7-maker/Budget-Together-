@@ -36,6 +36,11 @@ struct StatsView: View {
             .card()
             .padding(.vertical, 18)
 
+            MoodCard(totals: model.month.byMood,
+                     tagged: model.month.moodTagged,
+                     spent: spent)
+                .padding(.bottom, 18)
+
             if !model.month.incomeRanked.isEmpty {
                 VStack(alignment: .leading, spacing: 11) {
                     HStack {
@@ -126,6 +131,73 @@ struct SplitBar: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(shares.map { "\($0.member.name) \(Fmt.money($0.total))" }
             .joined(separator: ", "))
+    }
+}
+
+/// What was driving the spending, when the user said. Shows nothing until a few
+/// entries are tagged — a breakdown of one coffee is noise dressed as insight.
+struct MoodCard: View {
+    let totals: [MoodTotal]
+    let tagged: Double
+    let spent: Double
+
+    /// Below this many tagged entries the split isn't worth reading.
+    private static let minimumEntries = 3
+
+    var body: some View {
+        let count = totals.reduce(0) { $0 + $1.count }
+        VStack(alignment: .leading, spacing: 12) {
+            Text("What drove it").font(.system(size: 13, weight: .semibold))
+
+            if count < Self.minimumEntries {
+                Text("Tag a few spends with how they felt and the pattern shows up here.")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                if let note = prompt {
+                    Text(note)
+                        .font(.system(size: 12.5, weight: .medium))
+                        .foregroundStyle(Palette.text)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+
+                ForEach(totals) { item in
+                    VStack(spacing: 6) {
+                        HStack(spacing: 9) {
+                            Image(systemName: item.mood.symbol)
+                                .font(.system(size: 11, weight: .semibold))
+                                .foregroundStyle(item.mood.color)
+                                .frame(width: 22, height: 22)
+                                .background(item.mood.color.opacity(0.16),
+                                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            Text(item.mood.label).font(.system(size: 13, weight: .medium))
+                            Spacer(minLength: 4)
+                            Text(Fmt.money(item.total)).mono(13)
+                            Text("^[\(item.count) buy](inflect: true)")
+                                .font(.system(size: 11)).foregroundStyle(Palette.sub)
+                                .frame(width: 56, alignment: .trailing)
+                        }
+                        ProgressBar(pct: item.total / max(tagged, 1) * 100,
+                                    fill: item.mood.color, height: 6)
+                    }
+                }
+
+                // Tagging is partial by design, so say what share this covers.
+                Text("Based on \(Fmt.money(tagged)) of \(Fmt.money(spent)) tagged.")
+                    .font(.system(size: 11)).foregroundStyle(Palette.muted)
+            }
+        }
+        .padding(.horizontal, 17).padding(.vertical, 16)
+        .card()
+    }
+
+    /// A single observation, not a verdict — and only when the mood in question
+    /// is actually the biggest driver.
+    private var prompt: String? {
+        guard let top = totals.first, top.mood.isWorthNoticing,
+              tagged > 0, top.total / tagged >= 0.3 else { return nil }
+        return "\(top.mood.label) accounts for \(Int((top.total / tagged * 100).rounded()))% of what you tagged — \(Fmt.money(top.total)) across \(Fmt.count(top.count, "buy", plural: "buys"))."
     }
 }
 
