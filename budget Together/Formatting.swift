@@ -51,6 +51,7 @@ enum Fmt {
     private static let weekdayFormatter = display("EEEE, MMM d")
     private static let monthYearFormatter = display("LLLL yyyy")
     private static let monthNameFormatter = display("LLLL")
+    private static let shortMonthFormatter = display("LLL")
 
     private static func fixed(_ format: String) -> DateFormatter {
         let f = DateFormatter()
@@ -84,6 +85,12 @@ enum Fmt {
         return "$" + k + "k"
     }
 
+    /// Bare number for putting an existing amount back into a text field —
+    /// no currency symbol, no grouping, and no trailing ".0" on whole dollars.
+    static func plain(_ n: Double) -> String {
+        n == n.rounded() ? String(Int(n)) : String(format: "%.2f", n)
+    }
+
     /// Reads a typed amount, tolerating the user's decimal separator. Returns
     /// `nil` for anything that isn't a positive number.
     static func amount(from text: String) -> Double? {
@@ -108,6 +115,9 @@ enum Fmt {
 
     /// "June" — the comparison month in the home header.
     static func monthName(_ d: Date) -> String { monthNameFormatter.string(from: d) }
+
+    /// "Jul" — axis labels on the trend chart.
+    static func shortMonth(_ d: Date) -> String { shortMonthFormatter.string(from: d) }
 
     /// "Today" / "Yesterday" / "Monday, Jul 20" for a stored day key.
     static func dateLabel(_ iso: String, today: String) -> String {

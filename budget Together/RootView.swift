@@ -44,6 +44,9 @@ struct RootView: View {
             BottomBar(showSheet: $showSheet)
         }
         .sheet(isPresented: $showSheet) { AddSheet().environmentObject(model) }
+        // Asked once the user is actually in a household — permission prompts
+        // before there's anything to alert about get declined.
+        .onAppear { Notifier.shared.start() }
     }
 }
 
@@ -98,6 +101,39 @@ struct BottomBar: View {
 
 // MARK: - Shared rows
 
+/// Steps the whole app between months. Forward stops at the current month,
+/// since there's nothing to show past it; tapping the label jumps back to today.
+struct MonthStepper: View {
+    @EnvironmentObject var model: AppModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            arrow("chevron.left", enabled: true) { model.stepMonth(-1) }
+            Button { model.goToCurrentMonth() } label: {
+                Text(model.monthTitle)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(model.isCurrentMonth ? Palette.sub : Palette.teal)
+                    .frame(minWidth: 96)
+            }
+            .accessibilityLabel(model.isCurrentMonth ? model.monthTitle
+                                                     : "\(model.monthTitle), back to this month")
+            arrow("chevron.right", enabled: model.canGoForward) { model.stepMonth(1) }
+        }
+    }
+
+    private func arrow(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .bold))
+                .foregroundStyle(enabled ? Palette.chipText : Palette.muted.opacity(0.4))
+                .frame(width: 26, height: 26)
+                .background(Palette.chip, in: Circle())
+        }
+        .disabled(!enabled)
+        .accessibilityLabel(symbol == "chevron.left" ? "Previous month" : "Next month")
+    }
+}
+
 /// A member's initial on their colour. `ring` draws the separating outline used
 /// where avatars overlap in a stack.
 struct MemberAvatar: View {
@@ -150,7 +186,7 @@ struct EntryRow: View {
             }
             .accessibilityLabel(member.name)
 
-            Text(Fmt.money2(entry.amount)).mono(14)
+            Text(entry.signedAmount).mono(14).foregroundStyle(entry.kind.color)
 
             if showDelete {
                 Button { model.delete(entry.id) } label: {

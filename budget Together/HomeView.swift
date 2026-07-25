@@ -10,11 +10,9 @@ struct HomeView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                VStack(alignment: .leading, spacing: 2) {
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Together").font(.system(size: 22, weight: .bold))
-                    Text(model.monthTitle)
-                        .font(.system(size: 13, weight: .medium))
-                        .foregroundStyle(Palette.sub)
+                    MonthStepper()
                 }
                 Spacer()
                 Button { showPeople = true } label: { avatarStack }
@@ -23,7 +21,7 @@ struct HomeView: View {
             }
             .padding(.bottom, 18)
 
-            Text("Spent this month")
+            Text(model.isCurrentMonth ? "Spent this month" : "Spent in \(model.monthTitle)")
                 .font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.sub)
 
             HStack(alignment: .bottom, spacing: 10) {
@@ -43,14 +41,37 @@ struct HomeView: View {
             BubbleCloud()
 
             HStack(spacing: 0) {
-                statCell("Budget left", Fmt.money(model.left), Palette.teal)
-                divider
-                statCell("Safe daily", Fmt.money(model.safeDaily), Palette.text)
-                divider
-                statCell("Days left", "\(model.daysLeft)", Palette.text)
+                if model.isCurrentMonth {
+                    statCell("Budget left", Fmt.money(model.left), Palette.teal)
+                    divider
+                    statCell("Safe daily", Fmt.money(model.safeDaily), Palette.text)
+                    divider
+                    statCell("Days left", "\(model.daysLeft)", Palette.text)
+                } else {
+                    // Safe-daily and days-left are meaningless once the month is
+                    // over, so a closed month reports how it finished instead.
+                    statCell("Planned", Fmt.money(model.capTotal), Palette.text)
+                    divider
+                    statCell("Income", "+" + Fmt.money(model.earned), Palette.green)
+                    divider
+                    statCell("Net", signed(model.net), model.net < 0 ? Palette.over : Palette.text)
+                }
             }
             .padding(.horizontal, 17).padding(.vertical, 15)
             .card()
+
+            // Only worth the space once money has actually come in.
+            if model.isCurrentMonth, model.earned > 0 {
+                HStack(spacing: 0) {
+                    statCell("Income", "+" + Fmt.money(model.earned), Palette.green)
+                    divider
+                    statCell("Net", signed(model.net),
+                             model.net < 0 ? Palette.over : Palette.text)
+                }
+                .padding(.horizontal, 17).padding(.vertical, 15)
+                .card()
+                .padding(.top, 8)
+            }
 
             HStack {
                 Text("Recent").font(.system(size: 15, weight: .bold))
@@ -91,6 +112,11 @@ struct HomeView: View {
 
     private var divider: some View {
         Rectangle().fill(Palette.cardBorder).frame(width: 1, height: 34)
+    }
+
+    /// "+$420" / "−$120" — the sign carries the meaning, so it's never dropped.
+    private func signed(_ value: Double) -> String {
+        (value < 0 ? "−" : "+") + Fmt.money(abs(value))
     }
 
     private func statCell(_ title: String, _ value: String, _ color: Color) -> some View {
@@ -180,13 +206,20 @@ struct Bubble: View {
             .foregroundStyle(.white)
         }
         .offset(y: floating ? -6 : 0)
-        .animation(
-            .easeInOut(duration: 5 + Double(index) * 0.4)
-                .repeatForever(autoreverses: true)
-                .delay(Double(index) * 0.3),
-            value: floating
-        )
-        .onAppear { floating = true }
+        // The float has to be started with `withAnimation`, not `.animation(_:value:)`:
+        // a repeatForever curve attached as a modifier becomes the ambient
+        // animation for the whole subtree, so every later amount change
+        // cross-fades forever and the bubble shows a stale figure behind the
+        // new one.
+        .onAppear {
+            withAnimation(
+                .easeInOut(duration: 5 + Double(index) * 0.4)
+                    .repeatForever(autoreverses: true)
+                    .delay(Double(index) * 0.3)
+            ) {
+                floating = true
+            }
+        }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(bucket.label): \(Fmt.money(item.total))")
     }

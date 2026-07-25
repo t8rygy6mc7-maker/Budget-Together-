@@ -68,6 +68,19 @@ struct MemberTotal: Identifiable {
     var id: String { member.id }
 }
 
+// MARK: - Money direction
+
+/// Which way the money moved. Everything that totals, ranks or charts spending
+/// filters on this — income must never read as an expense.
+enum EntryKind: String, CaseIterable, Hashable {
+    case expense, income
+
+    var label: String { self == .income ? "Income" : "Spending" }
+    /// Prefix for an amount, so a row's direction survives without colour.
+    var sign: String { self == .income ? "+" : "" }
+    var color: Color { self == .income ? Palette.green : Palette.text }
+}
+
 // MARK: - Spending buckets
 
 struct Bucket: Identifiable {
@@ -104,14 +117,31 @@ extension Bucket {
         Bucket(id: "savings",   label: "Savings",       hex: "5EEAD4", symbol: "banknote.fill"),
     ]
 
-    private static let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
+    /// Where money comes from. Separate from `all` because these are never
+    /// budgeted, ranked or charted as spending.
+    static let income: [Bucket] = [
+        Bucket(id: "salary",    label: "Salary",    hex: "3FB984", symbol: "briefcase.fill"),
+        Bucket(id: "dividends", label: "Dividends", hex: "5EEAD4", symbol: "chart.line.uptrend.xyaxis"),
+        Bucket(id: "gifts",     label: "Gifts",     hex: "F6A5C8", symbol: "gift.fill"),
+        Bucket(id: "refunds",   label: "Refunds",   hex: "5B8DEF", symbol: "arrow.uturn.backward"),
+        Bucket(id: "other-in",  label: "Other",     hex: "E0C05B", symbol: "plus.circle.fill"),
+    ]
+
+    static func list(for kind: EntryKind) -> [Bucket] { kind == .income ? income : all }
+
+    private static let byID = Dictionary(uniqueKeysWithValues: (all + income).map { ($0.id, $0) })
 
     /// Bucket for a stored id, falling back to the first bucket so unknown ids
     /// (from a newer build on the partner's phone) still render.
     static func named(_ id: String) -> Bucket { byID[id] ?? all[0] }
 
-    /// Pre-selected category in the add sheet.
+    /// Pre-selected category in the add sheet, per direction.
     static let fallback = named("food")
+    static let incomeFallback = named("salary")
+
+    static func fallback(for kind: EntryKind) -> Bucket {
+        kind == .income ? incomeFallback : fallback
+    }
 }
 
 /// A bucket paired with what's been spent in it. `Identifiable` so the charts
@@ -130,10 +160,50 @@ struct Entry: Identifiable {
     var place: String
     var bucket: String
     var amount: Double
-    /// `Member.id` of whoever spent it.
+    /// `Member.id` of whoever spent or earned it.
     var memberID: String
+    var kind: EntryKind = .expense
     /// Insertion timestamp — the tiebreaker when several entries share a date.
     var createdAt: Date
+
+    /// "$1,234.56" for spending, "+$1,234.56" for income.
+    var signedAmount: String { kind.sign + Fmt.money2(amount) }
+}
+
+// MARK: - Recurring transactions
+
+/// Something that happens every month on the same day — rent, a subscription,
+/// a paycheque. Posts an entry automatically and reminds ahead of time.
+struct Recurring: Identifiable, Hashable {
+    let id: String
+    var place: String
+    var amount: Double
+    var bucket: String
+    var memberID: String
+    var kind: EntryKind
+    /// 1–28. Capped at 28 so every month has the day.
+    var dayOfMonth: Int
+    var isActive: Bool
+    /// Last month ("yyyy-MM") this posted an entry, so it posts once per month.
+    var lastPostedMonth: String
+
+    static let maxDay = 28
+
+    /// "3rd of each month"
+    var scheduleLabel: String {
+        let suffix: String
+        switch dayOfMonth % 100 {
+        case 11, 12, 13: suffix = "th"
+        default:
+            switch dayOfMonth % 10 {
+            case 1: suffix = "st"
+            case 2: suffix = "nd"
+            case 3: suffix = "rd"
+            default: suffix = "th"
+            }
+        }
+        return "\(dayOfMonth)\(suffix) of each month"
+    }
 }
 
 // MARK: - Navigation

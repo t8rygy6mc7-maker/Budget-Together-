@@ -4,10 +4,14 @@ struct AddSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
 
+    /// The entry being edited, or `nil` when logging a new one.
+    var editing: Entry?
+
     @State private var amount = ""
     @State private var place = ""
     /// Resolved in `onAppear` once the household's members are known.
     @State private var memberID = ""
+    @State private var kind: EntryKind = .expense
     @State private var bucket = Bucket.fallback.id
     @State private var showPeople = false
 
@@ -27,11 +31,13 @@ struct AddSheet: View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
                 header
+                kindPicker
                 amountField
                 placeField
                 personPicker
                 categoryPicker
                 saveButton
+                if editing != nil { deleteButton }
             }
             .padding(.horizontal, 22)
             .padding(.bottom, 22)
@@ -42,7 +48,14 @@ struct AddSheet: View {
         .foregroundStyle(Palette.text)
         .tint(Palette.teal)
         .sheet(isPresented: $showPeople) { PeopleSheet().environmentObject(model) }
-        .onAppear(perform: selectDefaultMember)
+        .onAppear(perform: load)
+        // Switching direction invalidates the category, since the two lists
+        // share no ids.
+        .onChange(of: kind) { _, new in
+            if !Bucket.list(for: new).contains(where: { $0.id == bucket }) {
+                bucket = Bucket.fallback(for: new).id
+            }
+        }
         // Someone added from the people sheet should be selectable right away;
         // if the selected person was removed, fall back rather than lose the draft.
         .onChange(of: model.members) { _, _ in
@@ -54,7 +67,8 @@ struct AddSheet: View {
 
     private var header: some View {
         HStack {
-            Text("Add a spend").font(.system(size: 17, weight: .bold))
+            Text(editing == nil ? "Add a transaction" : "Edit transaction")
+                .font(.system(size: 17, weight: .bold))
             Spacer()
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
@@ -68,13 +82,42 @@ struct AddSheet: View {
         .padding(.top, 6).padding(.bottom, 16)
     }
 
+    /// Money out or money in. Everything downstream — categories, totals,
+    /// charts — keys off this.
+    private var kindPicker: some View {
+        HStack(spacing: 8) {
+            ForEach(EntryKind.allCases, id: \.self) { candidate in
+                let isSelected = kind == candidate
+                Button { kind = candidate } label: {
+                    HStack(spacing: 6) {
+                        Image(systemName: candidate == .income ? "arrow.down.left" : "arrow.up.right")
+                            .font(.system(size: 11, weight: .bold))
+                        Text(candidate.label).font(.system(size: 13, weight: .semibold))
+                    }
+                    .frame(maxWidth: .infinity).padding(9)
+                    .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
+                    .fieldBackground(isSelected ? AnyShapeStyle(tint.opacity(0.14))
+                                                : AnyShapeStyle(Palette.card),
+                                     border: isSelected ? tint : Palette.cardBorder,
+                                     radius: 14)
+                }
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(.bottom, 14)
+    }
+
+    /// Accent for the current direction — green for money in.
+    private var tint: Color { kind == .income ? Palette.green : Palette.teal }
+
     private var amountField: some View {
         HStack(spacing: 2) {
-            Text("$").mono(14, weight: .regular).foregroundStyle(Palette.muted)
+            Text(kind.sign + "$").mono(14, weight: .regular).foregroundStyle(Palette.muted)
             TextField("0", text: $amount)
                 .keyboardType(.decimalPad)
                 .multilineTextAlignment(.center)
                 .font(.system(size: 46, weight: .bold, design: .monospaced))
+                .foregroundStyle(kind == .income ? Palette.green : Palette.text)
                 .frame(maxWidth: 220)
                 .accessibilityLabel("Amount")
         }
@@ -83,7 +126,9 @@ struct AddSheet: View {
 
     private var placeField: some View {
         TextField("", text: $place,
-                  prompt: Text("Where'd it go? (e.g. Trader Joe's)").foregroundStyle(Palette.muted))
+                  prompt: Text(kind == .income ? "Where'd it come from? (e.g. Payroll)"
+                                               : "Where'd it go? (e.g. Trader Joe's)")
+                    .foregroundStyle(Palette.muted))
             .textFieldStyle(.plain)
             .font(.system(size: 15, weight: .medium))
             .padding(.horizontal, 14).padding(.vertical, 13)
@@ -115,7 +160,7 @@ struct AddSheet: View {
                 Spacer()
             }
             LazyVGrid(columns: Self.columns, spacing: 8) {
-                ForEach(Bucket.all) { categoryChip($0) }
+                ForEach(Bucket.list(for: kind)) { categoryChip($0) }
             }
         }
     }
@@ -124,8 +169,10 @@ struct AddSheet: View {
         let canSave = draft != nil
         return Button(action: save) {
             HStack(spacing: 8) {
-                Image(systemName: "plus").font(.system(size: 16, weight: .bold))
-                Text("Add to log").font(.system(size: 15, weight: .bold))
+                Image(systemName: editing == nil ? "plus" : "checkmark")
+                    .font(.system(size: 16, weight: .bold))
+                Text(editing == nil ? "Add to log" : "Save changes")
+                    .font(.system(size: 15, weight: .bold))
             }
             .frame(maxWidth: .infinity).padding(15)
             .foregroundStyle(canSave ? Palette.tealInk : Palette.muted)
@@ -136,6 +183,19 @@ struct AddSheet: View {
         }
         .disabled(!canSave)
         .padding(.top, 18)
+    }
+
+    private var deleteButton: some View {
+        Button {
+            if let editing { model.delete(editing.id) }
+            dismiss()
+        } label: {
+            Text("Delete transaction")
+                .font(.system(size: 14, weight: .semibold))
+                .foregroundStyle(Palette.over)
+                .frame(maxWidth: .infinity).padding(13)
+        }
+        .padding(.top, 4)
     }
 
     // MARK: - Chips
@@ -207,10 +267,28 @@ struct AddSheet: View {
         memberID = model.defaultMemberID ?? ""
     }
 
+    /// Seeds the form: from the entry being edited, or empty for a new one.
+    private func load() {
+        guard let editing else {
+            selectDefaultMember()
+            return
+        }
+        amount = Fmt.plain(editing.amount)
+        place = editing.place
+        bucket = editing.bucket
+        kind = editing.kind
+        memberID = editing.memberID
+    }
+
     private func save() {
         guard let draft else { return }
-        model.addEntry(place: draft.place, amount: draft.amount,
-                       bucket: bucket, memberID: draft.memberID)
+        if let editing {
+            model.updateEntry(editing, place: draft.place, amount: draft.amount,
+                              bucket: bucket, memberID: draft.memberID, kind: kind)
+        } else {
+            model.addEntry(place: draft.place, amount: draft.amount,
+                           bucket: bucket, memberID: draft.memberID, kind: kind)
+        }
         dismiss()
     }
 }

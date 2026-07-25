@@ -9,7 +9,15 @@ struct StatsView: View {
         let people = model.memberTotals
 
         VStack(alignment: .leading, spacing: 0) {
-            Text("Stats").font(.system(size: 22, weight: .bold)).padding(.bottom, 16)
+            HStack {
+                Text("Stats").font(.system(size: 22, weight: .bold))
+                Spacer()
+                MonthStepper()
+            }
+            .padding(.bottom, 16)
+
+            TrendChart(points: model.history)
+                .padding(.bottom, 18)
 
             DonutChart(items: items, total: spent)
 
@@ -27,6 +35,33 @@ struct StatsView: View {
             .padding(.horizontal, 17).padding(.vertical, 16)
             .card()
             .padding(.vertical, 18)
+
+            if !model.month.incomeRanked.isEmpty {
+                VStack(alignment: .leading, spacing: 11) {
+                    HStack {
+                        Text("Where it came from").font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        Text("+" + Fmt.money(model.earned)).mono(13)
+                            .foregroundStyle(Palette.green)
+                    }
+                    ForEach(model.month.incomeRanked) { item in
+                        HStack(spacing: 9) {
+                            Image(systemName: item.bucket.symbol)
+                                .font(.system(size: 12, weight: .semibold))
+                                .foregroundStyle(item.bucket.color)
+                                .frame(width: 26, height: 26)
+                                .background(item.bucket.tint,
+                                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                            Text(item.bucket.label).font(.system(size: 13, weight: .medium))
+                            Spacer(minLength: 4)
+                            Text("+" + Fmt.money(item.total)).mono(13)
+                        }
+                    }
+                }
+                .padding(.horizontal, 17).padding(.vertical, 16)
+                .card()
+                .padding(.bottom, 18)
+            }
 
             Text("By category").font(.system(size: 13, weight: .semibold)).padding(.bottom, 10)
             VStack(spacing: 11) {
@@ -91,6 +126,76 @@ struct SplitBar: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(shares.map { "\($0.member.name) \(Fmt.money($0.total))" }
             .joined(separator: ", "))
+    }
+}
+
+/// Spending per month with an income marker, so a month reads in context
+/// instead of in isolation. The selected month is the last bar.
+struct TrendChart: View {
+    let points: [MonthPoint]
+
+    private static let height: CGFloat = 96
+
+    var body: some View {
+        let peak = points.map { max($0.spent, $0.earned) }.max() ?? 0
+
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Last \(points.count) months").font(.system(size: 13, weight: .semibold))
+                Spacer()
+                HStack(spacing: 12) {
+                    key(Palette.teal, "Spent")
+                    key(Palette.green, "Income")
+                }
+            }
+
+            if peak <= 0 {
+                Text("No history yet — it fills in as months go by.")
+                    .font(.system(size: 12.5))
+                    .foregroundStyle(Palette.muted)
+                    .frame(maxWidth: .infinity, minHeight: Self.height, alignment: .center)
+            } else {
+                HStack(alignment: .bottom, spacing: 8) {
+                    ForEach(points) { point in
+                        VStack(spacing: 6) {
+                            ZStack(alignment: .bottom) {
+                                // Income sits behind as a hollow outline, so two
+                                // series share one column without stacking.
+                                Capsule()
+                                    .strokeBorder(Palette.green.opacity(0.75), lineWidth: 1.5)
+                                    .frame(width: 26, height: bar(point.earned, peak))
+                                Capsule()
+                                    .fill(Palette.teal.opacity(0.9))
+                                    .frame(width: 12, height: bar(point.spent, peak))
+                            }
+                            .frame(height: Self.height, alignment: .bottom)
+
+                            Text(point.label)
+                                .font(.system(size: 10, weight: .semibold))
+                                .foregroundStyle(Palette.sub)
+                        }
+                        .frame(maxWidth: .infinity)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel("\(point.label): spent \(Fmt.money(point.spent)), income \(Fmt.money(point.earned))")
+                    }
+                }
+            }
+        }
+        .padding(.horizontal, 17).padding(.vertical, 16)
+        .card()
+    }
+
+    /// Linear against the tallest month, floored so a tiny month is still visible.
+    private func bar(_ value: Double, _ peak: Double) -> CGFloat {
+        guard value > 0, peak > 0 else { return 0 }
+        return max(3, Self.height * value / peak)
+    }
+
+    private func key(_ color: Color, _ label: String) -> some View {
+        HStack(spacing: 5) {
+            Circle().fill(color).frame(width: 7, height: 7)
+            Text(label).font(.system(size: 11)).foregroundStyle(Palette.sub)
+        }
     }
 }
 

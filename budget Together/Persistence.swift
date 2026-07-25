@@ -13,6 +13,7 @@ enum CDModel {
     static let entry     = "CDEntry"
     static let cap       = "CDCap"
     static let member    = "CDMember"
+    static let recurring = "CDRecurring"
 
     static func make() -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
@@ -21,6 +22,7 @@ enum CDModel {
         let entry     = entity(named: CDModel.entry)
         let cap       = entity(named: CDModel.cap)
         let member    = entity(named: CDModel.member)
+        let recurring = entity(named: CDModel.recurring)
 
         household.properties = [
             attr("id",        .stringAttributeType),
@@ -35,11 +37,13 @@ enum CDModel {
             attr("amount",     .doubleAttributeType),
             attr("memberID",   .stringAttributeType),   // CDMember.id of whoever spent it
             attr("memberRole", .stringAttributeType),   // legacy two-person field, migrated on first load
+            attr("kind",       .stringAttributeType),   // EntryKind; nil predates income and reads as expense
             attr("createdAt",  .dateAttributeType),
         ]
         cap.properties = [
             attr("bucket",    .stringAttributeType),
             attr("amount",    .doubleAttributeType),
+            attr("month",     .stringAttributeType),      // "yyyy-MM"; nil is the pre-history baseline
             attr("updatedAt", .dateAttributeType),        // used to dedupe conflicting caps
         ]
         member.properties = [
@@ -47,6 +51,18 @@ enum CDModel {
             attr("name",       .stringAttributeType),
             attr("colorIndex", .integer64AttributeType),  // index into MemberStyle.all
             attr("createdAt",  .dateAttributeType),       // also the display order
+        ]
+        recurring.properties = [
+            attr("id",              .stringAttributeType),
+            attr("place",           .stringAttributeType),
+            attr("bucket",          .stringAttributeType),
+            attr("amount",          .doubleAttributeType),
+            attr("memberID",        .stringAttributeType),
+            attr("kind",            .stringAttributeType),
+            attr("dayOfMonth",      .integer64AttributeType),
+            attr("isActive",        .booleanAttributeType),
+            attr("lastPostedMonth", .stringAttributeType),  // "yyyy-MM"; posts once per month
+            attr("createdAt",       .dateAttributeType),
         ]
 
         // household <->> entries
@@ -58,13 +74,17 @@ enum CDModel {
         // household <->> members
         let (hToM, mToH) = relationship(name: "members", inverseName: "household",
                                         from: household, to: member, toMany: true)
+        // household <->> recurring
+        let (hToR, rToH) = relationship(name: "recurring", inverseName: "household",
+                                        from: household, to: recurring, toMany: true)
 
-        household.properties += [hToE, hToC, hToM]
+        household.properties += [hToE, hToC, hToM, hToR]
         entry.properties     += [eToH]
         cap.properties       += [cToH]
         member.properties    += [mToH]
+        recurring.properties += [rToH]
 
-        model.entities = [household, entry, cap, member]
+        model.entities = [household, entry, cap, member, recurring]
         return model
     }
 
@@ -296,10 +316,13 @@ final class BudgetStore {
         var caps: [String: Double] = [:]
         /// Oldest first, which is the order the UI shows people in.
         var members: [Member] = []
+        var recurring: [Recurring] = []
     }
 
-    /// Value-type snapshot for the UI, newest entry first.
-    func loadSnapshot() -> Snapshot {
+    /// Value-type snapshot for the UI, newest entry first. `capsFor` selects
+    /// which month's limits come back; entries are always the full history, so
+    /// the caller can digest any month and chart across them.
+    func loadSnapshot(capsFor month: String = Fmt.isoMonth(Date())) -> Snapshot {
         guard let house = currentHousehold() else { return Snapshot() }
 
         let rows = fetchEntryObjects(for: house)
@@ -314,10 +337,14 @@ final class BudgetStore {
                 bucket: obj.value(forKey: "bucket") as? String ?? "",
                 amount: obj.value(forKey: "amount") as? Double ?? 0,
                 memberID: obj.value(forKey: "memberID") as? String ?? "",
+                kind: EntryKind(rawValue: obj.value(forKey: "kind") as? String ?? "") ?? .expense,
                 createdAt: obj.value(forKey: "createdAt") as? Date ?? .distantPast
             )
         }
-        return Snapshot(entries: entries, caps: loadCaps(for: house), members: loadMembers(for: house))
+        return Snapshot(entries: entries,
+                        caps: loadCaps(for: house, month: month),
+                        members: loadMembers(for: house),
+                        recurring: loadRecurring(for: house))
     }
 
     private func fetchEntryObjects(for house: NSManagedObject) -> [NSManagedObject] {
@@ -330,6 +357,14 @@ final class BudgetStore {
             NSSortDescriptor(key: "createdAt", ascending: false),
         ]
         return (try? viewContext.fetch(request)) ?? []
+    }
+
+    /// Caps in force for an arbitrary month, without reloading everything else.
+    /// The alert check needs the live month's limits even while the user is
+    /// browsing an earlier one.
+    func caps(for month: String) -> [String: Double] {
+        guard let house = currentHousehold() else { return [:] }
+        return loadCaps(for: house, month: month)
     }
 
     func loadMembers(for house: NSManagedObject) -> [Member] {
@@ -381,38 +416,54 @@ final class BudgetStore {
         save()
     }
 
-    private func loadCaps(for house: NSManagedObject) -> [String: Double] {
+    /// Caps in force for `month`: the most recent row at or before it, per
+    /// bucket. A month with no rows of its own therefore inherits the last set
+    /// of limits rather than reading as zero, and editing this month's cap
+    /// leaves earlier months measured against what they were actually given.
+    private func loadCaps(for house: NSManagedObject, month: String) -> [String: Double] {
         let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.cap)
         request.predicate = NSPredicate(format: "household == %@", house)
         let rows = (try? viewContext.fetch(request)) ?? []
 
-        // Dedupe: if the same bucket has multiple cap rows (e.g. both people
-        // created one while offline), keep the most recently updated and delete
-        // the rest so the graph converges.
-        var best: [String: NSManagedObject] = [:]
+        // Dedupe: if the same bucket-month has several rows (e.g. both people
+        // set one while offline), keep the most recently updated and delete the
+        // rest so the graph converges.
+        var best: [String: NSManagedObject] = [:]      // "bucket|month" → row
         var stale: [NSManagedObject] = []
         for row in rows {
             guard let bucket = row.value(forKey: "bucket") as? String else { continue }
-            if let current = best[bucket] {
+            let key = bucket + "|" + (row.value(forKey: "month") as? String ?? "")
+            if let current = best[key] {
                 let a = current.value(forKey: "updatedAt") as? Date ?? .distantPast
                 let b = row.value(forKey: "updatedAt") as? Date ?? .distantPast
-                if b > a { stale.append(current); best[bucket] = row }
+                if b > a { stale.append(current); best[key] = row }
                 else { stale.append(row) }
             } else {
-                best[bucket] = row
+                best[key] = row
             }
         }
         if !stale.isEmpty {
             stale.forEach(viewContext.delete)
             save()
         }
-        return best.mapValues { $0.value(forKey: "amount") as? Double ?? 0 }
+
+        // Latest applicable row wins. "" (a pre-months baseline) sorts below
+        // every real month key, which is exactly the fallback we want.
+        var effective: [String: (month: String, amount: Double)] = [:]
+        for row in best.values {
+            guard let bucket = row.value(forKey: "bucket") as? String else { continue }
+            let rowMonth = row.value(forKey: "month") as? String ?? ""
+            guard rowMonth <= month else { continue }
+            if let current = effective[bucket], current.month > rowMonth { continue }
+            effective[bucket] = (rowMonth, row.value(forKey: "amount") as? Double ?? 0)
+        }
+        return effective.mapValues(\.amount)
     }
 
     // MARK: Writes
 
     func addEntry(id: String, date: String, place: String, amount: Double,
-                  bucket: String, memberID: String) {
+                  bucket: String, memberID: String, kind: EntryKind = .expense) {
         guard let house = currentHousehold() else { return }
         let entry = NSManagedObject(entity: entity(CDModel.entry), insertInto: viewContext)
         entry.setValue(id, forKey: "id")
@@ -421,9 +472,27 @@ final class BudgetStore {
         entry.setValue(bucket, forKey: "bucket")
         entry.setValue(amount, forKey: "amount")
         entry.setValue(memberID, forKey: "memberID")
+        entry.setValue(kind.rawValue, forKey: "kind")
         entry.setValue(Date(), forKey: "createdAt")
         entry.setValue(house, forKey: "household")
         assign(entry, toStoreOf: house)
+        save()
+    }
+
+    /// Edits an existing entry in place. `createdAt` is deliberately untouched
+    /// so an edit doesn't reshuffle the day's ordering under the user.
+    func updateEntry(id: String, date: String, place: String, amount: Double,
+                     bucket: String, memberID: String, kind: EntryKind) {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.entry)
+        request.predicate = NSPredicate(format: "id == %@", id)
+        request.fetchLimit = 1
+        guard let entry = (try? viewContext.fetch(request))?.first else { return }
+        entry.setValue(date, forKey: "date")
+        entry.setValue(place, forKey: "place")
+        entry.setValue(bucket, forKey: "bucket")
+        entry.setValue(amount, forKey: "amount")
+        entry.setValue(memberID, forKey: "memberID")
+        entry.setValue(kind.rawValue, forKey: "kind")
         save()
     }
 
@@ -474,6 +543,68 @@ final class BudgetStore {
     /// How much of the log would go with this member, for the delete warning.
     func entryCount(memberID: String) -> Int { entryObjects(memberID: memberID).count }
 
+    // MARK: Recurring
+
+    func loadRecurring(for house: NSManagedObject) -> [Recurring] {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.recurring)
+        request.predicate = NSPredicate(format: "household == %@", house)
+        request.sortDescriptors = [NSSortDescriptor(key: "dayOfMonth", ascending: true)]
+        return ((try? viewContext.fetch(request)) ?? []).compactMap { obj in
+            guard let id = obj.value(forKey: "id") as? String else { return nil }
+            return Recurring(
+                id: id,
+                place: obj.value(forKey: "place") as? String ?? "",
+                amount: obj.value(forKey: "amount") as? Double ?? 0,
+                bucket: obj.value(forKey: "bucket") as? String ?? "",
+                memberID: obj.value(forKey: "memberID") as? String ?? "",
+                kind: EntryKind(rawValue: obj.value(forKey: "kind") as? String ?? "") ?? .expense,
+                dayOfMonth: Int(obj.value(forKey: "dayOfMonth") as? Int64 ?? 1),
+                isActive: obj.value(forKey: "isActive") as? Bool ?? true,
+                lastPostedMonth: obj.value(forKey: "lastPostedMonth") as? String ?? ""
+            )
+        }
+    }
+
+    /// Convenience for the auto-poster, which runs before a full snapshot load.
+    func loadRecurringForCurrentHousehold() -> [Recurring] {
+        guard let house = currentHousehold() else { return [] }
+        return loadRecurring(for: house)
+    }
+
+    func saveRecurring(_ item: Recurring) {
+        guard let house = currentHousehold() else { return }
+        let obj = recurringObject(id: item.id) ?? {
+            let new = NSManagedObject(entity: entity(CDModel.recurring), insertInto: viewContext)
+            new.setValue(item.id, forKey: "id")
+            new.setValue(Date(), forKey: "createdAt")
+            new.setValue(house, forKey: "household")
+            assign(new, toStoreOf: house)
+            return new
+        }()
+        obj.setValue(item.place, forKey: "place")
+        obj.setValue(item.amount, forKey: "amount")
+        obj.setValue(item.bucket, forKey: "bucket")
+        obj.setValue(item.memberID, forKey: "memberID")
+        obj.setValue(item.kind.rawValue, forKey: "kind")
+        obj.setValue(Int64(item.dayOfMonth), forKey: "dayOfMonth")
+        obj.setValue(item.isActive, forKey: "isActive")
+        obj.setValue(item.lastPostedMonth, forKey: "lastPostedMonth")
+        save()
+    }
+
+    func deleteRecurring(id: String) {
+        guard let obj = recurringObject(id: id) else { return }
+        viewContext.delete(obj)
+        save()
+    }
+
+    private func recurringObject(id: String) -> NSManagedObject? {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.recurring)
+        request.predicate = NSPredicate(format: "id == %@", id)
+        request.fetchLimit = 1
+        return (try? viewContext.fetch(request))?.first
+    }
+
     private func memberObject(id: String) -> NSManagedObject? {
         let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.member)
         request.predicate = NSPredicate(format: "id == %@", id)
@@ -496,15 +627,19 @@ final class BudgetStore {
         save()
     }
 
-    func setCap(bucket: String, amount: Double) {
+    /// Sets a cap for one month only. Earlier months keep whatever they were
+    /// given; later months inherit this until they're changed themselves.
+    func setCap(bucket: String, month: String, amount: Double) {
         guard let house = currentHousehold() else { return }
         let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.cap)
-        request.predicate = NSPredicate(format: "bucket == %@ AND household == %@", bucket, house)
+        request.predicate = NSPredicate(format: "bucket == %@ AND month == %@ AND household == %@",
+                                        bucket, month, house)
         request.fetchLimit = 1
 
         let cap = (try? viewContext.fetch(request))?.first ?? {
             let new = NSManagedObject(entity: entity(CDModel.cap), insertInto: viewContext)
             new.setValue(bucket, forKey: "bucket")
+            new.setValue(month, forKey: "month")
             new.setValue(house, forKey: "household")
             assign(new, toStoreOf: house)
             return new
