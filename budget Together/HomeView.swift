@@ -5,6 +5,8 @@ struct HomeView: View {
     @State private var showPeople = false
     @State private var showWins = false
     @State private var showInsights = false
+    @State private var showAsk = false
+    @State private var showChallenges = false
 
     /// Avatars shown before the stack collapses into a "+N" badge.
     private static let maxAvatars = 4
@@ -32,6 +34,55 @@ struct HomeView: View {
         .sheet(isPresented: $showPeople) { PeopleSheet() }
         .sheet(isPresented: $showWins) { WinsSheet() }
         .sheet(isPresented: $showInsights) { InsightsSheet() }
+        .sheet(isPresented: $showAsk) { AskSheet() }
+        .sheet(isPresented: $showChallenges) { ChallengesSheet() }
+    }
+
+    /// A running challenge, or an invitation to start one.
+    private var challengeStrip: some View {
+        Button { showChallenges = true } label: {
+            HStack(spacing: 12) {
+                let running = model.featuredChallenge
+                Image(systemName: running?.isBroken == true ? "xmark.circle.fill" : "flag.fill")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundStyle(running?.isBroken == true ? Palette.over : Palette.moodSocial)
+                    .frame(width: 32, height: 32)
+                    .background((running?.isBroken == true ? Palette.over : Palette.moodSocial)
+                        .opacity(0.16),
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(running?.challenge.title ?? "Take on a challenge")
+                        .font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                    Text(running?.detail ?? "No-Spend Weekend and others, together")
+                        .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 12, weight: .semibold))
+                    .foregroundStyle(Palette.muted)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .card(border: Palette.cardBorderSoft, radius: 15)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var askButton: some View {
+        Button { showAsk = true } label: {
+            HStack(spacing: 8) {
+                Image(systemName: "sparkle.magnifyingglass")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("Ask about your spending")
+                    .font(.system(size: 13, weight: .medium))
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Palette.chipText)
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .fieldBackground(radius: 14)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Ask a question about your spending")
     }
 
     /// The forecast in one line, as a way into the full breakdown. Hidden until
@@ -118,6 +169,8 @@ struct HomeView: View {
 
             forecastStrip.padding(.top, 9)
             winsStrip.padding(.top, 9)
+            challengeStrip.padding(.top, 9)
+            askButton.padding(.top, 9)
 
             modeToggle
         }
@@ -182,6 +235,8 @@ struct HomeView: View {
 
             forecastStrip.padding(.top, 12)
             winsStrip.padding(.top, 9)
+            challengeStrip.padding(.top, 9)
+            askButton.padding(.top, 9)
 
             HStack {
                 Text("Recent").font(.system(size: 15, weight: .bold))

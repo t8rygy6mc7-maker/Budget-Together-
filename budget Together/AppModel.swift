@@ -58,6 +58,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var recurring: [Recurring] = []
     /// Loans and other balances owed, oldest first.
     @Published private(set) var loans: [Loan] = []
+    /// Challenges with their live standing, newest window first.
+    @Published private(set) var challenges: [ChallengeProgress] = []
     /// Totals for the months leading up to `selectedMonth`, oldest first.
     @Published private(set) var history: [MonthPoint] = []
     /// Streaks and badges, derived fresh on every reload.
@@ -70,6 +72,11 @@ final class AppModel: ObservableObject {
     @Published private(set) var subscriptions: [DetectedSubscription] = []
 
     private let suggestionEngine: SuggestionEngine = RuleSuggestionEngine()
+    /// Rebuilt on every reload from the household's own entries.
+    private(set) var categorizer: CategorySuggesting = HistoryCategorizer(entries: [])
+    private let queryEngine: QueryEngine = RuleQueryEngine()
+    /// Full history, kept for questions that reach past the selected month.
+    private var allEntries: [Entry] = []
     /// Anti-budget mode: one number instead of eight. A per-device view
     /// preference, so one partner simplifying doesn't simplify for everyone.
     @Published var isSimplified = UserDefaults.standard.bool(forKey: "antiBudgetMode") {
@@ -329,6 +336,8 @@ final class AppModel: ObservableObject {
         caps = snapshot.caps
         recurring = snapshot.recurring
         loans = snapshot.loans
+        challenges = ChallengeScorer.score(snapshot.challenges,
+                                           entries: snapshot.entries, today: today)
         members = snapshot.members
         membersByID = Dictionary(uniqueKeysWithValues: snapshot.members.map { ($0.id, $0) })
         month = Self.digest(snapshot.entries,
@@ -337,6 +346,8 @@ final class AppModel: ObservableObject {
         history = Self.history(snapshot.entries, endingAt: selectedMonth,
                                length: Self.historyLength)
         wins = buildWins(snapshot.entries)
+        allEntries = snapshot.entries
+        categorizer = HistoryCategorizer(entries: snapshot.entries)
         buildInsights(snapshot.entries)
         checkCapAlerts(snapshot.entries)
     }
@@ -396,6 +407,37 @@ final class AppModel: ObservableObject {
             taggedCount: expenses.filter { $0.mood != nil }.count,
             closedMonths: closed
         )
+    }
+
+    // MARK: - Challenges
+
+    var activeChallenges: [ChallengeProgress] { challenges.filter(\.isActive) }
+    var finishedChallenges: [ChallengeProgress] { challenges.filter(\.hasEnded) }
+
+    /// The one worth a line on the home screen: whatever's running now.
+    var featuredChallenge: ChallengeProgress? { activeChallenges.first }
+
+    func startChallenge(_ challenge: Challenge) {
+        store.saveChallenge(challenge)
+        reload()
+    }
+
+    func abandonChallenge(_ id: String) {
+        store.deleteChallenge(id: id)
+        reload()
+    }
+
+    // MARK: - Questions
+
+    /// Answers against the live month's caps and the whole ledger. `nil` means
+    /// the question wasn't understood — the caller shows what it can handle.
+    func ask(_ question: String) -> QueryAnswer? {
+        queryEngine.answer(question, context: QueryContext(
+            entries: allEntries,
+            caps: store.caps(for: Fmt.isoMonth(Date())),
+            members: members,
+            today: Date()
+        ))
     }
 
     // MARK: - Loans
@@ -577,6 +619,18 @@ extension AppModel {
                 dayOfMonth: day, isActive: true, lastPostedMonth: thisMonth
             ))
         }
+        // One running, one already finished, so both states are visible.
+        let calendar = Calendar.current
+        let from = { (offset: Int) in
+            Fmt.isoDay(calendar.date(byAdding: .day, value: offset, to: Date()) ?? Date())
+        }
+        store.saveChallenge(Challenge(id: "demo-ch-1", title: "Quiet Week Out",
+                                      kind: .categoryCap, bucket: "fun", target: 250,
+                                      startDate: from(-3), endDate: from(3), createdAt: Date()))
+        store.saveChallenge(Challenge(id: "demo-ch-2", title: "No-Spend Weekend",
+                                      kind: .noSpend, bucket: nil, target: 0,
+                                      startDate: from(-9), endDate: from(-8), createdAt: Date()))
+
         store.saveLoan(Loan(id: "demo-loan-1", name: "Student loan", balance: 18400,
                             rate: 6.5, monthlyPayment: 260, createdAt: Date()))
         store.saveLoan(Loan(id: "demo-loan-2", name: "Credit card", balance: 1250,

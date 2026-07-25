@@ -15,6 +15,7 @@ enum CDModel {
     static let member    = "CDMember"
     static let recurring = "CDRecurring"
     static let loan      = "CDLoan"
+    static let challenge = "CDChallenge"
 
     static func make() -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
@@ -25,6 +26,7 @@ enum CDModel {
         let member    = entity(named: CDModel.member)
         let recurring = entity(named: CDModel.recurring)
         let loan      = entity(named: CDModel.loan)
+        let challenge = entity(named: CDModel.challenge)
 
         household.properties = [
             attr("id",        .stringAttributeType),
@@ -80,6 +82,16 @@ enum CDModel {
             attr("monthlyPayment", .doubleAttributeType),
             attr("createdAt",      .dateAttributeType),
         ]
+        challenge.properties = [
+            attr("id",        .stringAttributeType),
+            attr("title",     .stringAttributeType),
+            attr("kind",      .stringAttributeType),   // ChallengeKind
+            attr("bucket",    .stringAttributeType),   // nil means all spending
+            attr("target",    .doubleAttributeType),
+            attr("startDate", .stringAttributeType),   // "yyyy-MM-dd", inclusive
+            attr("endDate",   .stringAttributeType),
+            attr("createdAt", .dateAttributeType),
+        ]
 
         // household <->> entries
         let (hToE, eToH) = relationship(name: "entries", inverseName: "household",
@@ -96,15 +108,19 @@ enum CDModel {
         // household <->> loans
         let (hToL, lToH) = relationship(name: "loans", inverseName: "household",
                                         from: household, to: loan, toMany: true)
+        // household <->> challenges
+        let (hToCh, chToH) = relationship(name: "challenges", inverseName: "household",
+                                          from: household, to: challenge, toMany: true)
 
-        household.properties += [hToE, hToC, hToM, hToR, hToL]
+        household.properties += [hToE, hToC, hToM, hToR, hToL, hToCh]
         entry.properties     += [eToH]
         cap.properties       += [cToH]
         member.properties    += [mToH]
         recurring.properties += [rToH]
         loan.properties      += [lToH]
+        challenge.properties += [chToH]
 
-        model.entities = [household, entry, cap, member, recurring, loan]
+        model.entities = [household, entry, cap, member, recurring, loan, challenge]
         return model
     }
 
@@ -338,6 +354,7 @@ final class BudgetStore {
         var members: [Member] = []
         var recurring: [Recurring] = []
         var loans: [Loan] = []
+        var challenges: [Challenge] = []
     }
 
     /// Value-type snapshot for the UI, newest entry first. `capsFor` selects
@@ -369,7 +386,8 @@ final class BudgetStore {
                         caps: loadCaps(for: house, month: month),
                         members: loadMembers(for: house),
                         recurring: loadRecurring(for: house),
-                        loans: loadLoans(for: house))
+                        loans: loadLoans(for: house),
+                        challenges: loadChallenges(for: house))
     }
 
     private func fetchEntryObjects(for house: NSManagedObject) -> [NSManagedObject] {
@@ -686,6 +704,57 @@ final class BudgetStore {
     func deleteRecurring(id: String) {
         guard let obj = recurringObject(id: id) else { return }
         viewContext.delete(obj)
+        save()
+    }
+
+    // MARK: Challenges
+
+    func loadChallenges(for house: NSManagedObject) -> [Challenge] {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.challenge)
+        request.predicate = NSPredicate(format: "household == %@", house)
+        request.sortDescriptors = [NSSortDescriptor(key: "startDate", ascending: false)]
+        return ((try? viewContext.fetch(request)) ?? []).compactMap { obj in
+            guard let id = obj.value(forKey: "id") as? String else { return nil }
+            return Challenge(
+                id: id,
+                title: obj.value(forKey: "title") as? String ?? "",
+                kind: ChallengeKind(rawValue: obj.value(forKey: "kind") as? String ?? "")
+                    ?? .noSpend,
+                bucket: obj.value(forKey: "bucket") as? String,
+                target: obj.value(forKey: "target") as? Double ?? 0,
+                startDate: obj.value(forKey: "startDate") as? String ?? "",
+                endDate: obj.value(forKey: "endDate") as? String ?? "",
+                createdAt: obj.value(forKey: "createdAt") as? Date ?? .distantPast
+            )
+        }
+    }
+
+    func saveChallenge(_ challenge: Challenge) {
+        guard let house = currentHousehold() else { return }
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.challenge)
+        request.predicate = NSPredicate(format: "id == %@", challenge.id)
+        request.fetchLimit = 1
+        let obj = (try? viewContext.fetch(request))?.first ?? {
+            let new = NSManagedObject(entity: entity(CDModel.challenge), insertInto: viewContext)
+            new.setValue(challenge.id, forKey: "id")
+            new.setValue(challenge.createdAt, forKey: "createdAt")
+            new.setValue(house, forKey: "household")
+            assign(new, toStoreOf: house)
+            return new
+        }()
+        obj.setValue(challenge.title, forKey: "title")
+        obj.setValue(challenge.kind.rawValue, forKey: "kind")
+        obj.setValue(challenge.bucket, forKey: "bucket")
+        obj.setValue(challenge.target, forKey: "target")
+        obj.setValue(challenge.startDate, forKey: "startDate")
+        obj.setValue(challenge.endDate, forKey: "endDate")
+        save()
+    }
+
+    func deleteChallenge(id: String) {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.challenge)
+        request.predicate = NSPredicate(format: "id == %@", id)
+        for obj in (try? viewContext.fetch(request)) ?? [] { viewContext.delete(obj) }
         save()
     }
 

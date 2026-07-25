@@ -16,6 +16,9 @@ struct AddSheet: View {
     @State private var mood: Mood?
     @State private var isPrivate = false
     @State private var showPeople = false
+    /// Once the user picks a category themselves, the guesser stops touching it.
+    @State private var pickedCategory = false
+    @State private var guess: CategoryGuess?
 
     private static let columns = Array(repeating: GridItem(.flexible(), spacing: 8), count: 4)
     /// People wrap across as many rows as they need — a household can be big.
@@ -59,7 +62,9 @@ struct AddSheet: View {
             if !Bucket.list(for: new).contains(where: { $0.id == bucket }) {
                 bucket = Bucket.fallback(for: new).id
             }
+            autoCategorize()
         }
+        .onChange(of: place) { _, _ in autoCategorize() }
         // Someone added from the people sheet should be selectable right away;
         // if the selected person was removed, fall back rather than lose the draft.
         .onChange(of: model.members) { _, _ in
@@ -158,10 +163,21 @@ struct AddSheet: View {
 
     private var categoryPicker: some View {
         VStack(spacing: 9) {
-            HStack {
+            HStack(spacing: 6) {
                 Text("Category").font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Palette.sub)
-                Spacer()
+                // Say when the category was filled in for them, and why. A
+                // silent change would be worse than the tap it saves.
+                if let guess, !pickedCategory {
+                    HStack(spacing: 4) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 9, weight: .semibold))
+                        Text(guess.reason).lineLimit(1)
+                    }
+                    .font(.system(size: 10.5, weight: .medium))
+                    .foregroundStyle(Palette.teal)
+                }
+                Spacer(minLength: 0)
             }
             LazyVGrid(columns: Self.columns, spacing: 8) {
                 ForEach(Bucket.list(for: kind)) { categoryChip($0) }
@@ -301,7 +317,10 @@ struct AddSheet: View {
 
     private func categoryChip(_ candidate: Bucket) -> some View {
         let isSelected = bucket == candidate.id
-        return Button { bucket = candidate.id } label: {
+        return Button {
+            bucket = candidate.id
+            pickedCategory = true
+        } label: {
             VStack(spacing: 5) {
                 Image(systemName: candidate.symbol)
                     .font(.system(size: 15, weight: .semibold))
@@ -328,12 +347,25 @@ struct AddSheet: View {
         memberID = model.defaultMemberID ?? ""
     }
 
+    /// Fills the category in from the place name. Only ever moves a selection
+    /// the user hasn't made themselves.
+    private func autoCategorize() {
+        guard !pickedCategory else { return }
+        let suggestion = model.categorizer.suggest(place: place, kind: kind)
+        guess = (suggestion?.confidence ?? 0) >= CategoryGuess.threshold ? suggestion : nil
+        if let guess, Bucket.list(for: kind).contains(where: { $0.id == guess.bucket }) {
+            bucket = guess.bucket
+        }
+    }
+
     /// Seeds the form: from the entry being edited, or empty for a new one.
     private func load() {
         guard let editing else {
             selectDefaultMember()
             return
         }
+        // An existing entry's category is already the user's answer.
+        pickedCategory = true
         amount = Fmt.plain(editing.amount)
         place = editing.place
         bucket = editing.bucket
