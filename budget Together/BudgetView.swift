@@ -186,3 +186,7 @@ struct BudgetRow: View {
 #Preview {
     PreviewShell { BudgetView() }
 }
+
+#Preview("Budget — light") {
+    PreviewShell(scheme: .light) { BudgetView() }
+}

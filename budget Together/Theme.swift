@@ -1,44 +1,98 @@
 import SwiftUI
 
-// MARK: - Palette (from "Budget App - Midnight" design comp)
+// MARK: - Appearance
+
+/// What the user picked in People → Appearance. `system` defers to iOS.
+enum Appearance: String, CaseIterable, Identifiable {
+    case system, light, dark
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .system: "System"
+        case .light:  "Light"
+        case .dark:   "Dark"
+        }
+    }
+
+    var symbol: String {
+        switch self {
+        case .system: "iphone"
+        case .light:  "sun.max.fill"
+        case .dark:   "moon.fill"
+        }
+    }
+
+    /// `nil` hands the decision back to iOS.
+    var colorScheme: ColorScheme? {
+        switch self {
+        case .system: nil
+        case .light:  .light
+        case .dark:   .dark
+        }
+    }
+}
+
+// MARK: - Palette
+//
+// Every token is a *dynamic* colour holding both schemes, resolved by UIKit
+// against the view's trait collection. Call sites stay scheme-agnostic — there
+// is deliberately no `if colorScheme == .dark` anywhere in the view code.
+//
+// The dark values are the original "Budget App - Midnight" comp, untouched.
+// The light values are derived from them: hue and saturation are preserved so a
+// bucket keeps its identity across schemes, and lightness is inverted into a
+// light-surface band and then darkened until it clears WCAG AA (4.5:1) against
+// both `card` and `screen`. See DESIGN-NOTES.md §4 for the measured table.
 
 enum Palette {
-    static let screen         = Color(hex: "141620")
-    static let card           = Color(hex: "1D2130")
-    static let cardBorder     = Color(hex: "2A3042")
-    static let cardBorderSoft = Color(hex: "23283A")
-    static let navBar         = Color(hex: "181B27")
-    static let navBorder      = Color(hex: "262B3A")
-    static let sheetBg        = Color(hex: "1A1D29")
-    static let field          = Color(hex: "141620")
-    static let chip           = Color(hex: "232838")
+    // Surfaces. In both schemes `card` lifts off `screen` and `field` recedes
+    // into it — the direction of the lift flips, the relationship does not.
+    static let screen         = Color(dark: "141620", light: "F4F5F9")
+    static let card           = Color(dark: "1D2130", light: "FFFFFF")
+    static let cardBorder     = Color(dark: "2A3042", light: "D6DBE9")
+    static let cardBorderSoft = Color(dark: "23283A", light: "E5E9F3")
+    static let navBar         = Color(dark: "181B27", light: "FFFFFF")
+    static let navBorder      = Color(dark: "262B3A", light: "DDE2EE")
+    static let sheetBg        = Color(dark: "1A1D29", light: "FBFCFE")
+    static let field          = Color(dark: "141620", light: "EFF1F7")
+    static let chip           = Color(dark: "232838", light: "EAEDF5")
 
-    static let text     = Color(hex: "EDEFF7")
-    static let sub      = Color(hex: "7C8199")
-    static let muted    = Color(hex: "565C72")
-    static let label9   = Color(hex: "9AA0B6")
-    static let chipText = Color(hex: "B7BDD0")
+    static let text     = Color(dark: "EDEFF7", light: "1B1F2B")
+    static let sub      = Color(dark: "7C8199", light: "5A6076")
+    static let muted    = Color(dark: "565C72", light: "686F84")
+    static let label9   = Color(dark: "9AA0B6", light: "646B82")
+    static let chipText = Color(dark: "B7BDD0", light: "474D61")
 
-    static let teal      = Color(hex: "5EEAD4")
-    static let tealInk   = Color(hex: "0C2B26")
-    static let green     = Color(hex: "3FB984")
-    static let purple    = Color(hex: "C69BFF")
-    static let purpleInk = Color(hex: "2A1740")
-    static let over      = Color(hex: "E86A4A")
-    static let overText  = Color(hex: "F6A5C8")
+    static let teal      = Color(dark: "5EEAD4", light: "107F6E")
+    static let tealInk   = Color(dark: "0C2B26", light: "FFFFFF")
+    static let green     = Color(dark: "3FB984", light: "2B7E5A")
+    static let purple    = Color(dark: "C69BFF", light: "390085")
+    static let purpleInk = Color(dark: "2A1740", light: "FFFFFF")
+    static let over      = Color(dark: "E86A4A", light: "BC3918")
+    static let overText  = Color(dark: "F6A5C8", light: "790C3B")
 
     // Mood palette. Deliberately desaturated against the bucket hues — a mood
     // is context on a row, never the thing being measured.
-    static let moodJoy     = Color(hex: "F5C15E")
-    static let moodStress  = Color(hex: "F2555A")
-    static let moodBoredom = Color(hex: "8892B0")
-    static let moodRoutine = Color(hex: "7FB2FF")
-    static let moodSocial  = Color(hex: "C69BFF")
-    static let moodRegret  = Color(hex: "E0846A")
+    static let moodJoy     = Color(dark: "F5C15E", light: "98670A")
+    static let moodStress  = Color(dark: "F2555A", light: "D51017")
+    static let moodBoredom = Color(dark: "8892B0", light: "626E93")
+    static let moodRoutine = Color(dark: "7FB2FF", light: "0048B6")
+    static let moodSocial  = Color(dark: "C69BFF", light: "390085")
+    static let moodRegret  = Color(dark: "E0846A", light: "BB4827")
 
     static let tealGradient = LinearGradient(
         colors: [teal, green], startPoint: .topLeading, endPoint: .bottomTrailing
     )
+
+    /// Glow under the floating add button. A coloured bloom only reads as light
+    /// on a dark surface; on white the same shadow looks like a smudge, so the
+    /// light scheme uses a plain neutral drop shadow instead. Opacity is baked
+    /// into the colour because `.opacity()` at the call site cannot vary by
+    /// scheme.
+    static let addGlow = Color(dark: "5EEAD4", darkAlpha: 0.55,
+                               light: "0F1729", lightAlpha: 0.18)
 }
 
 // MARK: - Reusable styling
@@ -82,13 +136,39 @@ extension View {
 extension Color {
     /// Accepts "RRGGBB" with an optional leading "#". Unparseable input yields black.
     init(hex: String) {
+        let (r, g, b) = Color.rgbComponents(hex)
+        self.init(red: r, green: g, blue: b)
+    }
+
+    /// A colour that resolves per colour scheme. Built once, at static-init
+    /// time — resolving it afterwards is a trait lookup, not a `Scanner` parse.
+    init(dark: String, darkAlpha: Double = 1, light: String, lightAlpha: Double = 1) {
+        #if canImport(UIKit)
+        let darkColor = UIColor(hex: dark, alpha: darkAlpha)
+        let lightColor = UIColor(hex: light, alpha: lightAlpha)
+        self.init(uiColor: UIColor { traits in
+            traits.userInterfaceStyle == .dark ? darkColor : lightColor
+        })
+        #else
+        self.init(hex: dark)
+        #endif
+    }
+
+    static func rgbComponents(_ hex: String) -> (Double, Double, Double) {
         let digits = hex.hasPrefix("#") ? String(hex.dropFirst()) : hex
         var value: UInt64 = 0
         Scanner(string: digits).scanHexInt64(&value)
-        self.init(
-            red: Double((value >> 16) & 0xFF) / 255,
-            green: Double((value >> 8) & 0xFF) / 255,
-            blue: Double(value & 0xFF) / 255
-        )
+        return (Double((value >> 16) & 0xFF) / 255,
+                Double((value >> 8) & 0xFF) / 255,
+                Double(value & 0xFF) / 255)
     }
 }
+
+#if canImport(UIKit)
+extension UIColor {
+    fileprivate convenience init(hex: String, alpha: Double = 1) {
+        let (r, g, b) = Color.rgbComponents(hex)
+        self.init(red: r, green: g, blue: b, alpha: alpha)
+    }
+}
+#endif

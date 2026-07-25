@@ -35,7 +35,7 @@ struct PairingView: View {
                     .foregroundStyle(Palette.tealInk)
                     .frame(width: 74, height: 74)
                     .background(Palette.tealGradient, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .shadow(color: Palette.teal.opacity(0.5), radius: 16, x: 0, y: 12)
+                    .shadow(color: Palette.addGlow, radius: 16, x: 0, y: 12)
                     .padding(.bottom, 22)
 
                 Text("Share a budget,\ntogether")

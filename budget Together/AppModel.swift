@@ -82,6 +82,15 @@ final class AppModel: ObservableObject {
     @Published var isSimplified = UserDefaults.standard.bool(forKey: "antiBudgetMode") {
         didSet { UserDefaults.standard.set(isSimplified, forKey: "antiBudgetMode") }
     }
+    /// Light/dark/system. Per-device like `isSimplified` — one partner reading
+    /// in bed shouldn't flip the other partner's phone to dark.
+    // Parenthesised: without it Swift reads the `didSet` brace as a trailing
+    // closure on `.system`.
+    @Published var appearance: Appearance = (UserDefaults.standard
+        .string(forKey: "appearance")
+        .flatMap(Appearance.init(rawValue:)) ?? .system) {
+        didSet { UserDefaults.standard.set(appearance.rawValue, forKey: "appearance") }
+    }
     /// Whether this device has joined/created a household yet. Drives the
     /// pairing gate in `RootView`.
     @Published private(set) var hasHousehold = false

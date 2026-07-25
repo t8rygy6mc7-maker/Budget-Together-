@@ -407,7 +407,7 @@ struct Bubble: View {
                 .fill(RadialGradient(colors: [bucket.color.opacity(0.95), bucket.color],
                                      center: UnitPoint(x: 0.34, y: 0.30),
                                      startRadius: 0, endRadius: size * 0.7))
-                .shadow(color: bucket.color.opacity(0.65), radius: 19)
+                .shadow(color: bucket.glow, radius: 19)
 
             VStack(spacing: 2) {
                 if size >= 66 {
@@ -444,4 +444,8 @@ struct Bubble: View {
 
 #Preview {
     PreviewShell { HomeView() }
+}
+
+#Preview("Home — light") {
+    PreviewShell(scheme: .light) { HomeView() }
 }

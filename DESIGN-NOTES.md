@@ -194,6 +194,103 @@ Beyond contrast: the donut, the bubbles, and the person split bar are all
 colour-only encodings. Every one needs a redundant channel — a value label, an
 icon, or a pattern.
 
+**Status as of the light-scheme pass:** the light counterparts of both failing
+tokens were derived to clear AA (`muted` 5.01 on card / 4.59 on screen, `sub`
+6.23 / 5.72). The dark values above are unchanged and still fail. That is now
+an asymmetry, not just a bug — worth closing next.
+
+## 4b. Deriving the light scheme
+
+The dark palette is the "Midnight" comp and stays fixed. Light is derived from
+it by rule, not redrawn, so the two schemes can't drift apart.
+
+### The rule
+
+1. **Hue and saturation are held constant.** Per §1, fill encodes identity. A
+   bucket that changes hue between schemes stops being the same bucket.
+2. **Lightness is inverted into a light-surface band.** Each family's dark
+   lightness range is mapped onto a light band with the order reversed —
+   brightest-in-dark becomes darkest-in-light. This preserves *relative*
+   prominence and, more importantly, the spacing between neighbours.
+3. **Then darkened until it clears 4.5:1** against both `card` (`#FFFFFF`) and
+   `screen` (`#F4F5F9`), whichever is stricter.
+
+Step 2 is the one that matters. Two earlier attempts failed:
+
+| Attempt | What broke |
+| --- | --- |
+| Straight inversion of the hex | `#5EEAD4` teal lands at 1.3:1 on white. Unusable as text or icon. |
+| Mirror each token's *dark contrast ratio* | Pale hues become near-black. Savings went to `#09453C` (L 15%) and Shopping to `#584611`, which reads as mud, not yellow. |
+
+### Why spacing, not contrast, is the thing to preserve
+
+Health (`#F6A5C8`, H 334°) and Fun (`#D45C87`, H 338°) are 4° apart. In dark
+they are separable only by lightness — 80.6 vs 59.6, a 21-point gap. Any
+derivation that targets contrast per-token collapses that gap and makes two
+buckets indistinguishable. Band-mapping keeps it:
+
+| Pair | Dark ΔH / ΔL | Light ΔH / ΔL |
+| --- | --- | --- |
+| fun / health | 4.4° / 21.0 | 4.1° / 15.5 |
+| food / savings | 16.6° / 15.7 | 16.9° / 13.7 |
+| stress / regret | 15.1° / 0.6 | 15.5° / 0.6 |
+
+### Derived values
+
+Measured against `card` `#FFFFFF` and `screen` `#F4F5F9`:
+
+| Token(s) | Dark | Light | card | screen |
+| --- | --- | --- | --- | --- |
+| `teal`, savings, member teal | `#5EEAD4` | `#107F6E` | 4.90 | 4.50 |
+| `green`, food, salary | `#3FB984` | `#2B7E5A` | 4.96 | 4.55 |
+| `purple`, subs, moodSocial | `#C69BFF` | `#390085` | 13.88 | 12.74 |
+| `over`, housing | `#E86A4A` | `#BC3918` | 5.62 | 5.16 |
+| `overText`, health, gifts | `#F6A5C8` | `#790C3B` | 10.89 | 9.99 |
+| transport, refunds | `#5B8DEF` | `#1147B0` | 8.23 | 7.55 |
+| fun | `#D45C87` | `#A82C59` | 6.63 | 6.08 |
+| shopping, other-in | `#E0C05B` | `#886D1A` | 4.94 | 4.54 |
+| `moodJoy`, member amber | `#F5C15E` | `#98670A` | 4.91 | 4.50 |
+| `moodStress` | `#F2555A` | `#D51017` | 5.36 | 4.92 |
+| `moodBoredom` | `#8892B0` | `#626E93` | 5.03 | 4.62 |
+| `moodRoutine`, member blue | `#7FB2FF` | `#0048B6` | 8.07 | 7.41 |
+| `moodRegret` | `#E0846A` | `#BB4827` | 5.16 | 4.74 |
+
+Surfaces mirror the dark scheme's *relationships* rather than its values —
+`card` lifts off `screen` in both, `field` recedes into it in both, only the
+direction of the lift flips:
+
+| Token | Dark | Light | Separation dark → light |
+| --- | --- | --- | --- |
+| `screen` | `#141620` | `#F4F5F9` | — |
+| `card` | `#1D2130` | `#FFFFFF` | 1.13 → 1.09 |
+| `field` | `#141620` | `#EFF1F7` | 1.13 → 1.13 |
+| `chip` | `#232838` | `#EAEDF5` | 1.09 → 1.17 |
+| `cardBorder` | `#2A3042` | `#D6DBE9` | 1.22 → 1.38 |
+| `cardBorderSoft` | `#23283A` | `#E5E9F3` | 1.09 → 1.22 |
+
+Borders are deliberately *firmer* in light. A light UI has less luminance
+headroom above the card, so a border matched to the dark scheme's 1.09 would
+disappear.
+
+### The two things that don't derive
+
+**Coloured glows.** The add button, the pairing hero, and the Home bubbles all
+carry a bloom of their own colour. That reads as light on a dark screen and as
+a smudge on a white one. `Palette.addGlow` and `Bucket.glow` carry both schemes
+with the alpha baked in — a plain neutral drop shadow at 0.18 in light, the
+original teal bloom at 0.55 in dark. Alpha has to live inside the colour
+because `.opacity()` at the call site cannot vary by scheme.
+
+**Avatar ink.** In dark, a member is a pale chip with dark ink. In light the
+fill inverts to deep, so ink flips to white — verified ≥4.5:1 on every one of
+the eight member colours.
+
+### Known gap
+
+Accent colours sit at 4.08–4.67 against `chip` (`#EAEDF5`), just under AA. In
+practice accents are never drawn on chip — `chipText` is — but if that changes,
+lighten `chip` or darken the accents.
+
 ## 5. IA and flow gaps
 
 - **No month navigation.** Everything is hardcoded to the current month.
@@ -214,7 +311,8 @@ icon, or a pattern.
 
 ## Suggested order of work
 
-1. Fix `Palette.muted` and `Palette.sub` contrast — smallest diff, real bug.
+1. Fix `Palette.muted` and `Palette.sub` contrast **in the dark scheme** — the
+   light counterparts already pass, so this is now the only failing half.
 2. Split `Status` from `Bucket` in `Theme.swift`, add the no-shared-hex test.
 3. Add `cadence` to `Bucket` and the `PaceState` computation to `AppModel`.
 4. Rebuild the Budget row with cap marker, overage tail, and status line.

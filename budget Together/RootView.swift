@@ -23,7 +23,9 @@ struct RootView: View {
         .environmentObject(model)
         .foregroundStyle(Palette.text)
         .tint(Palette.teal)
-        .preferredColorScheme(.dark)
+        // Drives the whole tree, sheets included: every `Palette` token is a
+        // dynamic colour that resolves against the scheme set here.
+        .preferredColorScheme(model.appearance.colorScheme)
     }
 
     private var main: some View {
@@ -79,7 +81,7 @@ struct BottomBar: View {
                     .frame(width: 56, height: 56)
                     .background(Palette.tealGradient,
                                 in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .shadow(color: Palette.teal.opacity(0.55), radius: 13, x: 0, y: 12)
+                    .shadow(color: Palette.addGlow, radius: 13, x: 0, y: 12)
             }
             .accessibilityLabel("Add a spend")
             .offset(y: -24)
@@ -240,6 +242,7 @@ struct ProgressBar<Fill: ShapeStyle>: View {
 /// Wraps a screen in the chrome `RootView` normally supplies, backed by the
 /// in-memory demo store.
 struct PreviewShell<Content: View>: View {
+    var scheme: ColorScheme = .dark
     @ViewBuilder var content: Content
     @StateObject private var model = AppModel.preview
 
@@ -254,6 +257,6 @@ struct PreviewShell<Content: View>: View {
         .environmentObject(model)
         .foregroundStyle(Palette.text)
         .tint(Palette.teal)
-        .preferredColorScheme(.dark)
+        .preferredColorScheme(scheme)
     }
 }

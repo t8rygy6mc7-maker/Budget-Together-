@@ -29,6 +29,8 @@ struct PeopleSheet: View {
                     .foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 14)
+
+                appearanceSection
             }
             .padding(.horizontal, 22)
             .padding(.bottom, 22)
@@ -79,6 +81,54 @@ struct PeopleSheet: View {
             .accessibilityLabel("Close")
         }
         .padding(.top, 6).padding(.bottom, 16)
+    }
+
+    /// Appearance lives here rather than behind a settings screen the app
+    /// doesn't have — People is already the "this device, these humans" sheet.
+    private var appearanceSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("APPEARANCE")
+                .font(.system(size: 10, weight: .bold))
+                .tracking(0.8)
+                .foregroundStyle(Palette.label9)
+
+            HStack(spacing: 6) {
+                ForEach(Appearance.allCases) { option in
+                    appearanceOption(option)
+                }
+            }
+
+            Text("Only on this phone — it won't change your partner's.")
+                .font(.system(size: 11.5))
+                .foregroundStyle(Palette.sub)
+        }
+        .padding(.top, 22)
+    }
+
+    private func appearanceOption(_ option: Appearance) -> some View {
+        let isSelected = model.appearance == option
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) { model.appearance = option }
+        } label: {
+            VStack(spacing: 5) {
+                Image(systemName: option.symbol).font(.system(size: 15, weight: .semibold))
+                Text(option.label).font(.system(size: 11.5, weight: .semibold))
+            }
+            .foregroundStyle(isSelected ? Palette.tealInk : Palette.chipText)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background {
+                if isSelected {
+                    Palette.tealGradient
+                } else {
+                    Palette.chip
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(option.label)
+        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
     }
 
     private var addField: some View {
@@ -199,4 +249,10 @@ private struct PersonRow: View {
     PeopleSheet()
         .environmentObject(AppModel.preview)
         .preferredColorScheme(.dark)
+}
+
+#Preview("People — light") {
+    PeopleSheet()
+        .environmentObject(AppModel.preview)
+        .preferredColorScheme(.light)
 }

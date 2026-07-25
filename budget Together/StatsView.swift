@@ -319,3 +319,7 @@ struct DonutChart: View {
 #Preview {
     PreviewShell { StatsView() }
 }
+
+#Preview("Stats — light") {
+    PreviewShell(scheme: .light) { StatsView() }
+}

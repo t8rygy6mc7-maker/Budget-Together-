@@ -9,25 +9,29 @@ struct MemberStyle {
     let color: Color
     let ink: Color
 
-    init(_ hex: String, ink: String) {
-        self.color = Color(hex: hex)
-        self.ink = Color(hex: ink)
+    /// Dark mode gives each person a pale avatar with dark ink; light mode
+    /// inverts that — the same hue, deep enough to clear AA on a white card,
+    /// carrying white ink. The hue is what identifies the person, so it is the
+    /// one thing that never moves.
+    init(_ hex: String, ink: String, light: String) {
+        self.color = Color(dark: hex, light: light)
+        self.ink = Color(dark: ink, light: "FFFFFF")
     }
 
     static let all: [MemberStyle] = [
-        MemberStyle("5EEAD4", ink: "0C2B26"),   // teal
-        MemberStyle("C69BFF", ink: "2A1740"),   // purple
-        MemberStyle("F5C15E", ink: "3A2A08"),   // amber
-        MemberStyle("FF9FB2", ink: "40121E"),   // rose
-        MemberStyle("7FB2FF", ink: "0E2445"),   // blue
-        MemberStyle("A8E063", ink: "1D3208"),   // lime
-        MemberStyle("FFAE7B", ink: "40200C"),   // orange
-        MemberStyle("6EE7F5", ink: "06303A"),   // cyan
+        MemberStyle("5EEAD4", ink: "0C2B26", light: "107F6E"),   // teal
+        MemberStyle("C69BFF", ink: "2A1740", light: "390085"),   // purple
+        MemberStyle("F5C15E", ink: "3A2A08", light: "98670A"),   // amber
+        MemberStyle("FF9FB2", ink: "40121E", light: "99001E"),   // rose
+        MemberStyle("7FB2FF", ink: "0E2445", light: "0048B6"),   // blue
+        MemberStyle("A8E063", ink: "1D3208", light: "507C19"),   // lime
+        MemberStyle("FFAE7B", ink: "40200C", light: "B94800"),   // orange
+        MemberStyle("6EE7F5", ink: "06303A", light: "0A7C89"),   // cyan
     ]
 
     /// Grey, for an entry whose member no longer exists (deleted on the
     /// partner's device before that deletion reached us).
-    static let unknown = MemberStyle("5A6076", ink: "EDEFF7")
+    static let unknown = MemberStyle("5A6076", ink: "EDEFF7", light: "687089")
 
     static func at(_ index: Int) -> MemberStyle {
         guard index >= 0 else { return all[0] }
@@ -149,15 +153,23 @@ struct Bucket: Identifiable {
     let label: String
     let symbol: String
     /// Resolved once at startup — `Color(hex:)` runs a `Scanner`, which is far
-    /// too expensive to repeat on every SwiftUI body evaluation.
+    /// too expensive to repeat on every SwiftUI body evaluation. The dynamic
+    /// pair is likewise built once; resolving it per scheme is a trait lookup.
     let color: Color
     let tint: Color
+    /// Halo under a bubble. A bright bloom on a dark screen becomes a heavy
+    /// smear on a light one, so the light scheme drops it to a hint.
+    let glow: Color
     /// First word of `label`, for tight spots like bubbles and category chips.
     let short: String
     let cadence: Cadence
 
-    init(id: String, label: String, hex: String, symbol: String, cadence: Cadence = .variable) {
-        let color = Color(hex: hex)
+    /// `hex` is the dark-scheme fill, `light` its light-scheme counterpart at
+    /// the same hue. Fill encodes identity in both schemes — see DESIGN-NOTES §1.
+    init(id: String, label: String, hex: String, light: String,
+         symbol: String, cadence: Cadence = .variable) {
+        let color = Color(dark: hex, light: light)
+        self.glow = Color(dark: hex, darkAlpha: 0.65, light: light, lightAlpha: 0.26)
         self.id = id
         self.label = label
         self.symbol = symbol
@@ -170,14 +182,14 @@ struct Bucket: Identifiable {
 
 extension Bucket {
     static let all: [Bucket] = [
-        Bucket(id: "housing",   label: "Housing",       hex: "E86A4A", symbol: "house.fill", cadence: .fixed),
-        Bucket(id: "food",      label: "Food & Drink",  hex: "3FB984", symbol: "fork.knife"),
-        Bucket(id: "transport", label: "Transport",     hex: "5B8DEF", symbol: "car.fill"),
-        Bucket(id: "fun",       label: "Fun & Misc",    hex: "D45C87", symbol: "party.popper.fill"),
-        Bucket(id: "shopping",  label: "Shopping",      hex: "E0C05B", symbol: "bag.fill"),
-        Bucket(id: "personal",  label: "Health",        hex: "F6A5C8", symbol: "heart.fill"),
-        Bucket(id: "subs",      label: "Subscriptions", hex: "C69BFF", symbol: "repeat", cadence: .fixed),
-        Bucket(id: "savings",   label: "Savings",       hex: "5EEAD4", symbol: "banknote.fill", cadence: .fixed),
+        Bucket(id: "housing",   label: "Housing",       hex: "E86A4A", light: "BC3918", symbol: "house.fill", cadence: .fixed),
+        Bucket(id: "food",      label: "Food & Drink",  hex: "3FB984", light: "2B7E5A", symbol: "fork.knife"),
+        Bucket(id: "transport", label: "Transport",     hex: "5B8DEF", light: "1147B0", symbol: "car.fill"),
+        Bucket(id: "fun",       label: "Fun & Misc",    hex: "D45C87", light: "A82C59", symbol: "party.popper.fill"),
+        Bucket(id: "shopping",  label: "Shopping",      hex: "E0C05B", light: "886D1A", symbol: "bag.fill"),
+        Bucket(id: "personal",  label: "Health",        hex: "F6A5C8", light: "790C3B", symbol: "heart.fill"),
+        Bucket(id: "subs",      label: "Subscriptions", hex: "C69BFF", light: "390085", symbol: "repeat", cadence: .fixed),
+        Bucket(id: "savings",   label: "Savings",       hex: "5EEAD4", light: "107F6E", symbol: "banknote.fill", cadence: .fixed),
     ]
 
     /// Discretionary categories — the ones anti-budget mode actually watches.
@@ -186,11 +198,11 @@ extension Bucket {
     /// Where money comes from. Separate from `all` because these are never
     /// budgeted, ranked or charted as spending.
     static let income: [Bucket] = [
-        Bucket(id: "salary",    label: "Salary",    hex: "3FB984", symbol: "briefcase.fill"),
-        Bucket(id: "dividends", label: "Dividends", hex: "5EEAD4", symbol: "chart.line.uptrend.xyaxis"),
-        Bucket(id: "gifts",     label: "Gifts",     hex: "F6A5C8", symbol: "gift.fill"),
-        Bucket(id: "refunds",   label: "Refunds",   hex: "5B8DEF", symbol: "arrow.uturn.backward"),
-        Bucket(id: "other-in",  label: "Other",     hex: "E0C05B", symbol: "plus.circle.fill"),
+        Bucket(id: "salary",    label: "Salary",    hex: "3FB984", light: "2B7E5A", symbol: "briefcase.fill"),
+        Bucket(id: "dividends", label: "Dividends", hex: "5EEAD4", light: "107F6E", symbol: "chart.line.uptrend.xyaxis"),
+        Bucket(id: "gifts",     label: "Gifts",     hex: "F6A5C8", light: "790C3B", symbol: "gift.fill"),
+        Bucket(id: "refunds",   label: "Refunds",   hex: "5B8DEF", light: "1147B0", symbol: "arrow.uturn.backward"),
+        Bucket(id: "other-in",  label: "Other",     hex: "E0C05B", light: "886D1A", symbol: "plus.circle.fill"),
     ]
 
     static func list(for kind: EntryKind) -> [Bucket] { kind == .income ? income : all }

@@ -156,3 +156,7 @@ struct LogView: View {
 #Preview {
     PreviewShell { LogView() }
 }
+
+#Preview("Log — light") {
+    PreviewShell(scheme: .light) { LogView() }
+}
