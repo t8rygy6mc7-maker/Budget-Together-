@@ -21,10 +21,10 @@ struct WinsSheet: View {
                 if wins.monthsUnderBudget > 0 {
                     HStack(spacing: 10) {
                         Image(systemName: "checkmark.seal.fill")
-                            .font(.system(size: 15, weight: .semibold))
+                            .appFont(15, weight: .semibold)
                             .foregroundStyle(Palette.teal)
                         Text("^[\(wins.monthsUnderBudget) month](inflect: true) running inside the plan")
-                            .font(.system(size: 13, weight: .semibold))
+                            .appFont(13, weight: .semibold)
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 15).padding(.vertical, 13)
@@ -32,14 +32,14 @@ struct WinsSheet: View {
                     .padding(.bottom, 18)
                 }
 
-                Text("Badges").font(.system(size: 13, weight: .semibold))
+                Text("Badges").appFont(13, weight: .semibold)
                     .padding(.bottom, 10)
 
                 VStack(spacing: 8) {
                     ForEach(wins.badges) { badge in
                         HStack(spacing: 12) {
                             Image(systemName: badge.isEarned ? badge.symbol : "lock.fill")
-                                .font(.system(size: 15, weight: .semibold))
+                                .appFont(15, weight: .semibold)
                                 .foregroundStyle(badge.isEarned ? Palette.tealInk : Palette.muted)
                                 .frame(width: 36, height: 36)
                                 .background {
@@ -48,9 +48,9 @@ struct WinsSheet: View {
                                 .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
 
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(badge.title).font(.system(size: 14, weight: .semibold))
+                                Text(badge.title).appFont(14, weight: .semibold)
                                 Text(badge.detail)
-                                    .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                                    .appFont(11.5).foregroundStyle(Palette.sub)
                             }
                             Spacer(minLength: 0)
                         }
@@ -75,15 +75,15 @@ struct WinsSheet: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Wins").font(.system(size: 17, weight: .bold))
+                Text("Wins").appFont(17, weight: .bold)
                 Text("^[\(model.wins.earned.count) badge](inflect: true) earned")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .appFont(12.5, weight: .medium)
                     .foregroundStyle(Palette.sub)
             }
             Spacer()
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Palette.label9)
                     .frame(width: 30, height: 30)
                     .background(Palette.chip, in: Circle())
@@ -107,17 +107,17 @@ struct StreakCard: View {
                     .fill(streak > 0 ? Palette.teal.opacity(0.16) : Palette.chip)
                     .frame(width: 52, height: 52)
                 Image(systemName: "flame.fill")
-                    .font(.system(size: 21, weight: .semibold))
+                    .appFont(21, weight: .semibold)
                     .foregroundStyle(streak > 0 ? Palette.teal : Palette.muted)
             }
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(streak > 0 ? "^[\(streak) day](inflect: true) in a row" : "No streak yet")
-                    .font(.system(size: 16, weight: .bold))
+                    .appFont(16, weight: .bold)
                 Text(streak > 0
                      ? "Inside \(Fmt.money(allowance)) a day."
                      : "Stay under \(Fmt.money(allowance)) today to start one.")
-                    .font(.system(size: 12)).foregroundStyle(Palette.sub)
+                    .appFont(12).foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)

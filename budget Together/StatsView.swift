@@ -10,19 +10,41 @@ struct StatsView: View {
 
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Stats").font(.system(size: 22, weight: .bold))
+                Text("Stats").appFont(22, weight: .bold)
                 Spacer()
                 MonthStepper()
             }
             .padding(.bottom, 16)
 
+            if items.isEmpty {
+                EmptyState(
+                    symbol: "chart.pie",
+                    title: model.isCurrentMonth
+                        ? "No charts yet — nothing to chart"
+                        : "Nothing was logged in \(model.monthTitle)",
+                    message: model.isCurrentMonth
+                        ? "This fills in on its own as you log things. A week or so is usually enough for the patterns to be worth looking at."
+                        : "Step back to a month with entries in it to see how it went.",
+                    actionTitle: model.isCurrentMonth ? "Add something" : nil,
+                    action: model.isCurrentMonth ? { model.isAddingEntry = true } : nil
+                )
+            } else {
+                charts(items: items, spent: spent, people: people)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func charts(items: [BucketTotal], spent: Double,
+                        people: [MemberTotal]) -> some View {
+        Group {
             TrendChart(points: model.history)
                 .padding(.bottom, 18)
 
             DonutChart(items: items, total: spent)
 
             VStack(alignment: .leading, spacing: 12) {
-                Text("Who spent what").font(.system(size: 13, weight: .semibold))
+                Text("Who spent what").appFont(13, weight: .semibold)
                 SplitBar(shares: people).frame(height: 14)
                 // One row per person: with more than two, a single line of
                 // legends runs out of width and the shares stop comparing.
@@ -44,7 +66,7 @@ struct StatsView: View {
             if !model.month.incomeRanked.isEmpty {
                 VStack(alignment: .leading, spacing: 11) {
                     HStack {
-                        Text("Where it came from").font(.system(size: 13, weight: .semibold))
+                        Text("Where it came from").appFont(13, weight: .semibold)
                         Spacer()
                         Text("+" + Fmt.money(model.earned)).mono(13)
                             .foregroundStyle(Palette.green)
@@ -52,12 +74,12 @@ struct StatsView: View {
                     ForEach(model.month.incomeRanked) { item in
                         HStack(spacing: 9) {
                             Image(systemName: item.bucket.symbol)
-                                .font(.system(size: 12, weight: .semibold))
+                                .appFont(12, weight: .semibold)
                                 .foregroundStyle(item.bucket.color)
                                 .frame(width: 26, height: 26)
                                 .background(item.bucket.tint,
                                             in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            Text(item.bucket.label).font(.system(size: 13, weight: .medium))
+                            Text(item.bucket.label).appFont(13, weight: .medium)
                             Spacer(minLength: 4)
                             Text("+" + Fmt.money(item.total)).mono(13)
                         }
@@ -68,7 +90,7 @@ struct StatsView: View {
                 .padding(.bottom, 18)
             }
 
-            Text("By category").font(.system(size: 13, weight: .semibold)).padding(.bottom, 10)
+            Text("By category").appFont(13, weight: .semibold).padding(.bottom, 10)
             VStack(spacing: 11) {
                 ForEach(items) { item in
                     let pct = item.total / max(spent, 1) * 100
@@ -76,11 +98,11 @@ struct StatsView: View {
                         HStack(spacing: 9) {
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(item.bucket.color).frame(width: 9, height: 9)
-                            Text(item.bucket.label).font(.system(size: 13, weight: .medium))
+                            Text(item.bucket.label).appFont(13, weight: .medium)
                             Spacer(minLength: 4)
                             Text(Fmt.money(item.total)).mono(13)
                             Text("\(Int(pct.rounded()))%")
-                                .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                                .appFont(11.5).foregroundStyle(Palette.sub)
                                 .frame(width: 38, alignment: .trailing)
                         }
                         ProgressBar(pct: pct, fill: item.bucket.color, height: 7)
@@ -94,12 +116,12 @@ struct StatsView: View {
         HStack(spacing: 7) {
             Circle().fill(person.member.color).frame(width: 9, height: 9)
             Text(person.member.name)
-                .font(.system(size: 12.5, weight: .semibold))
+                .appFont(12.5, weight: .semibold)
                 .lineLimit(1)
             Spacer(minLength: 4)
             Text(Fmt.money(person.total)).mono(12.5)
             Text("\(Int(share.rounded()))%")
-                .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                .appFont(11.5).foregroundStyle(Palette.sub)
                 .frame(width: 38, alignment: .trailing)
         }
     }
@@ -147,17 +169,17 @@ struct MoodCard: View {
     var body: some View {
         let count = totals.reduce(0) { $0 + $1.count }
         VStack(alignment: .leading, spacing: 12) {
-            Text("What drove it").font(.system(size: 13, weight: .semibold))
+            Text("What drove it").appFont(13, weight: .semibold)
 
             if count < Self.minimumEntries {
                 Text("Tag a few spends with how they felt and the pattern shows up here.")
-                    .font(.system(size: 12.5))
+                    .appFont(12.5)
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 if let note = prompt {
                     Text(note)
-                        .font(.system(size: 12.5, weight: .medium))
+                        .appFont(12.5, weight: .medium)
                         .foregroundStyle(Palette.text)
                         .fixedSize(horizontal: false, vertical: true)
                 }
@@ -166,16 +188,16 @@ struct MoodCard: View {
                     VStack(spacing: 6) {
                         HStack(spacing: 9) {
                             Image(systemName: item.mood.symbol)
-                                .font(.system(size: 11, weight: .semibold))
+                                .appFont(11, weight: .semibold)
                                 .foregroundStyle(item.mood.color)
                                 .frame(width: 22, height: 22)
                                 .background(item.mood.color.opacity(0.16),
                                             in: RoundedRectangle(cornerRadius: 7, style: .continuous))
-                            Text(item.mood.label).font(.system(size: 13, weight: .medium))
+                            Text(item.mood.label).appFont(13, weight: .medium)
                             Spacer(minLength: 4)
                             Text(Fmt.money(item.total)).mono(13)
                             Text("^[\(item.count) buy](inflect: true)")
-                                .font(.system(size: 11)).foregroundStyle(Palette.sub)
+                                .appFont(11).foregroundStyle(Palette.sub)
                                 .frame(width: 56, alignment: .trailing)
                         }
                         ProgressBar(pct: item.total / max(tagged, 1) * 100,
@@ -185,7 +207,7 @@ struct MoodCard: View {
 
                 // Tagging is partial by design, so say what share this covers.
                 Text("Based on \(Fmt.money(tagged)) of \(Fmt.money(spent)) tagged.")
-                    .font(.system(size: 11)).foregroundStyle(Palette.muted)
+                    .appFont(11).foregroundStyle(Palette.muted)
             }
         }
         .padding(.horizontal, 17).padding(.vertical, 16)
@@ -213,7 +235,7 @@ struct TrendChart: View {
 
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text("Last \(points.count) months").font(.system(size: 13, weight: .semibold))
+                Text("Last \(points.count) months").appFont(13, weight: .semibold)
                 Spacer()
                 HStack(spacing: 12) {
                     key(Palette.teal, "Spent")
@@ -223,7 +245,7 @@ struct TrendChart: View {
 
             if peak <= 0 {
                 Text("No history yet — it fills in as months go by.")
-                    .font(.system(size: 12.5))
+                    .appFont(12.5)
                     .foregroundStyle(Palette.muted)
                     .frame(maxWidth: .infinity, minHeight: Self.height, alignment: .center)
             } else {
@@ -243,7 +265,7 @@ struct TrendChart: View {
                             .frame(height: Self.height, alignment: .bottom)
 
                             Text(point.label)
-                                .font(.system(size: 10, weight: .semibold))
+                                .appFont(10, weight: .semibold)
                                 .foregroundStyle(Palette.sub)
                         }
                         .frame(maxWidth: .infinity)
@@ -266,7 +288,7 @@ struct TrendChart: View {
     private func key(_ color: Color, _ label: String) -> some View {
         HStack(spacing: 5) {
             Circle().fill(color).frame(width: 7, height: 7)
-            Text(label).font(.system(size: 11)).foregroundStyle(Palette.sub)
+            Text(label).appFont(11).foregroundStyle(Palette.sub)
         }
     }
 }
@@ -306,7 +328,7 @@ struct DonutChart: View {
                 .frame(width: Self.holeDiameter, height: Self.holeDiameter)
 
             VStack(spacing: 2) {
-                Text("Total").font(.system(size: 11, weight: .medium)).foregroundStyle(Palette.sub)
+                Text("Total").appFont(11, weight: .medium).foregroundStyle(Palette.sub)
                 Text(Fmt.money(total)).mono(22)
             }
         }

@@ -33,7 +33,7 @@ struct AskSheet: View {
                     answerCard(answer).padding(.top, 18)
                     if !answer.entries.isEmpty {
                         Text("Behind that number")
-                            .font(.system(size: 13, weight: .semibold))
+                            .appFont(13, weight: .semibold)
                             .padding(.top, 20).padding(.bottom, 10)
                         VStack(spacing: 8) {
                             ForEach(answer.entries.prefix(8)) { EntryRow(entry: $0) }
@@ -59,15 +59,15 @@ struct AskSheet: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Ask").font(.system(size: 17, weight: .bold))
+                Text("Ask").appFont(17, weight: .bold)
                 Text("Answered from your own entries, on this device")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .appFont(12.5, weight: .medium)
                     .foregroundStyle(Palette.sub)
             }
             Spacer()
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Palette.label9)
                     .frame(width: 30, height: 30)
                     .background(Palette.chip, in: Circle())
@@ -83,7 +83,7 @@ struct AskSheet: View {
                       prompt: Text("Ask about your spending").foregroundStyle(Palette.muted))
                 .focused($focused)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15, weight: .medium))
+                .appFont(15, weight: .medium)
                 .submitLabel(.search)
                 .onSubmit(run)
                 .padding(.horizontal, 14).padding(.vertical, 13)
@@ -92,7 +92,7 @@ struct AskSheet: View {
             let canAsk = !question.trimmingCharacters(in: .whitespaces).isEmpty
             Button(action: run) {
                 Image(systemName: "arrow.up")
-                    .font(.system(size: 16, weight: .bold))
+                    .appFont(16, weight: .bold)
                     .foregroundStyle(canAsk ? Palette.tealInk : Palette.muted)
                     .frame(width: 46, height: 46)
                     .background { if canAsk { Palette.tealGradient } else { Palette.chip } }
@@ -108,7 +108,7 @@ struct AskSheet: View {
             Text(answer.headline).mono(30)
             if let detail = answer.detail {
                 Text(detail)
-                    .font(.system(size: 13)).foregroundStyle(Palette.sub)
+                    .appFont(13).foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -122,13 +122,13 @@ struct AskSheet: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 9) {
                 Image(systemName: "questionmark.circle.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Palette.moodRoutine)
                 Text("I didn't follow that one")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
             }
             Text("I can answer questions about totals, what's left, and who spent what — over today, this week, this month or last month. Try one of these:")
-                .font(.system(size: 12.5)).foregroundStyle(Palette.sub)
+                .appFont(12.5).foregroundStyle(Palette.sub)
                 .fixedSize(horizontal: false, vertical: true)
             exampleButtons
         }
@@ -138,7 +138,7 @@ struct AskSheet: View {
 
     private var examplesList: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Try asking").font(.system(size: 13, weight: .semibold))
+            Text("Try asking").appFont(13, weight: .semibold)
             exampleButtons
         }
     }
@@ -152,11 +152,11 @@ struct AskSheet: View {
                 } label: {
                     HStack(spacing: 9) {
                         Text(example)
-                            .font(.system(size: 13, weight: .medium))
+                            .appFont(13, weight: .medium)
                             .multilineTextAlignment(.leading)
                         Spacer(minLength: 0)
                         Image(systemName: "arrow.up.right")
-                            .font(.system(size: 11, weight: .semibold))
+                            .appFont(11, weight: .semibold)
                             .foregroundStyle(Palette.muted)
                     }
                     .padding(.horizontal, 13).padding(.vertical, 11)

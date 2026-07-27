@@ -20,7 +20,7 @@ struct LoansSheet: View {
 
                 if model.loans.isEmpty {
                     Text("Add a student loan, a card balance or anything else you're paying down, and you'll see how long it takes at your current payment.")
-                        .font(.system(size: 13))
+                        .appFont(13)
                         .foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.vertical, 22)
@@ -36,8 +36,8 @@ struct LoansSheet: View {
 
                 Button { isAdding = true } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "plus").font(.system(size: 15, weight: .bold))
-                        Text("Add a balance").font(.system(size: 15, weight: .bold))
+                        Image(systemName: "plus").appFont(15, weight: .bold)
+                        Text("Add a balance").appFont(15, weight: .bold)
                     }
                     .frame(maxWidth: .infinity).padding(15)
                     .foregroundStyle(Palette.tealInk)
@@ -47,7 +47,7 @@ struct LoansSheet: View {
                 .padding(.top, 16)
 
                 Text("Payoff figures assume the payment and rate stay as entered. They're an estimate, not a statement from your lender.")
-                    .font(.system(size: 11.5))
+                    .appFont(11.5)
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
@@ -67,15 +67,15 @@ struct LoansSheet: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Owed").font(.system(size: 17, weight: .bold))
+                Text("Owed").appFont(17, weight: .bold)
                 Text("^[\(model.loans.count) balance](inflect: true)")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .appFont(12.5, weight: .medium)
                     .foregroundStyle(Palette.sub)
             }
             Spacer()
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Palette.label9)
                     .frame(width: 30, height: 30)
                     .background(Palette.chip, in: Circle())
@@ -87,11 +87,11 @@ struct LoansSheet: View {
 
     private var totalCard: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Total owed").font(.system(size: 12.5, weight: .medium))
+            Text("Total owed").appFont(12.5, weight: .medium)
                 .foregroundStyle(Palette.sub)
             Text(Fmt.money(model.totalOwed)).mono(30)
             Text("\(Fmt.money(model.monthlyLoanPayments)) a month across ^[\(model.loans.count) balance](inflect: true)")
-                .font(.system(size: 12)).foregroundStyle(Palette.sub)
+                .appFont(12).foregroundStyle(Palette.sub)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 17).padding(.vertical, 16)
@@ -101,16 +101,16 @@ struct LoansSheet: View {
     private func row(_ loan: Loan) -> some View {
         HStack(spacing: 12) {
             Image(systemName: "graduationcap.fill")
-                .font(.system(size: 15, weight: .semibold))
+                .appFont(15, weight: .semibold)
                 .foregroundStyle(Palette.purple)
                 .frame(width: 34, height: 34)
                 .background(Palette.purple.opacity(0.16),
                             in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(loan.name).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                Text(loan.name).appFont(14, weight: .semibold).lineLimit(1)
                 Text(loan.payoffLabel)
-                    .font(.system(size: 11.5))
+                    .appFont(11.5)
                     .foregroundStyle(loan.monthsToClear == nil ? Palette.overText : Palette.sub)
                     .lineLimit(1)
             }
@@ -120,7 +120,7 @@ struct LoansSheet: View {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(Fmt.money(loan.balance)).mono(13)
                 Text("\(Fmt.money(loan.monthlyPayment))/mo")
-                    .font(.system(size: 10.5)).foregroundStyle(Palette.sub)
+                    .appFont(10.5).foregroundStyle(Palette.sub)
             }
         }
         .padding(.horizontal, 13).padding(.vertical, 11)
@@ -152,11 +152,11 @@ struct LoanForm: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text(loan == nil ? "New balance" : "Edit balance")
-                        .font(.system(size: 17, weight: .bold))
+                        .appFont(17, weight: .bold)
                     Spacer()
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .appFont(14, weight: .semibold)
                             .foregroundStyle(Palette.label9)
                             .frame(width: 30, height: 30)
                             .background(Palette.chip, in: Circle())
@@ -175,13 +175,13 @@ struct LoanForm: View {
                     HStack(spacing: 10) {
                         Image(systemName: preview.monthsToClear == nil
                               ? "exclamationmark.triangle.fill" : "clock.fill")
-                            .font(.system(size: 13, weight: .semibold))
+                            .appFont(13, weight: .semibold)
                             .foregroundStyle(preview.monthsToClear == nil ? Palette.over : Palette.teal)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(preview.payoffLabel).font(.system(size: 13, weight: .semibold))
+                            Text(preview.payoffLabel).appFont(13, weight: .semibold)
                             if let interest = preview.projectedInterest, interest > 0 {
                                 Text("\(Fmt.money(interest)) of interest along the way")
-                                    .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                                    .appFont(11.5).foregroundStyle(Palette.sub)
                             }
                         }
                         Spacer(minLength: 0)
@@ -193,7 +193,7 @@ struct LoanForm: View {
                 let canSave = draft != nil
                 Button(action: save) {
                     Text(loan == nil ? "Add" : "Save changes")
-                        .font(.system(size: 15, weight: .bold))
+                        .appFont(15, weight: .bold)
                         .frame(maxWidth: .infinity).padding(15)
                         .foregroundStyle(canSave ? Palette.tealInk : Palette.muted)
                         .background {
@@ -209,7 +209,7 @@ struct LoanForm: View {
                         dismiss()
                     } label: {
                         Text("Delete")
-                            .font(.system(size: 14, weight: .semibold))
+                            .appFont(14, weight: .semibold)
                             .foregroundStyle(Palette.over)
                             .frame(maxWidth: .infinity).padding(13)
                     }
@@ -239,15 +239,15 @@ struct LoanForm: View {
                        keyboard: UIKeyboardType = .default,
                        suffix: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.sub)
+            Text(title).appFont(12, weight: .semibold).foregroundStyle(Palette.sub)
             HStack(spacing: 6) {
                 TextField("", text: text,
                           prompt: Text(prompt).foregroundStyle(Palette.muted))
                     .textFieldStyle(.plain)
                     .keyboardType(keyboard)
-                    .font(.system(size: 15, weight: .medium))
+                    .appFont(15, weight: .medium)
                 if let suffix {
-                    Text(suffix).font(.system(size: 12)).foregroundStyle(Palette.muted)
+                    Text(suffix).appFont(12).foregroundStyle(Palette.muted)
                 }
             }
             .padding(.horizontal, 14).padding(.vertical, 13)
@@ -258,12 +258,12 @@ struct LoanForm: View {
 
     private func money(_ title: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title).font(.system(size: 12, weight: .semibold)).foregroundStyle(Palette.sub)
+            Text(title).appFont(12, weight: .semibold).foregroundStyle(Palette.sub)
             HStack(spacing: 2) {
-                Text("$").mono(14, weight: .regular).foregroundStyle(Palette.muted)
+                Text(Fmt.currencySymbol).mono(14, weight: .regular).foregroundStyle(Palette.muted)
                 TextField("0", text: text)
                     .keyboardType(.decimalPad)
-                    .font(.system(size: 15, weight: .bold, design: .monospaced))
+                    .appFont(15, weight: .bold, design: .monospaced)
             }
             .padding(.horizontal, 14).padding(.vertical, 13)
             .fieldBackground(radius: 13)

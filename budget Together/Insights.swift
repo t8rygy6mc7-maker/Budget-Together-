@@ -101,7 +101,7 @@ struct RuleSuggestionEngine: SuggestionEngine {
             out.append(Suggestion(
                 id: "cut-\(worst.bucket.id)",
                 title: "Trim \(worst.bucket.label) by a fifth",
-                detail: "It's tracking to \(Fmt.money(worst.projected)) against a \(Fmt.money(worst.cap)) cap. Spending 20% less from here saves about \(Fmt.money(cut)) and brings the month back to \(Fmt.money(input.forecast.projected - cut)).",
+                detail: "It's tracking to \(Fmt.money(worst.projected)) against a \(Fmt.money(worst.cap)) limit. Spending 20% less from here saves about \(Fmt.money(cut)) and brings the month back to \(Fmt.money(input.forecast.projected - cut)).",
                 symbol: "scissors",
                 weight: .nudge
             ))

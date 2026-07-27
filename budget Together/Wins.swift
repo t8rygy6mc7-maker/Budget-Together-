@@ -15,8 +15,12 @@ struct Badge: Identifiable {
 }
 
 struct Wins {
-    /// Consecutive days up to today spent at or under the daily allowance.
+    /// Consecutive days up to today spent at or under the daily allowance,
+    /// allowing one over-budget day inside the run — see `streak(byDay:…)`.
     var streak: Int = 0
+    /// Whether the grace day has been used up, so the UI can say so rather than
+    /// let the next slip look like an unexplained reset.
+    var graceUsed: Bool = false
     /// Completed months in a row that finished inside the budget.
     var monthsUnderBudget: Int = 0
     var badges: [Badge] = []
@@ -43,7 +47,9 @@ extension Wins {
                      taggedCount: Int,
                      closedMonths: [(spent: Double, cap: Double)]) -> Wins {
         var wins = Wins()
-        wins.streak = streak(byDay: byDay, allowance: dailyAllowance, today: today)
+        let run = streak(byDay: byDay, allowance: dailyAllowance, today: today)
+        wins.streak = run.length
+        wins.graceUsed = run.graceUsed
         wins.monthsUnderBudget = trailingMonthsUnder(closedMonths)
 
         wins.badges = [
@@ -69,18 +75,34 @@ extension Wins {
         return wins
     }
 
+    /// One over-allowance day is forgiven inside a run. A second ends it.
+    static let graceDays = 1
+
     /// Counts back from today. A day with no spending counts — doing nothing is
     /// the cheapest way to stay inside a budget, and the streak should say so.
     /// Today itself only breaks the streak once it's actually over the line, so
     /// a morning coffee doesn't zero the count before lunch.
-    private static func streak(byDay: [Int: Double], allowance: Double, today: Int) -> Int {
-        guard allowance > 0, today >= 1 else { return 0 }
+    ///
+    /// A single bad day is absorbed rather than fatal. Without that, the first
+    /// dinner out in a good fortnight resets the count to zero, and a counter
+    /// that punishes one ordinary evening is one people stop caring about by
+    /// about the third time it happens. The forgiven day still doesn't *count*
+    /// toward the total — it's carried, not credited.
+    private static func streak(byDay: [Int: Double], allowance: Double,
+                               today: Int) -> (length: Int, graceUsed: Bool) {
+        guard allowance > 0, today >= 1 else { return (0, false) }
         var count = 0
+        var grace = graceDays
         for day in stride(from: today, through: 1, by: -1) {
-            guard byDay[day, default: 0] <= allowance else { break }
-            count += 1
+            if byDay[day, default: 0] <= allowance {
+                count += 1
+            } else if grace > 0 {
+                grace -= 1          // absorbed: doesn't extend the run, doesn't end it
+            } else {
+                break
+            }
         }
-        return count
+        return (count, grace < graceDays)
     }
 
     /// Trailing run of closed months that came in at or under cap, newest first.

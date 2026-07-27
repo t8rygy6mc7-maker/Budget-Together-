@@ -11,6 +11,9 @@ struct PeopleSheet: View {
 
     @State private var newName = ""
     @State private var pendingRemoval: Member?
+    @State private var alertsOn = false
+    @State private var mutedBuckets: Set<String> = []
+    @State private var deniedBySystem = false
     @FocusState private var newNameFocused: Bool
 
     var body: some View {
@@ -25,11 +28,12 @@ struct PeopleSheet: View {
                 addField
 
                 Text("Everyone here can be picked when logging a spend. Tap an avatar to change its colour.")
-                    .font(.system(size: 12))
+                    .appFont(12)
                     .foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 14)
 
+                alertsSection
                 appearanceSection
             }
             .padding(.horizontal, 22)
@@ -65,15 +69,15 @@ struct PeopleSheet: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("People").font(.system(size: 17, weight: .bold))
+                Text("People").appFont(17, weight: .bold)
                 Text("^[\(model.members.count) person](inflect: true) on this budget")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .appFont(12.5, weight: .medium)
                     .foregroundStyle(Palette.sub)
             }
             Spacer()
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Palette.label9)
                     .frame(width: 30, height: 30)
                     .background(Palette.chip, in: Circle())
@@ -83,12 +87,101 @@ struct PeopleSheet: View {
         .padding(.top, 6).padding(.bottom, 16)
     }
 
+    /// Limit alerts: off unless asked for, and silenceable per category.
+    ///
+    /// The old behaviour was to request notification permission on first launch
+    /// and then push whenever any category crossed 80% or 100%. That's the
+    /// app's loudest channel carrying its least welcome message to someone who
+    /// never asked for it — and health and personal spending are precisely
+    /// where an unsolicited buzz lands worst.
+    private var alertsSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("ALERTS")
+                .appFont(10, weight: .bold)
+                .tracking(0.8)
+                .foregroundStyle(Palette.label9)
+
+            Toggle(isOn: $alertsOn) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Tell me when a category is running low")
+                        .appFont(13.5, weight: .semibold)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(alertsOn ? "A single nudge at 80% and again at the limit."
+                                  : "Off. Nothing will interrupt you.")
+                        .appFont(11.5).foregroundStyle(Palette.sub)
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .card(border: Palette.cardBorderSoft, radius: 15)
+            .onChange(of: alertsOn) { _, wantsOn in
+                guard wantsOn else {
+                    Notifier.shared.limitAlertsEnabled = false
+                    return
+                }
+                Task {
+                    let granted = await Notifier.shared.requestAuthorization()
+                    Notifier.shared.limitAlertsEnabled = granted
+                    // If iOS said no, don't leave a switch sitting on that
+                    // silently does nothing.
+                    if !granted { alertsOn = false; deniedBySystem = true }
+                }
+            }
+
+            if deniedBySystem {
+                Text("Notifications are switched off for this app in iOS Settings.")
+                    .appFont(11.5)
+                    .foregroundStyle(Palette.over)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            if alertsOn {
+                Text("Mute any you'd rather not hear about")
+                    .appFont(11.5)
+                    .foregroundStyle(Palette.sub)
+                    .padding(.top, 2)
+
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
+                    ForEach(Bucket.all) { bucket in
+                        let muted = mutedBuckets.contains(bucket.id)
+                        Button {
+                            Haptics.selected()
+                            Notifier.shared.setMuted(!muted, for: bucket.id)
+                            if muted { mutedBuckets.remove(bucket.id) }
+                            else { mutedBuckets.insert(bucket.id) }
+                        } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: muted ? "bell.slash.fill" : bucket.symbol)
+                                    .appFont(11, weight: .semibold)
+                                    .foregroundStyle(muted ? Palette.muted : bucket.color)
+                                Text(bucket.short)
+                                    .appFont(12, weight: .semibold).lineLimit(1)
+                                Spacer(minLength: 0)
+                            }
+                            .frame(maxWidth: .infinity)
+                            .padding(.horizontal, 9).padding(.vertical, 8)
+                            .foregroundStyle(muted ? Palette.muted : Palette.chipText)
+                            .fieldBackground(AnyShapeStyle(Palette.card),
+                                             border: Palette.cardBorder, radius: 12)
+                        }
+                        .accessibilityLabel("\(bucket.label) alerts")
+                        .accessibilityValue(muted ? "Muted" : "On")
+                    }
+                }
+            }
+        }
+        .padding(.top, 22)
+        .onAppear {
+            alertsOn = Notifier.shared.limitAlertsEnabled
+            mutedBuckets = Set(Bucket.all.map(\.id).filter(Notifier.shared.isMuted))
+        }
+    }
+
     /// Appearance lives here rather than behind a settings screen the app
     /// doesn't have — People is already the "this device, these humans" sheet.
     private var appearanceSection: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("APPEARANCE")
-                .font(.system(size: 10, weight: .bold))
+                .appFont(10, weight: .bold)
                 .tracking(0.8)
                 .foregroundStyle(Palette.label9)
 
@@ -99,7 +192,7 @@ struct PeopleSheet: View {
             }
 
             Text("Only on this phone — it won't change your partner's.")
-                .font(.system(size: 11.5))
+                .appFont(11.5)
                 .foregroundStyle(Palette.sub)
         }
         .padding(.top, 22)
@@ -111,8 +204,8 @@ struct PeopleSheet: View {
             withAnimation(.easeInOut(duration: 0.2)) { model.appearance = option }
         } label: {
             VStack(spacing: 5) {
-                Image(systemName: option.symbol).font(.system(size: 15, weight: .semibold))
-                Text(option.label).font(.system(size: 11.5, weight: .semibold))
+                Image(systemName: option.symbol).appFont(15, weight: .semibold)
+                Text(option.label).appFont(11.5, weight: .semibold)
             }
             .foregroundStyle(isSelected ? Palette.tealInk : Palette.chipText)
             .frame(maxWidth: .infinity)
@@ -137,7 +230,7 @@ struct PeopleSheet: View {
                       prompt: Text("Add someone — their name").foregroundStyle(Palette.muted))
                 .focused($newNameFocused)
                 .textFieldStyle(.plain)
-                .font(.system(size: 15, weight: .medium))
+                .appFont(15, weight: .medium)
                 .submitLabel(.done)
                 .onSubmit(add)
                 .padding(.horizontal, 14).padding(.vertical, 13)
@@ -146,7 +239,7 @@ struct PeopleSheet: View {
             let canAdd = !newName.trimmingCharacters(in: .whitespaces).isEmpty
             Button(action: add) {
                 Image(systemName: "plus")
-                    .font(.system(size: 17, weight: .bold))
+                    .appFont(17, weight: .bold)
                     .foregroundStyle(canAdd ? Palette.tealInk : Palette.muted)
                     .frame(width: 46, height: 46)
                     .background {
@@ -191,7 +284,7 @@ private struct PersonRow: View {
             TextField("", text: $draftName, prompt: Text("Name").foregroundStyle(Palette.muted))
                 .focused($editing)
                 .textFieldStyle(.plain)
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .submitLabel(.done)
                 .onSubmit(commit)
                 .onChange(of: editing) { _, focused in if !focused { commit() } }
@@ -199,7 +292,7 @@ private struct PersonRow: View {
 
             if isMe {
                 Text("You")
-                    .font(.system(size: 10.5, weight: .bold))
+                    .appFont(10.5, weight: .bold)
                     .foregroundStyle(member.color)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(member.color.opacity(0.16), in: Capsule())
@@ -222,7 +315,7 @@ private struct PersonRow: View {
                 }
             } label: {
                 Image(systemName: "ellipsis")
-                    .font(.system(size: 15, weight: .semibold))
+                    .appFont(15, weight: .semibold)
                     .foregroundStyle(Palette.label9)
                     .frame(width: 30, height: 30)
                     .contentShape(Rectangle())

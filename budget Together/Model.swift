@@ -243,6 +243,10 @@ struct Entry: Identifiable {
     var kind: EntryKind = .expense
     /// How it felt, if the user said. Always optional.
     var mood: Mood?
+    /// Why, in the spender's own words. The point of it is to answer the
+    /// question a partner would otherwise have to ask out loud — "this was for
+    /// your birthday" costs nothing to write and defuses the whole exchange.
+    var note: String = ""
     /// Kept out of the shared store entirely — never syncs to anyone else's
     /// device. See `BudgetStore.addEntry` for how that's enforced.
     var isPrivate: Bool = false
@@ -251,6 +255,82 @@ struct Entry: Identifiable {
 
     /// "$1,234.56" for spending, "+$1,234.56" for income.
     var signedAmount: String { kind.sign + Fmt.money2(amount) }
+
+    var hasNote: Bool { !note.trimmingCharacters(in: .whitespaces).isEmpty }
+
+    /// The category, unless it's already the entry's name. An entry logged
+    /// without a place takes the category as its title, and showing "Fun & Misc"
+    /// twice in a row reads like a bug.
+    var categorySubtitle: String? {
+        let label = Bucket.named(bucket).label
+        return label.caseInsensitiveCompare(place) == .orderedSame ? nil : label
+    }
+}
+
+// MARK: - Reactions
+
+/// A small, warm response to somebody else's entry. Deliberately has no
+/// negative option: a shared ledger that lets one person tut at another's
+/// coffee is a worse product than one that doesn't, and the disapproval was
+/// never the part that needed a button.
+enum ReactionKind: String, CaseIterable, Identifiable {
+    case heart, thumbsUp, flame, smile
+
+    var id: String { rawValue }
+
+    var symbol: String {
+        switch self {
+        case .heart:    "heart.fill"
+        case .thumbsUp: "hand.thumbsup.fill"
+        case .flame:    "flame.fill"
+        case .smile:    "face.smiling.inverse"
+        }
+    }
+
+    var label: String {
+        switch self {
+        case .heart:    "Love this"
+        case .thumbsUp: "Fair enough"
+        case .flame:    "Worth it"
+        case .smile:    "Made me smile"
+        }
+    }
+
+    var color: Color {
+        switch self {
+        case .heart:    Palette.overText
+        case .thumbsUp: Palette.moodRoutine
+        case .flame:    Palette.moodJoy
+        case .smile:    Palette.teal
+        }
+    }
+}
+
+/// One person's reaction to one entry. Stored as its own row rather than a
+/// field on the entry so two people reacting at once from two phones merge
+/// instead of overwriting each other.
+struct Reaction: Identifiable, Hashable {
+    let id: String
+    var entryID: String
+    var memberID: String
+    var kind: ReactionKind
+    var createdAt: Date
+}
+
+// MARK: - Months that shouldn't count
+
+/// A month the user has marked as unrepresentative — a move, a wedding, a
+/// medical bill. It still shows in the log and the totals, because it happened,
+/// but it's kept out of streaks, badges and the trend averages.
+///
+/// Without this, one genuinely abnormal month quietly poisons every comparison
+/// the app makes for the next half-year, and the app spends that whole time
+/// telling the user they're doing worse than they are.
+struct MonthFlag: Identifiable, Hashable {
+    let month: String        // "yyyy-MM"
+    var isUnusual: Bool
+    var reason: String
+    var id: String { month }
 }
 
 // MARK: - Recurring transactions

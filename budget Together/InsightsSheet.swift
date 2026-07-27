@@ -17,7 +17,7 @@ struct InsightsSheet: View {
                 ForecastCard(forecast: model.forecast).padding(.bottom, 18)
 
                 if !model.suggestions.isEmpty {
-                    Text("What would help").font(.system(size: 13, weight: .semibold))
+                    Text("What would help").appFont(13, weight: .semibold)
                         .padding(.bottom, 10)
                     VStack(spacing: 8) {
                         ForEach(model.suggestions) { SuggestionRow(suggestion: $0) }
@@ -40,15 +40,15 @@ struct InsightsSheet: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Looking ahead").font(.system(size: 17, weight: .bold))
+                Text("Looking ahead").appFont(17, weight: .bold)
                 Text("Worked out on this device")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .appFont(12.5, weight: .medium)
                     .foregroundStyle(Palette.sub)
             }
             Spacer()
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Palette.label9)
                     .frame(width: 30, height: 30)
                     .background(Palette.chip, in: Circle())
@@ -62,27 +62,27 @@ struct InsightsSheet: View {
     private var subscriptionSection: some View {
         let found = model.subscriptions
         VStack(alignment: .leading, spacing: 10) {
-            Text("Repeating charges").font(.system(size: 13, weight: .semibold))
+            Text("Repeating charges").appFont(13, weight: .semibold)
 
             if found.isEmpty {
                 Text("Nothing repeating found yet. A charge shows up here once it's appeared at a similar amount in three different months.")
-                    .font(.system(size: 12.5))
+                    .appFont(12.5)
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 ForEach(found) { item in
                     HStack(spacing: 12) {
                         Image(systemName: Bucket.named(item.bucket).symbol)
-                            .font(.system(size: 14, weight: .semibold))
+                            .appFont(14, weight: .semibold)
                             .foregroundStyle(Bucket.named(item.bucket).color)
                             .frame(width: 32, height: 32)
                             .background(Bucket.named(item.bucket).tint,
                                         in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(item.place)
-                                .font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                                .appFont(14, weight: .semibold).lineLimit(1)
                             Text(subtitle(for: item))
-                                .font(.system(size: 11.5))
+                                .appFont(11.5)
                                 .foregroundStyle(item.looksLapsed ? Palette.overText : Palette.sub)
                                 .lineLimit(2)
                         }
@@ -94,7 +94,7 @@ struct InsightsSheet: View {
                 }
 
                 Text("The app can see what repeats, not whether you still use it — that part's your call.")
-                    .font(.system(size: 11.5))
+                    .appFont(11.5)
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 2)
@@ -118,11 +118,11 @@ struct ForecastCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Where this month lands").font(.system(size: 13, weight: .semibold))
+            Text("Where this month lands").appFont(13, weight: .semibold)
 
             if !forecast.isReliable {
                 Text("A few more days of spending and there'll be enough to forecast from.")
-                    .font(.system(size: 12.5))
+                    .appFont(12.5)
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
             } else {
@@ -131,7 +131,7 @@ struct ForecastCard: View {
                     Text(forecast.isOverPlan
                          ? "\(Fmt.money(forecast.overBy)) over"
                          : "\(Fmt.money(forecast.underBy)) under")
-                        .font(.system(size: 13, weight: .semibold))
+                        .appFont(13, weight: .semibold)
                         .foregroundStyle(forecast.isOverPlan ? Palette.over : Palette.teal)
                 }
 
@@ -144,7 +144,7 @@ struct ForecastCard: View {
                      + (forecast.billsToCome > 0
                         ? " plus \(Fmt.money(forecast.billsToCome)) of bills still due."
                         : "."))
-                    .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                    .appFont(11.5).foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -167,15 +167,15 @@ struct SuggestionRow: View {
     var body: some View {
         HStack(alignment: .top, spacing: 12) {
             Image(systemName: suggestion.symbol)
-                .font(.system(size: 14, weight: .semibold))
+                .appFont(14, weight: .semibold)
                 .foregroundStyle(tint)
                 .frame(width: 32, height: 32)
                 .background(tint.opacity(0.16),
                             in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
-                Text(suggestion.title).font(.system(size: 14, weight: .semibold))
+                Text(suggestion.title).appFont(14, weight: .semibold)
                 Text(suggestion.detail)
-                    .font(.system(size: 12)).foregroundStyle(Palette.sub)
+                    .appFont(12).foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)

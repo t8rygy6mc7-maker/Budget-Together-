@@ -46,6 +46,9 @@ struct MonthPoint: Identifiable {
 @MainActor
 final class AppModel: ObservableObject {
     @Published var tab: Tab = .home
+    /// Drives the add sheet. Lives here rather than in `RootView` so an empty
+    /// state anywhere in the app can offer the tap that fills it.
+    @Published var isAddingEntry = false
     /// Mirrors of the persisted store, republished whenever data changes
     /// locally or arrives from the partner's device.
     @Published private(set) var month = MonthDigest()
@@ -70,6 +73,16 @@ final class AppModel: ObservableObject {
     @Published private(set) var suggestions: [Suggestion] = []
     /// Repeating charges found in the ledger.
     @Published private(set) var subscriptions: [DetectedSubscription] = []
+    /// Entry id → everyone's reactions to it.
+    @Published private(set) var reactions: [String: [Reaction]] = [:]
+    /// Months the household has marked unrepresentative, keyed "yyyy-MM".
+    @Published private(set) var monthFlags: [String: MonthFlag] = [:]
+    /// Whether the app is running on the throwaway "look around first" data.
+    @Published private(set) var isSampleHousehold = false
+    /// Whether an unspent remainder carries into the next month.
+    @Published private(set) var rolloverEnabled = false
+    /// The most recent reversible change, and the line offered about it.
+    @Published private(set) var undoPrompt: UndoPrompt?
 
     private let suggestionEngine: SuggestionEngine = RuleSuggestionEngine()
     /// Rebuilt on every reload from the household's own entries.
@@ -130,14 +143,53 @@ final class AppModel: ObservableObject {
     /// Creates the shared household (seeded with default caps) with its creator
     /// as the first member, and marks this device the owner. In Step 3 this is
     /// followed by generating a CloudKit invite link.
+    /// Creates the shared budget. `monthlyTotal` is genuinely optional now: with
+    /// nothing supplied the budget starts with **no limits at all** rather than
+    /// a scaled guess, and the app runs in plain logging mode until there's
+    /// enough real spending to propose limits from. Being asked to commit to a
+    /// number before you've seen the app is the single most off-putting thing a
+    /// budgeting app can do, and it was the first screen.
     func createHousehold(name: String, ownerName: String = "You",
                          monthlyTotal: Double? = nil) {
         let trimmed = name.trimmingCharacters(in: .whitespaces)
         let owner = ownerName.trimmingCharacters(in: .whitespaces)
         store.createHousehold(name: trimmed.isEmpty ? "Together" : trimmed,
                               ownerName: owner.isEmpty ? "You" : owner,
-                              defaultCaps: monthlyTotal.map(Self.caps(forMonthlyTotal:))
-                                           ?? Self.defaultCaps)
+                              defaultCaps: monthlyTotal.map(Self.caps(forMonthlyTotal:)) ?? [:])
+        reload()
+    }
+
+    /// Fills the app with a worked example so it can be looked at before any
+    /// decision is made about it. Nothing here survives "Start my own".
+    func startLookingAround() {
+        store.createHousehold(name: "Sample budget", ownerName: "You",
+                              defaultCaps: Self.defaultCaps, isSample: true)
+        let ids = store.loadSnapshot().members.map(\.id)
+        var seatIDs = ids
+        for (index, name) in ["Sam", "Alex"].enumerated() {
+            if let member = store.addMember(name: name, colorIndex: index + 1) {
+                seatIDs.append(member.id)
+            }
+        }
+        guard !seatIDs.isEmpty else { return }
+        for entry in Self.demoEntries {
+            let seat = Int(entry.memberID) ?? 0
+            store.addEntry(id: entry.id, date: entry.date, place: entry.place,
+                           amount: entry.amount, bucket: entry.bucket,
+                           memberID: seatIDs[seat % seatIDs.count], kind: entry.kind,
+                           mood: entry.mood, note: entry.note,
+                           createdAt: entry.createdAt)
+        }
+        reload()
+    }
+
+    /// Throws the sample away and returns to the welcome screen, so the user's
+    /// own first entry isn't logged into a demo household alongside Sam's rent.
+    func discardSampleAndStartOver() {
+        store.deleteSampleHousehold()
+        selectedMonth = Date()
+        tab = .home
+        dismissUndo()
         reload()
     }
 
@@ -195,8 +247,14 @@ final class AppModel: ObservableObject {
     }
 
     /// Everything this member logged goes with them — `entryCount(for:)` is what
-    /// the confirmation dialog warns with.
+    /// the confirmation dialog warns with. Reversible for the same reason
+    /// everything else is: this is the single most expensive tap in the app.
     func removeMember(_ id: String) {
+        guard let member = membersByID[id] else { return }
+        let theirs = allEntries.filter { $0.memberID == id }
+        offerUndo(.deletedMember(member, entries: theirs),
+                  message: "Removed \(member.name)"
+                         + (theirs.isEmpty ? "." : " and \(Fmt.count(theirs.count, "entry", plural: "entries"))."))
         store.deleteMember(id: id)
         reload()
     }
@@ -275,8 +333,48 @@ final class AppModel: ObservableObject {
         let days = Calendar.current.range(of: .day, in: .month, for: selectedMonth)?.count ?? 30
         return capTotal / Double(days)
     }
-    var left: Double { max(0, capTotal - spent) }
+    var left: Double { max(0, plannedTotal - spent) }
     var safeDaily: Double { left / Double(daysLeft) }
+
+    // MARK: Weekly framing
+    //
+    // A month is a long, abstract unit — "$840 left" over 19 days is hard to
+    // convert into a decision at a till. A week is a thing people can actually
+    // hold in their heads, so the same allowance is offered in both units and
+    // the user can lead with whichever they think in.
+
+    /// Days remaining in the current week, today included.
+    var daysLeftInWeek: Int {
+        guard isCurrentMonth else { return 7 }
+        let calendar = Calendar.current
+        let weekday = calendar.component(.weekday, from: Date())
+        let firstDay = calendar.firstWeekday
+        let elapsed = (weekday - firstDay + 7) % 7
+        // Never promise more days than the month itself has left.
+        return max(1, min(7 - elapsed, daysLeft))
+    }
+
+    /// What's safe to spend between now and the end of the week.
+    var weeklyAllowance: Double { safeDaily * Double(daysLeftInWeek) }
+
+    /// Whether the weekly figure actually tells you anything the monthly one
+    /// didn't. In the last few days of a month the two coincide, and repeating
+    /// the same number under a different label is noise pretending to be help.
+    var weeklyFramingIsUseful: Bool {
+        isCurrentMonth && daysLeft > daysLeftInWeek
+    }
+
+    /// Spending since the start of the current week.
+    var spentThisWeek: Double {
+        guard isCurrentMonth else { return 0 }
+        let calendar = Calendar.current
+        guard let weekStart = calendar.dateInterval(of: .weekOfYear, for: Date())?.start
+        else { return 0 }
+        let startKey = Fmt.isoDay(weekStart)
+        return month.entries
+            .filter { $0.kind == .expense && $0.date >= startKey }
+            .reduce(0) { $0 + $1.amount }
+    }
 
     func spent(by memberID: String) -> Double { month.byMember[memberID] ?? 0 }
 
@@ -284,6 +382,10 @@ final class AppModel: ObservableObject {
     /// to compare against, so the header can omit the badge rather than show a
     /// meaningless figure.
     var monthOverMonth: (percent: Int, isDown: Bool)? {
+        let previousKey = Fmt.isoMonth(Self.month(before: selectedMonth))
+        // Comparing against a month the user has told us was strange produces a
+        // number that's technically correct and completely misleading.
+        guard !isUnusual(previousKey), !isSelectedMonthUnusual else { return nil }
         let previous = month.previousSpent
         guard previous > 0 else { return nil }
         let change = Int((((month.spent - previous) / previous) * 100).rounded())
@@ -299,32 +401,356 @@ final class AppModel: ObservableObject {
             set: { newValue in
                 self.caps[id] = newValue            // optimistic UI update
                 self.store.setCap(bucket: id, month: self.monthKey, amount: newValue)
-                // A new limit deserves a fresh judgement — raising a cap should
+                // A new limit deserves a fresh judgement — raising a limit should
                 // let the 80% warning fire again against the new headroom.
                 Notifier.shared.resetCapAlerts(bucketID: id, month: self.monthKey)
             }
         )
     }
 
+    // MARK: - Forgiveness
+    //
+    // Budgets break. An app that can only report the breakage trains people to
+    // stop looking; these are the three ways out that a spreadsheet doesn't
+    // have — move the money, carry the slack forward, or say the month was
+    // strange and have the app believe you.
+
+    /// Moves headroom from one category to another for the selected month. The
+    /// plan total is unchanged: this is a reallocation, not a raise, which is
+    /// what makes it an honest answer to being over in one place.
+    func moveBudget(from source: String, to destination: String, amount: Double) {
+        guard amount > 0, source != destination else { return }
+        let fromPrevious = caps[source] ?? 0
+        let toPrevious = caps[destination] ?? 0
+        guard fromPrevious >= amount else { return }
+
+        offerUndo(.capsMoved(from: source, to: destination, month: monthKey,
+                             fromPrevious: fromPrevious, toPrevious: toPrevious),
+                  message: "Moved \(Fmt.money(amount)) to \(Bucket.named(destination).label).")
+        store.setCap(bucket: source, month: monthKey, amount: fromPrevious - amount)
+        store.setCap(bucket: destination, month: monthKey, amount: toPrevious + amount)
+        Notifier.shared.resetCapAlerts(bucketID: destination, month: monthKey)
+        Haptics.saved()
+        reload()
+    }
+
+    /// How much could be taken from a category without pushing it over what's
+    /// already been spent there — you can't lend out money you've spent.
+    func movableAmount(from bucketID: String) -> Double {
+        max(0, (caps[bucketID] ?? 0) - (month.totals[bucketID] ?? 0))
+    }
+
+    /// Categories with headroom to lend, biggest first.
+    func donorBuckets(excluding bucketID: String) -> [(bucket: Bucket, available: Double)] {
+        Bucket.all
+            .filter { $0.id != bucketID }
+            .map { ($0, movableAmount(from: $0.id)) }
+            .filter { $0.1 >= 5 }
+            .sorted { $0.1 > $1.1 }
+    }
+
+    func setRollover(_ enabled: Bool) {
+        store.setRollover(enabled)
+        reload()
+    }
+
+    /// What last month left on the table, carried in when rollover is on. Only
+    /// ever positive — carrying an *overspend* forward would be a punishment
+    /// mechanic, and this feature exists to be the opposite of one.
+    var rollover: Double {
+        guard rolloverEnabled, isCurrentMonth else { return 0 }
+        let previousKey = Fmt.isoMonth(Self.month(before: selectedMonth))
+        let previousCaps = store.caps(for: previousKey).values.reduce(0, +)
+        guard previousCaps > 0 else { return 0 }
+        return max(0, previousCaps - month.previousSpent)
+    }
+
+    /// The plan as it actually stands this month, rollover included.
+    var plannedTotal: Double { capTotal + rollover }
+
+    // MARK: Unusual months
+
+    func isUnusual(_ monthKey: String) -> Bool { monthFlags[monthKey]?.isUnusual ?? false }
+    var isSelectedMonthUnusual: Bool { isUnusual(monthKey) }
+    var selectedMonthReason: String { monthFlags[monthKey]?.reason ?? "" }
+
+    /// Marks the selected month as unrepresentative. It keeps its entries and
+    /// its totals — it happened — but drops out of streaks, badges and the
+    /// month-over-month comparison.
+    func markMonthUnusual(_ isUnusual: Bool, reason: String = "") {
+        store.setMonthFlag(month: monthKey, isUnusual: isUnusual, reason: reason)
+        reload()
+    }
+
+    // MARK: Suggested limits
+
+    /// Whether there's enough real spending to propose a plan from. Ten entries
+    /// is roughly the point where the categories stop being noise.
+    var canSuggestPlan: Bool {
+        !hasPlan && allEntries.filter { $0.kind == .expense }.count >= 10
+    }
+
+    /// Limits derived from what the household has actually spent, rather than
+    /// from a number they had to invent before they'd seen the app. Each
+    /// category is its own average monthly spend, rounded up to something
+    /// memorable, with a little headroom so the first month isn't a failure by
+    /// construction.
+    func suggestedPlan() -> [String: Double] {
+        let expenses = allEntries.filter { $0.kind == .expense }
+        guard !expenses.isEmpty else { return Self.defaultCaps }
+
+        var byBucket: [String: Double] = [:]
+        var months: Set<String> = []
+        for entry in expenses {
+            byBucket[entry.bucket, default: 0] += entry.amount
+            months.insert(String(entry.date.prefix(7)))
+        }
+        let span = Double(max(months.count, 1))
+
+        return byBucket.compactMapValues { total in
+            let monthly = total / span * 1.1        // 10% headroom
+            guard monthly >= 1 else { return nil }
+            // Round to a figure someone would actually say out loud.
+            let step: Double = monthly < 100 ? 10 : (monthly < 500 ? 25 : 50)
+            return (monthly / step).rounded(.up) * step
+        }
+    }
+
+    /// Writes a whole plan at once, for the suggestion flow and onboarding.
+    func applyPlan(_ plan: [String: Double]) {
+        for (bucket, amount) in plan {
+            store.setCap(bucket: bucket, month: monthKey, amount: amount)
+        }
+        Haptics.saved()
+        reload()
+    }
+
     func addEntry(place: String, amount: Double, bucket: String,
                   memberID: String, kind: EntryKind = .expense, mood: Mood? = nil,
-                  isPrivate: Bool = false) {
+                  note: String = "", isPrivate: Bool = false) {
         store.addEntry(id: UUID().uuidString, date: today, place: place,
                        amount: amount, bucket: bucket, memberID: memberID,
-                       kind: kind, mood: mood, isPrivate: isPrivate)
+                       kind: kind, mood: mood, note: note, isPrivate: isPrivate)
+        Haptics.saved()
         reload()
     }
 
     func updateEntry(_ entry: Entry, place: String, amount: Double, bucket: String,
-                     memberID: String, kind: EntryKind, mood: Mood?, isPrivate: Bool) {
+                     memberID: String, kind: EntryKind, mood: Mood?, note: String,
+                     isPrivate: Bool) {
+        offerUndo(.editedEntry(before: entry), message: "Changes to \(entry.place) saved.")
         store.updateEntry(id: entry.id, date: entry.date, place: place, amount: amount,
                           bucket: bucket, memberID: memberID, kind: kind, mood: mood,
-                          isPrivate: isPrivate)
+                          note: note, isPrivate: isPrivate)
+        Haptics.saved()
         reload()
     }
 
     func delete(_ id: String) {
+        guard let entry = allEntries.first(where: { $0.id == id }) else { return }
+        offerUndo(.deletedEntry(entry, reactions: reactions[id] ?? []),
+                  message: "Deleted \(entry.place).")
         store.delete(id: id)
+        Haptics.undone()
+        reload()
+    }
+
+    // MARK: - Undo
+    //
+    // Every destructive action in the app routes through here. The point isn't
+    // really recovery — most deletions are deliberate — it's that people tap
+    // more freely, and explore more, when they can see that a mistake costs one
+    // tap to fix. An app you're afraid to touch is an app you stop opening.
+
+    /// What's on offer in the toast. `id` changes on every new prompt so the
+    /// dismissal timer restarts rather than inheriting the last one's deadline.
+    struct UndoPrompt: Identifiable, Equatable {
+        let id = UUID()
+        let message: String
+    }
+
+    /// The inverse of whatever was just done. Stored as data rather than a
+    /// closure so nothing captures `self` and the whole thing stays inspectable.
+    private enum UndoableChange {
+        case deletedEntry(Entry, reactions: [Reaction])
+        case editedEntry(before: Entry)
+        case deletedRecurring(Recurring)
+        case deletedLoan(Loan)
+        case deletedMember(Member, entries: [Entry])
+        case capChanged(bucket: String, month: String, previous: Double)
+        case capsMoved(from: String, to: String, month: String,
+                       fromPrevious: Double, toPrevious: Double)
+    }
+
+    private var pendingUndo: UndoableChange?
+    private var undoExpiry: Task<Void, Never>?
+
+    /// How long the offer stands. This was 7s and that turned out to be too
+    /// quick: the window has to cover noticing the toast, reading it, deciding,
+    /// and then reaching the button — and it's covering part of the list the
+    /// whole time, so a miss means tapping whatever was underneath.
+    private static let undoWindow: Duration = .seconds(12)
+
+    private func offerUndo(_ change: UndoableChange, message: String) {
+        pendingUndo = change
+        undoPrompt = UndoPrompt(message: message)
+        undoExpiry?.cancel()
+        undoExpiry = Task { [weak self] in
+            try? await Task.sleep(for: Self.undoWindow)
+            guard !Task.isCancelled else { return }
+            self?.dismissUndo()
+        }
+    }
+
+    func dismissUndo() {
+        undoExpiry?.cancel()
+        undoExpiry = nil
+        pendingUndo = nil
+        withAnimation(.easeOut(duration: 0.2)) { undoPrompt = nil }
+    }
+
+    func undo() {
+        guard let change = pendingUndo else { return }
+        switch change {
+        case let .deletedEntry(entry, reactions):
+            restore(entry)
+            for reaction in reactions {
+                store.toggleReaction(entryID: entry.id, memberID: reaction.memberID,
+                                     kind: reaction.kind)
+            }
+
+        case let .editedEntry(before):
+            store.updateEntry(id: before.id, date: before.date, place: before.place,
+                              amount: before.amount, bucket: before.bucket,
+                              memberID: before.memberID, kind: before.kind,
+                              mood: before.mood, note: before.note,
+                              isPrivate: before.isPrivate)
+
+        case let .deletedRecurring(item):
+            store.saveRecurring(item)
+
+        case let .deletedLoan(loan):
+            store.saveLoan(loan)
+
+        case let .deletedMember(member, entries):
+            // The member row has to exist again before its entries can point at
+            // it, and the id must be the original or every entry orphans.
+            store.restoreMember(member)
+            entries.forEach(restore)
+
+        case let .capChanged(bucket, month, previous):
+            store.setCap(bucket: bucket, month: month, amount: previous)
+            Notifier.shared.resetCapAlerts(bucketID: bucket, month: month)
+
+        case let .capsMoved(from, to, month, fromPrevious, toPrevious):
+            store.setCap(bucket: from, month: month, amount: fromPrevious)
+            store.setCap(bucket: to, month: month, amount: toPrevious)
+        }
+        Haptics.undone()
+        dismissUndo()
+        reload()
+    }
+
+    private func restore(_ entry: Entry) {
+        store.addEntry(id: entry.id, date: entry.date, place: entry.place,
+                       amount: entry.amount, bucket: entry.bucket,
+                       memberID: entry.memberID, kind: entry.kind, mood: entry.mood,
+                       note: entry.note, isPrivate: entry.isPrivate,
+                       createdAt: entry.createdAt)
+    }
+
+    // MARK: - Shortcuts
+
+    /// A place the household logs often, with the amount it's usually for.
+    struct PlaceShortcut: Identifiable {
+        let place: String
+        let bucket: Bucket
+        let typicalAmount: Double
+        var id: String { place }
+    }
+
+    /// The handful of places worth a one-tap button, most-logged first.
+    ///
+    /// Built from the household's own ledger rather than a canned list of
+    /// "common purchases" — the whole value is that it says *Blue Bottle*, and a
+    /// generic list never will. Needs two sightings before a place qualifies, so
+    /// a one-off doesn't take up a slot.
+    func frequentPlaces(for kind: EntryKind, limit: Int = 4) -> [PlaceShortcut] {
+        var seen: [String: (count: Int, amounts: [Double], bucket: String, last: Date)] = [:]
+        for entry in allEntries where entry.kind == kind && !entry.place.isEmpty {
+            let key = entry.place.lowercased()
+            var row = seen[key] ?? (0, [], entry.bucket, .distantPast)
+            row.count += 1
+            row.amounts.append(entry.amount)
+            // Most recent sighting wins the category and the display spelling.
+            if entry.createdAt > row.last {
+                row.bucket = entry.bucket
+                row.last = entry.createdAt
+            }
+            seen[key] = row
+        }
+
+        return seen
+            .filter { $0.value.count >= 2 }
+            .sorted {
+                $0.value.count != $1.value.count ? $0.value.count > $1.value.count
+                                                 : $0.value.last > $1.value.last
+            }
+            .prefix(limit)
+            .map { key, row in
+                PlaceShortcut(
+                    place: displayName(for: key),
+                    bucket: Bucket.named(row.bucket),
+                    // Median, not mean: one big grocery run shouldn't drag the
+                    // suggested amount away from what it usually is.
+                    typicalAmount: median(row.amounts)
+                )
+            }
+    }
+
+    /// The most recent spelling the household actually used for a place.
+    private func displayName(for lowercased: String) -> String {
+        allEntries.first { $0.place.lowercased() == lowercased }?.place ?? lowercased
+    }
+
+    private func median(_ values: [Double]) -> Double {
+        guard !values.isEmpty else { return 0 }
+        let sorted = values.sorted()
+        let middle = sorted.count / 2
+        return sorted.count.isMultiple(of: 2)
+            ? (sorted[middle - 1] + sorted[middle]) / 2
+            : sorted[middle]
+    }
+
+    /// The last thing logged, for "same again".
+    var lastEntry: Entry? { allEntries.first { !$0.isPrivate || $0.memberID == store.localMemberID } }
+
+    /// Everyone *other than this device's owner* who has logged something
+    /// today, in household order. Drives the presence line in the log.
+    var othersActiveToday: [Member] {
+        let me = store.localMemberID
+        let active = Set(
+            allEntries.filter { $0.date == today && $0.memberID != me }.map(\.memberID)
+        )
+        return members.filter { active.contains($0.id) }
+    }
+
+    // MARK: - Reactions
+
+    /// Everyone's reactions to an entry, oldest first.
+    func reactions(for entryID: String) -> [Reaction] { reactions[entryID] ?? [] }
+
+    /// This device's own reaction to an entry, if any.
+    func myReaction(to entryID: String) -> ReactionKind? {
+        guard let me = store.localMemberID else { return nil }
+        return reactions(for: entryID).first { $0.memberID == me }?.kind
+    }
+
+    /// Tapping the same reaction again clears it; a different one replaces it.
+    func react(to entryID: String, with kind: ReactionKind) {
+        guard let me = store.localMemberID else { return }
+        Haptics.selected()
+        store.toggleReaction(entryID: entryID, memberID: me, kind: kind)
         reload()
     }
 
@@ -349,6 +775,10 @@ final class AppModel: ObservableObject {
                                            entries: snapshot.entries, today: today)
         members = snapshot.members
         membersByID = Dictionary(uniqueKeysWithValues: snapshot.members.map { ($0.id, $0) })
+        reactions = snapshot.reactions
+        monthFlags = snapshot.monthFlags
+        isSampleHousehold = snapshot.isSample
+        rolloverEnabled = snapshot.rolloverEnabled
         month = Self.digest(snapshot.entries,
                             month: monthKey,
                             previous: Fmt.isoMonth(Self.month(before: selectedMonth)))
@@ -359,6 +789,43 @@ final class AppModel: ObservableObject {
         categorizer = HistoryCategorizer(entries: snapshot.entries)
         buildInsights(snapshot.entries)
         checkCapAlerts(snapshot.entries)
+        // A tab that's just been hidden can't be left selected under the user.
+        if !visibleTabs.contains(tab) { tab = .home }
+    }
+
+    // MARK: - Progressive disclosure
+
+    /// Total entries the household has ever logged, across every month.
+    var totalEntryCount: Int { allEntries.count }
+
+    /// Whether any real spending limits have been set. Empty caps aren't a
+    /// broken state — they're the starting state, since the app no longer asks
+    /// for a budget before it will open.
+    var hasPlan: Bool { caps.values.contains { $0 > 0 } }
+
+    /// Tabs the user has explicitly asked for before they'd earned their place
+    /// in the bar. Once revealed, a tab stays put — having it vanish again
+    /// under someone who just used it would be worse than never hiding it.
+    @Published private(set) var revealedTabs: Set<Tab> = []
+
+    /// Which tabs the bottom bar shows. Budget and Stats stay out of the way
+    /// until there's something in them worth opening; both are still reachable
+    /// from Home before that, so nothing is actually locked away.
+    var visibleTabs: [Tab] {
+        var tabs: [Tab] = [.home, .log]
+        if hasPlan || totalEntryCount >= 3 || revealedTabs.contains(.budget) {
+            tabs.append(.budget)
+        }
+        if totalEntryCount >= 5 || revealedTabs.contains(.stats) {
+            tabs.append(.stats)
+        }
+        return tabs
+    }
+
+    /// Opens a tab that isn't in the bar yet, and keeps it there.
+    func reveal(_ tab: Tab) {
+        revealedTabs.insert(tab)
+        self.tab = tab
     }
 
     /// Forecast, suggestions and subscription detection. Like wins, these always
@@ -402,9 +869,11 @@ final class AppModel: ObservableObject {
             : Self.digest(entries, month: currentKey, previous: "")
 
         // Each closed month judged against the caps that were in force then,
-        // oldest first. The live month is excluded: it hasn't finished.
+        // oldest first. The live month is excluded: it hasn't finished. Months
+        // the household flagged as strange are excluded too — a run of good
+        // months shouldn't be ended by the one they moved house in.
         let closed: [(spent: Double, cap: Double)] = history
-            .filter { $0.key < currentKey }
+            .filter { $0.key < currentKey && !isUnusual($0.key) }
             .map { ($0.spent, store.caps(for: $0.key).values.reduce(0, +)) }
 
         let expenses = entries.filter { $0.kind == .expense }
@@ -460,6 +929,9 @@ final class AppModel: ObservableObject {
     }
 
     func deleteLoan(_ id: String) {
+        if let loan = loans.first(where: { $0.id == id }) {
+            offerUndo(.deletedLoan(loan), message: "Removed \(loan.name).")
+        }
         store.deleteLoan(id: id)
         reload()
     }
@@ -473,6 +945,9 @@ final class AppModel: ObservableObject {
     }
 
     func deleteRecurring(_ id: String) {
+        if let item = recurring.first(where: { $0.id == id }) {
+            offerUndo(.deletedRecurring(item), message: "Removed \(item.place).")
+        }
         store.deleteRecurring(id: id)
         reload()
         Notifier.shared.scheduleBillReminders(recurring)
@@ -680,10 +1155,17 @@ extension AppModel {
             3: .routine, 5: .stress, 6: .boredom, 7: .joy,
             10: .routine, 13: .social, 14: .stress, 12: .boredom,
         ]
+        // A few notes, because the feature is invisible until someone has seen
+        // one — and the "why" is the whole reason the field exists.
+        let notes: [Int: String] = [
+            7:  "Birthday present for Alex — don't look 🙈",
+            13: "Anniversary. Worth every penny.",
+            9:  "Prescription refill",
+        ]
         var entries = sample.enumerated().map { index, row in
             Entry(id: "demo-\(index)", date: day(row.day, of: now), place: row.place,
                   bucket: row.bucket, amount: row.amount, memberID: "\(row.seat)",
-                  mood: tags[index],
+                  mood: tags[index], note: notes[index] ?? "",
                   createdAt: Date(timeIntervalSince1970: Double(index)))
         }
         // Money in, so the income and net figures have something to show.

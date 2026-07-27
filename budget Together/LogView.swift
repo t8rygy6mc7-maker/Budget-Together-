@@ -23,32 +23,46 @@ struct LogView: View {
         let entries = filtered(model.month.entries)
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text("Daily log").font(.system(size: 22, weight: .bold))
+                Text("Daily log").appFont(22, weight: .bold)
                 Spacer()
                 MonthStepper()
             }
             Text("^[\(entries.count) entry](inflect: true)")
-                .font(.system(size: 13, weight: .medium))
+                .appFont(13, weight: .medium)
                 .foregroundStyle(Palette.sub)
                 .padding(.top, 2).padding(.bottom, 14)
 
+            presenceLine
             filters
 
             if entries.isEmpty {
-                Text(model.month.entries.isEmpty
-                     ? "Nothing logged this month yet."
-                     : "Nothing matches these filters.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Palette.muted)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 40)
+                if model.month.entries.isEmpty {
+                    EmptyState(
+                        symbol: "calendar.badge.plus",
+                        title: model.isCurrentMonth ? "This month is a blank page"
+                                                    : "Nothing was logged in \(model.monthTitle)",
+                        message: model.isCurrentMonth
+                            ? "Everything anyone adds shows up here, newest first — with a note about why, if they left one."
+                            : "You can still step back to a month that has something in it.",
+                        actionTitle: model.isCurrentMonth ? "Add something" : nil,
+                        action: model.isCurrentMonth ? { model.isAddingEntry = true } : nil
+                    )
+                } else {
+                    EmptyState(
+                        symbol: "line.3.horizontal.decrease.circle",
+                        title: "Nothing matches those filters",
+                        message: "There are \(Fmt.count(model.month.entries.count, "entry", plural: "entries")) this month — just not with these filters on.",
+                        actionTitle: "Clear filters",
+                        action: { kindFilter = nil; memberFilter = nil }
+                    )
+                }
             }
 
             ForEach(groups(of: entries)) { group in
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(spacing: 8) {
                         Text(Fmt.dateLabel(group.date, today: model.today))
-                            .font(.system(size: 12.5, weight: .semibold))
+                            .appFont(12.5, weight: .semibold)
                             .foregroundStyle(Palette.label9)
                         Spacer()
                         if group.earned > 0 {
@@ -62,7 +76,7 @@ struct LogView: View {
                     }
                     ForEach(group.items) { entry in
                         Button { editing = entry } label: {
-                            EntryRow(entry: entry, showDelete: true)
+                            EntryRow(entry: entry, showDelete: true, showsSocial: true)
                         }
                         .buttonStyle(.plain)
                     }
@@ -72,6 +86,31 @@ struct LogView: View {
         }
         .sheet(item: $editing) { entry in
             AddSheet(editing: entry).environmentObject(model)
+        }
+    }
+
+    // MARK: - Presence
+
+    /// Who else has been here today. Warm and ambient on purpose — it says
+    /// somebody is keeping up their end without naming a figure, which is the
+    /// difference between company and surveillance.
+    @ViewBuilder
+    private var presenceLine: some View {
+        let others = model.othersActiveToday
+        if !others.isEmpty {
+            HStack(spacing: 8) {
+                HStack(spacing: -6) {
+                    ForEach(others) { MemberAvatar(member: $0, size: 20, ring: Palette.screen) }
+                }
+                Text(others.count == 1
+                     ? "\(others[0].name) added something today"
+                     : "\(Fmt.count(others.count, "person", plural: "people")) added something today")
+                    .appFont(12)
+                    .foregroundStyle(Palette.sub)
+                Spacer(minLength: 0)
+            }
+            .padding(.bottom, 12)
+            .accessibilityElement(children: .combine)
         }
     }
 
@@ -97,7 +136,7 @@ struct LogView: View {
         let color = candidate?.color ?? Palette.teal
         return Button { kindFilter = candidate } label: {
             Text(label)
-                .font(.system(size: 12.5, weight: .semibold))
+                .appFont(12.5, weight: .semibold)
                 .frame(maxWidth: .infinity).padding(.vertical, 8)
                 .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
                 .fieldBackground(isSelected ? AnyShapeStyle(color.opacity(0.14))
@@ -113,7 +152,7 @@ struct LogView: View {
         return Button { memberFilter = id } label: {
             HStack(spacing: 6) {
                 Circle().fill(color).frame(width: 7, height: 7)
-                Text(label).font(.system(size: 12.5, weight: .semibold)).lineLimit(1)
+                Text(label).appFont(12.5, weight: .semibold).lineLimit(1)
             }
             .frame(maxWidth: .infinity).padding(.vertical, 8)
             .foregroundStyle(isSelected ? Palette.text : Palette.chipText)

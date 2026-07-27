@@ -10,7 +10,7 @@ import UserNotifications
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     static let shared = Notifier()
 
-    /// Fractions of a cap worth interrupting someone for.
+    /// Fractions of a limit worth interrupting someone for.
     static let thresholds: [Double] = [0.8, 1.0]
 
     private let center = UNUserNotificationCenter.current()
@@ -20,35 +20,73 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private static let askedKey = "notificationsRequested"
     private static let firedPrefix = "capAlert."
     private static let billPrefix = "bill."
+    private static let alertsOnKey = "limitAlertsEnabled"
+    private static let mutedPrefix = "limitAlertMuted."
 
     private var authorized = false
 
-    /// Requests permission the first time, and refreshes `authorized` after.
+    // MARK: Preferences
+    //
+    // Alerts used to be on for everything, automatically, from the first
+    // launch. A push that says a category is over budget is the app's loudest
+    // possible voice, and it was being used for the app's least welcome
+    // message, unprompted. Now it's off until asked for, and mutable per
+    // category — the categories people most want to be quiet about (health,
+    // say) are exactly the ones an unsolicited alert lands worst on.
+
+    /// Master switch. Off until the user turns it on.
+    var limitAlertsEnabled: Bool {
+        get { defaults.bool(forKey: Self.alertsOnKey) }
+        set { defaults.set(newValue, forKey: Self.alertsOnKey) }
+    }
+
+    func isMuted(_ bucketID: String) -> Bool {
+        defaults.bool(forKey: Self.mutedPrefix + bucketID)
+    }
+
+    func setMuted(_ muted: Bool, for bucketID: String) {
+        defaults.set(muted, forKey: Self.mutedPrefix + bucketID)
+    }
+
+    /// Refreshes `authorized`. Deliberately does **not** request permission —
+    /// that now happens only when the user switches alerts on themselves, so
+    /// the system prompt arrives attached to something they asked for.
     func start() {
         center.delegate = self
-        Task {
-            let settings = await center.notificationSettings()
-            switch settings.authorizationStatus {
-            case .notDetermined:
-                guard !defaults.bool(forKey: Self.askedKey) else { return }
-                defaults.set(true, forKey: Self.askedKey)
-                authorized = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
-            case .authorized, .provisional, .ephemeral:
-                authorized = true
-            default:
-                authorized = false
-            }
+        Task { await refreshAuthorization() }
+    }
+
+    private func refreshAuthorization() async {
+        let settings = await center.notificationSettings()
+        switch settings.authorizationStatus {
+        case .authorized, .provisional, .ephemeral: authorized = true
+        default: authorized = false
         }
     }
 
-    // MARK: Cap alerts
+    /// Asks the system for permission, in response to the user turning alerts
+    /// on. Returns whether it was granted, so the toggle can fall back rather
+    /// than sit there claiming to be on.
+    @discardableResult
+    func requestAuthorization() async -> Bool {
+        let settings = await center.notificationSettings()
+        if settings.authorizationStatus == .notDetermined {
+            defaults.set(true, forKey: Self.askedKey)
+            authorized = (try? await center.requestAuthorization(options: [.alert, .sound])) ?? false
+        } else {
+            await refreshAuthorization()
+        }
+        return authorized
+    }
+
+    // MARK: Limit alerts
 
     /// Fires once per bucket, per month, per threshold. Called after every
     /// reload, so spending that arrives from a partner's device counts too.
     func checkCaps(totals: [String: Double], caps: [String: Double], month: String) {
-        guard authorized else { return }
+        guard authorized, limitAlertsEnabled else { return }
         for (bucketID, spent) in totals {
-            guard let cap = caps[bucketID], cap > 0 else { continue }
+            guard let cap = caps[bucketID], cap > 0, !isMuted(bucketID) else { continue }
             let ratio = spent / cap
             // Highest crossed threshold only — one alert, not a burst.
             guard let crossed = Self.thresholds.filter({ ratio >= $0 }).max() else { continue }
@@ -57,13 +95,9 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
             guard !defaults.bool(forKey: key) else { continue }
             defaults.set(true, forKey: key)
 
-            let bucket = Bucket.named(bucketID)
-            let title = crossed >= 1 ? "\(bucket.label) is over budget"
-                                     : "\(bucket.label) is at \(Int(ratio * 100))%"
-            let body = crossed >= 1
-                ? "\(Fmt.money(spent)) spent of a \(Fmt.money(cap)) cap — over by \(Fmt.money(spent - cap))."
-                : "\(Fmt.money(spent)) of \(Fmt.money(cap)) used, \(Fmt.money(cap - spent)) left."
-            post(id: key, title: title, body: body)
+            let copy = Copy.limitAlert(bucket: Bucket.named(bucketID).label,
+                                       spent: spent, limit: cap)
+            post(id: key, title: copy.title, body: copy.body)
         }
     }
 

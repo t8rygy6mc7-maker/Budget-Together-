@@ -11,27 +11,32 @@ enum Fmt {
 
     // MARK: Formatters
 
-    private static let whole: NumberFormatter = {
-        let f = NumberFormatter()
-        f.numberStyle = .decimal
-        f.maximumFractionDigits = 0
-        return f
-    }()
+    /// Money is formatted in the user's own currency and their own conventions
+    /// for where the symbol sits and how digits are grouped. The app never
+    /// converts between currencies — it has no rates and no bank connection —
+    /// so this is presentation only: whatever they type is whatever they meant.
+    private static let whole: NumberFormatter = currency(fractionDigits: 0)
+    private static let cents: NumberFormatter = currency(fractionDigits: 2)
 
-    private static let cents: NumberFormatter = {
+    private static func currency(fractionDigits: Int) -> NumberFormatter {
         let f = NumberFormatter()
-        f.numberStyle = .decimal
-        f.minimumFractionDigits = 2
-        f.maximumFractionDigits = 2
+        f.numberStyle = .currency
+        f.locale = .current
+        f.minimumFractionDigits = fractionDigits
+        f.maximumFractionDigits = fractionDigits
         return f
-    }()
+    }
 
     private static let thousands: NumberFormatter = {
         let f = NumberFormatter()
         f.numberStyle = .decimal
+        f.locale = .current
         f.maximumFractionDigits = 1
         return f
     }()
+
+    /// Just the symbol, for the amount fields that draw their own prefix.
+    static let currencySymbol: String = whole.currencySymbol ?? "$"
 
     /// Parses user input, so it must accept whatever the decimal pad produces
     /// in the user's locale ("12,50" as well as "12.50").
@@ -68,21 +73,22 @@ enum Fmt {
 
     // MARK: Money
 
-    /// "$1,234" — whole dollars, for headline and summary figures.
+    /// "$1,234" — whole units, for headline and summary figures.
     static func money(_ n: Double) -> String {
-        "$" + (whole.string(from: NSNumber(value: n)) ?? "0")
+        whole.string(from: NSNumber(value: n)) ?? currencySymbol + "0"
     }
 
     /// "$1,234.56" — exact amounts, for individual entries.
     static func money2(_ n: Double) -> String {
-        "$" + (cents.string(from: NSNumber(value: n)) ?? "0.00")
+        cents.string(from: NSNumber(value: n)) ?? currencySymbol + "0.00"
     }
 
-    /// "$1.2k" above a thousand, otherwise plain dollars. For bubble labels.
+    /// "$1.2k" above a thousand, otherwise the plain amount. For bubble labels,
+    /// where there is room for roughly five characters and no more.
     static func compact(_ n: Double) -> String {
         guard n >= 1000 else { return money(n) }
         let k = thousands.string(from: NSNumber(value: n / 1000)) ?? "0"
-        return "$" + k + "k"
+        return currencySymbol + k + "k"
     }
 
     /// Bare number for putting an existing amount back into a text field —

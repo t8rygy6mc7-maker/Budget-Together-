@@ -15,7 +15,10 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Together").font(.system(size: 22, weight: .bold))
+                    Text("Together")
+                        .appFont(22, weight: .bold)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
                     MonthStepper()
                 }
                 Spacer()
@@ -25,7 +28,13 @@ struct HomeView: View {
             }
             .padding(.bottom, 18)
 
-            if model.isSimplified {
+            summaryLine.padding(.bottom, 18)
+
+            // Anti-budget mode is entirely "what's left of the fun money",
+            // which is a limits calculation. With no limits set it would report
+            // a confident $0, so the mode simply isn't available until there's
+            // a plan for it to subtract from.
+            if model.isSimplified, model.hasPlan {
                 simplified
             } else {
                 full
@@ -38,13 +47,106 @@ struct HomeView: View {
         .sheet(isPresented: $showChallenges) { ChallengesSheet() }
     }
 
+    /// How the month is going, in a sentence, above everything else.
+    ///
+    /// The screen used to open with a large number and a red percentage badge —
+    /// a verdict, delivered before any context, in the position the eye lands
+    /// first. The arithmetic hasn't changed and it's all still below; it just
+    /// isn't the greeting any more.
+    private var summaryLine: some View {
+        let summary = Copy.summary(
+            hasPlan: model.hasPlan,
+            left: model.left,
+            daysLeft: model.daysLeft,
+            spent: model.spent,
+            projected: model.forecast.projected,
+            plan: model.plannedTotal,
+            entryCount: model.month.entries.count,
+            isCurrentMonth: model.isCurrentMonth,
+            isUnusualMonth: model.isSelectedMonthUnusual,
+            name: model.me?.name
+        )
+        return VStack(alignment: .leading, spacing: 3) {
+            Text(summary.headline)
+                .appFont(19, weight: .bold)
+                .foregroundStyle(Palette.text)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(summary.detail)
+                .appFont(13)
+                .foregroundStyle(summary.needsAttention ? Palette.overText : Palette.sub)
+                .fixedSize(horizontal: false, vertical: true)
+
+            if model.hasPlan, model.left > 0, model.weeklyFramingIsUseful {
+                weeklyLine.padding(.top, 7)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The same allowance in the unit people actually think in. "$840 over 19
+    /// days" is arithmetic; "about $180 between now and Sunday" is a decision
+    /// you can make at a till.
+    private var weeklyLine: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "calendar.day.timeline.left")
+                .appFont(10, weight: .semibold)
+            Text("About \(Fmt.money(model.weeklyAllowance)) to see out the week"
+               + (model.spentThisWeek > 0
+                  ? " — \(Fmt.money(model.spentThisWeek)) gone so far" : ""))
+                .appFont(11.5, weight: .medium)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(Palette.teal)
+    }
+
+    /// The way to the Budget tab while it's still hidden from the bar. Without
+    /// this, progressive disclosure would be a locked door rather than a tidy
+    /// one — someone who arrives knowing exactly what they want to set up has
+    /// to be able to go and set it up.
+    @ViewBuilder
+    private var planStrip: some View {
+        if !model.hasPlan, model.isCurrentMonth {
+            Button { model.reveal(.budget) } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "slider.horizontal.3")
+                        .appFont(14, weight: .semibold)
+                        .foregroundStyle(Palette.teal)
+                        .frame(width: 32, height: 32)
+                        .background(Palette.teal.opacity(0.16),
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(model.canSuggestPlan
+                             ? "Ready to set some limits?"
+                             : "Want to set spending limits?")
+                            .appFont(13, weight: .semibold).lineLimit(1)
+                        Text(model.canSuggestPlan
+                             ? "There's enough here now to suggest some."
+                             : "Optional — tracking works fine without them.")
+                            .appFont(11.5).foregroundStyle(Palette.sub)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right")
+                        .appFont(12, weight: .semibold)
+                        .foregroundStyle(Palette.muted)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .card(border: Palette.cardBorderSoft, radius: 15)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     /// A running challenge, or an invitation to start one.
     private var challengeStrip: some View {
         Button { showChallenges = true } label: {
             HStack(spacing: 12) {
                 let running = model.featuredChallenge
                 Image(systemName: running?.isBroken == true ? "xmark.circle.fill" : "flag.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(running?.isBroken == true ? Palette.over : Palette.moodSocial)
                     .frame(width: 32, height: 32)
                     .background((running?.isBroken == true ? Palette.over : Palette.moodSocial)
@@ -52,14 +154,14 @@ struct HomeView: View {
                                 in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
                     Text(running?.challenge.title ?? "Take on a challenge")
-                        .font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                        .appFont(13, weight: .semibold).lineLimit(1)
                     Text(running?.detail ?? "No-Spend Weekend and others, together")
-                        .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                        .appFont(11.5).foregroundStyle(Palette.sub)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Palette.muted)
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
@@ -72,9 +174,9 @@ struct HomeView: View {
         Button { showAsk = true } label: {
             HStack(spacing: 8) {
                 Image(systemName: "sparkle.magnifyingglass")
-                    .font(.system(size: 13, weight: .semibold))
+                    .appFont(13, weight: .semibold)
                 Text("Ask about your spending")
-                    .font(.system(size: 13, weight: .medium))
+                    .appFont(13, weight: .medium)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(Palette.chipText)
@@ -94,23 +196,23 @@ struct HomeView: View {
             Button { showInsights = true } label: {
                 HStack(spacing: 12) {
                     Image(systemName: over ? "chart.line.uptrend.xyaxis" : "chart.line.flattrend.xyaxis")
-                        .font(.system(size: 14, weight: .semibold))
+                        .appFont(14, weight: .semibold)
                         .foregroundStyle(over ? Palette.over : Palette.teal)
                         .frame(width: 32, height: 32)
                         .background((over ? Palette.over : Palette.teal).opacity(0.16),
                                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     VStack(alignment: .leading, spacing: 2) {
                         Text("Heading for \(Fmt.money(model.forecast.projected))")
-                            .font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                            .appFont(13, weight: .semibold).lineLimit(1)
                         Text(over
                              ? "\(Fmt.money(model.forecast.overBy)) over plan at this rate"
                              : "\(Fmt.money(model.forecast.underBy)) under plan at this rate")
-                            .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                            .appFont(11.5).foregroundStyle(Palette.sub)
                             .lineLimit(1)
                     }
                     Spacer(minLength: 4)
                     Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .semibold))
+                        .appFont(12, weight: .semibold)
                         .foregroundStyle(Palette.muted)
                 }
                 .padding(.horizontal, 14).padding(.vertical, 12)
@@ -126,7 +228,7 @@ struct HomeView: View {
     /// handled rather than itemised, which is the entire point of the mode.
     private var simplified: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Free to spend").font(.system(size: 13, weight: .medium))
+            Text("Free to spend").appFont(13, weight: .medium)
                 .foregroundStyle(Palette.sub)
             Text(Fmt.money(max(0, model.funLeft)))
                 .mono(52, weight: .semibold)
@@ -138,28 +240,25 @@ struct HomeView: View {
                 .padding(.bottom, 10)
 
             Text("\(Fmt.money(model.funSpent)) of \(Fmt.money(model.funMoney)) used")
-                .font(.system(size: 12.5, weight: .medium))
+                .appFont(12.5, weight: .medium)
                 .foregroundStyle(Palette.sub)
                 .padding(.bottom, 20)
 
-            HStack(spacing: 0) {
-                statCell(model.isCurrentMonth ? "A day from here" : "Per day",
-                         Fmt.money(model.funDaily), Palette.teal)
-                divider
-                statCell("Days left", "\(model.daysLeft)", Palette.text)
-            }
-            .padding(.horizontal, 17).padding(.vertical, 15)
-            .card()
+            StatRow([
+                Stat(title: model.isCurrentMonth ? "A day from here" : "Per day",
+                     value: Fmt.money(model.funDaily), color: Palette.teal),
+                Stat(title: "Days left", value: "\(model.daysLeft)"),
+            ])
             .padding(.bottom, 12)
 
             HStack(spacing: 12) {
                 Image(systemName: "checkmark.circle.fill")
-                    .font(.system(size: 15, weight: .semibold))
+                    .appFont(15, weight: .semibold)
                     .foregroundStyle(Palette.green)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Obligations handled").font(.system(size: 13, weight: .semibold))
+                    Text("The fixed stuff is taken care of").appFont(13, weight: .semibold)
                     Text("\(Fmt.money(model.committed)) of rent, subscriptions and savings is already set aside.")
-                        .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                        .appFont(11.5).foregroundStyle(Palette.sub)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 0)
@@ -167,6 +266,7 @@ struct HomeView: View {
             .padding(.horizontal, 14).padding(.vertical, 12)
             .card(border: Palette.cardBorderSoft, radius: 15)
 
+            planStrip.padding(.top, 9)
             forecastStrip.padding(.top, 9)
             winsStrip.padding(.top, 9)
             challengeStrip.padding(.top, 9)
@@ -182,16 +282,16 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 0) {
 
             Text(model.isCurrentMonth ? "Spent this month" : "Spent in \(model.monthTitle)")
-                .font(.system(size: 13, weight: .medium)).foregroundStyle(Palette.sub)
+                .appFont(13, weight: .medium).foregroundStyle(Palette.sub)
 
             HStack(alignment: .bottom, spacing: 10) {
                 Text(Fmt.money(model.spent)).mono(44, weight: .semibold)
                 if let change = model.monthOverMonth {
                     HStack(spacing: 3) {
                         Image(systemName: change.isDown ? "arrow.down.right" : "arrow.up.right")
-                            .font(.system(size: 13, weight: .bold))
+                            .appFont(13, weight: .bold)
                         Text("\(change.percent)% vs \(model.previousMonthName)")
-                            .font(.system(size: 13, weight: .semibold))
+                            .appFont(13, weight: .semibold)
                     }
                     .foregroundStyle(change.isDown ? Palette.teal : Palette.over)
                     .padding(.bottom, 10)
@@ -200,49 +300,51 @@ struct HomeView: View {
 
             BubbleCloud()
 
-            HStack(spacing: 0) {
-                if model.isCurrentMonth {
-                    statCell("Budget left", Fmt.money(model.left), Palette.teal)
-                    divider
-                    statCell("Safe daily", Fmt.money(model.safeDaily), Palette.text)
-                    divider
-                    statCell("Days left", "\(model.daysLeft)", Palette.text)
-                } else {
-                    // Safe-daily and days-left are meaningless once the month is
-                    // over, so a closed month reports how it finished instead.
-                    statCell("Planned", Fmt.money(model.capTotal), Palette.text)
-                    divider
-                    statCell("Income", "+" + Fmt.money(model.earned), Palette.green)
-                    divider
-                    statCell("Net", signed(model.net), model.net < 0 ? Palette.over : Palette.text)
+            if model.isCurrentMonth {
+                // Both of these are derived from limits. With none set they
+                // compute to zero, and a card announcing "Left to spend $0" to
+                // someone who simply hasn't made a budget yet reads as "you are
+                // broke" rather than "you haven't told me anything yet".
+                if model.hasPlan {
+                    StatRow([
+                        Stat(title: "Left to spend", value: Fmt.money(model.left),
+                             color: Palette.teal),
+                        Stat(title: "A day from here", value: Fmt.money(model.safeDaily)),
+                        Stat(title: "Days left", value: "\(model.daysLeft)"),
+                    ])
                 }
+            } else {
+                // Safe-daily and days-left are meaningless once the month is
+                // over, so a closed month reports how it finished instead.
+                StatRow([
+                    Stat(title: "Planned", value: Fmt.money(model.capTotal)),
+                    Stat(title: "Money in", value: "+" + Fmt.money(model.earned), color: Palette.green),
+                    Stat(title: "Kept", value: signed(model.net),
+                         color: model.net < 0 ? Palette.over : Palette.text),
+                ])
             }
-            .padding(.horizontal, 17).padding(.vertical, 15)
-            .card()
 
             // Only worth the space once money has actually come in.
             if model.isCurrentMonth, model.earned > 0 {
-                HStack(spacing: 0) {
-                    statCell("Income", "+" + Fmt.money(model.earned), Palette.green)
-                    divider
-                    statCell("Net", signed(model.net),
-                             model.net < 0 ? Palette.over : Palette.text)
-                }
-                .padding(.horizontal, 17).padding(.vertical, 15)
-                .card()
+                StatRow([
+                    Stat(title: "Money in", value: "+" + Fmt.money(model.earned), color: Palette.green),
+                    Stat(title: "Kept", value: signed(model.net),
+                         color: model.net < 0 ? Palette.over : Palette.text),
+                ])
                 .padding(.top, 8)
             }
 
-            forecastStrip.padding(.top, 12)
+            planStrip.padding(.top, 12)
+            forecastStrip.padding(.top, 9)
             winsStrip.padding(.top, 9)
             challengeStrip.padding(.top, 9)
             askButton.padding(.top, 9)
 
             HStack {
-                Text("Recent").font(.system(size: 15, weight: .bold))
+                Text("Recent").appFont(15, weight: .bold)
                 Spacer()
                 Button("See all") { model.tab = .log }
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .appFont(12.5, weight: .semibold)
                     .foregroundStyle(Palette.teal)
             }
             .padding(.horizontal, 2)
@@ -263,25 +365,24 @@ struct HomeView: View {
         Button { showWins = true } label: {
             HStack(spacing: 12) {
                 Image(systemName: "flame.fill")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(model.wins.streak > 0 ? Palette.teal : Palette.muted)
                     .frame(width: 32, height: 32)
                     .background(model.wins.streak > 0 ? Palette.teal.opacity(0.16) : Palette.chip,
                                 in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(model.wins.streak > 0
-                         ? "^[\(model.wins.streak) day](inflect: true) inside the daily allowance"
-                         : "Start a streak today")
-                        .font(.system(size: 13, weight: .semibold))
+                    Text(Copy.streakLine(days: model.wins.streak,
+                                         graceUsed: model.wins.graceUsed))
+                        .appFont(13, weight: .semibold)
                         .lineLimit(1)
                     Text(model.wins.headline.map { "Latest badge: \($0.title)" }
                          ?? "^[\(model.wins.badges.count) badge](inflect: true) to earn")
-                        .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                        .appFont(11.5).foregroundStyle(Palette.sub)
                         .lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.right")
-                    .font(.system(size: 12, weight: .semibold))
+                    .appFont(12, weight: .semibold)
                     .foregroundStyle(Palette.muted)
             }
             .padding(.horizontal, 14).padding(.vertical, 12)
@@ -290,15 +391,23 @@ struct HomeView: View {
         .buttonStyle(.plain)
     }
 
+    @ViewBuilder
     private var modeToggle: some View {
+        if model.hasPlan {
+            modeToggleButton
+        }
+    }
+
+    private var modeToggleButton: some View {
         Button {
+            Haptics.selected()
             withAnimation(.easeInOut(duration: 0.2)) { model.isSimplified.toggle() }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: model.isSimplified ? "list.bullet" : "wand.and.stars")
-                    .font(.system(size: 11, weight: .semibold))
+                    .appFont(11, weight: .semibold)
                 Text(model.isSimplified ? "Show the full budget" : "Just show me my fun money")
-                    .font(.system(size: 12.5, weight: .semibold))
+                    .appFont(12.5, weight: .semibold)
             }
             .foregroundStyle(Palette.teal)
             .frame(maxWidth: .infinity)
@@ -318,7 +427,7 @@ struct HomeView: View {
             }
             if overflow > 0 {
                 Text("+\(overflow)")
-                    .font(.system(size: 11, weight: .bold))
+                    .appFont(11, weight: .bold)
                     .foregroundStyle(Palette.chipText)
                     .frame(width: 32, height: 32)
                     .background(Palette.chip, in: Circle())
@@ -327,29 +436,17 @@ struct HomeView: View {
         }
     }
 
-    private var divider: some View {
-        Rectangle().fill(Palette.cardBorder).frame(width: 1, height: 34)
-    }
-
     /// "+$420" / "−$120" — the sign carries the meaning, so it's never dropped.
     private func signed(_ value: Double) -> String {
         (value < 0 ? "−" : "+") + Fmt.money(abs(value))
     }
-
-    private func statCell(_ title: String, _ value: String, _ color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(title).font(.system(size: 12, weight: .medium)).foregroundStyle(Palette.sub)
-            Text(value).mono(20).foregroundStyle(color)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
 }
 
 // MARK: - Bubble cloud
 
 struct BubbleCloud: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     /// Hand-placed positions from the design comp, largest bucket first.
     private struct Slot {
@@ -367,28 +464,64 @@ struct BubbleCloud: View {
     ]
 
     var body: some View {
-        let items = model.month.ranked.prefix(Self.slots.count)
-        let largest = items.first?.total ?? 1
+        let items = Array(model.month.ranked.prefix(Self.slots.count))
 
-        ZStack(alignment: .topLeading) {
-            if items.isEmpty {
-                Text("No spending yet — tap + to add one.")
-                    .font(.system(size: 13))
-                    .foregroundStyle(Palette.muted)
-                    .frame(maxWidth: .infinity, alignment: .center)
-            } else {
-                ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                    let slot = Self.slots[index]
-                    let size = (slot.base * (0.74 + 0.26 * (item.total / largest))).rounded()
-                    Bubble(item: item, size: size, fontSize: slot.fontSize, index: index)
-                        .frame(width: size, height: size)
-                        .offset(x: slot.offset.width, y: slot.offset.height)
-                }
+        if items.isEmpty {
+            EmptySpendPrompt()
+        } else if typeSize.prefersPlainList {
+            // The circles are fixed-diameter and hand-placed, so text that has
+            // grown this far simply will not fit inside them. The ranked list
+            // says the same thing and says it more precisely.
+            RankedSpendList(items: items)
+        } else {
+            cloud(items)
+        }
+    }
+
+    private func cloud(_ items: [BucketTotal]) -> some View {
+        let largest = items.first?.total ?? 1
+        return ZStack(alignment: .topLeading) {
+            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
+                let slot = Self.slots[index]
+                let size = (slot.base * (0.74 + 0.26 * (item.total / largest))).rounded()
+                Bubble(item: item, size: size, fontSize: slot.fontSize, index: index)
+                    .frame(width: size, height: size)
+                    .offset(x: slot.offset.width, y: slot.offset.height)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .frame(height: 250)
         .padding(.top, 10).padding(.bottom, 4)
+    }
+}
+
+/// Where the money went, as a list with proportional bars. Used whenever the
+/// bubbles can't be drawn honestly — at large type, and as the accessible
+/// reading of the same data.
+struct RankedSpendList: View {
+    let items: [BucketTotal]
+
+    var body: some View {
+        let largest = items.first?.total ?? 1
+        VStack(spacing: 10) {
+            ForEach(items) { item in
+                VStack(alignment: .leading, spacing: 5) {
+                    HStack(spacing: 8) {
+                        Image(systemName: item.bucket.symbol)
+                            .appFont(12, weight: .semibold)
+                            .foregroundStyle(item.bucket.color)
+                        Text(item.bucket.label)
+                            .appFont(13, weight: .semibold)
+                        Spacer(minLength: 4)
+                        Text(Fmt.money(item.total)).mono(13)
+                    }
+                    ProgressBar(pct: item.total / max(largest, 1) * 100,
+                                fill: item.bucket.color, height: 6)
+                }
+                .accessibilityElement(children: .combine)
+            }
+        }
+        .padding(.top, 14).padding(.bottom, 6)
     }
 }
 
@@ -398,6 +531,7 @@ struct Bubble: View {
     let fontSize: CGFloat
     let index: Int
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var floating = false
 
     var body: some View {
@@ -409,6 +543,10 @@ struct Bubble: View {
                                      startRadius: 0, endRadius: size * 0.7))
                 .shadow(color: bucket.glow, radius: 19)
 
+            // These three sizes are fractions of the circle's diameter, not
+            // Dynamic Type sizes — scaling them independently would push the
+            // label straight out of the bubble. `BubbleCloud` handles large
+            // type by swapping the whole cloud for `RankedSpendList` instead.
             VStack(spacing: 2) {
                 if size >= 66 {
                     Image(systemName: bucket.symbol)
@@ -429,6 +567,9 @@ struct Bubble: View {
         // cross-fades forever and the bubble shows a stale figure behind the
         // new one.
         .onAppear {
+            // Reduce Motion means this never starts. A perpetual bob is exactly
+            // the kind of idle movement the setting exists to switch off.
+            guard !reduceMotion else { return }
             withAnimation(
                 .easeInOut(duration: 5 + Double(index) * 0.4)
                     .repeatForever(autoreverses: true)

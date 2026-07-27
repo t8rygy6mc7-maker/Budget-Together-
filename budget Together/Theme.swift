@@ -114,8 +114,17 @@ extension View {
         modifier(CardBackground(border: border, radius: radius))
     }
 
+    /// Tabular figures for anything that has to line up in a column. Scales with
+    /// Dynamic Type like every other size in the app — see `Comfort.swift`.
+    ///
+    /// Never wraps. At large text sizes an unconstrained "$1,965" breaks after
+    /// the comma and renders as "$1,96" above a lone "5", which is not a
+    /// degraded reading of the number — it's a different number. Shrinking to
+    /// fit is the only acceptable failure mode for a figure.
     func mono(_ size: CGFloat, weight: Font.Weight = .bold) -> some View {
-        font(.system(size: size, weight: weight, design: .monospaced))
+        appFont(size, weight: weight, design: .monospaced)
+            .lineLimit(1)
+            .minimumScaleFactor(0.5)
     }
 
     /// Rounded field/chip background with a hairline border — used by text

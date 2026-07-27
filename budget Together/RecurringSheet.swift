@@ -19,7 +19,7 @@ struct RecurringSheet: View {
 
                 if model.recurring.isEmpty {
                     Text("Nothing repeating yet. Add rent, a subscription or a payday and it'll log itself each month.")
-                        .font(.system(size: 13))
+                        .appFont(13)
                         .foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true)
                         .padding(.vertical, 22)
@@ -34,8 +34,8 @@ struct RecurringSheet: View {
 
                 Button { isAdding = true } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "plus").font(.system(size: 15, weight: .bold))
-                        Text("Add a repeating item").font(.system(size: 15, weight: .bold))
+                        Image(systemName: "plus").appFont(15, weight: .bold)
+                        Text("Add a repeating item").appFont(15, weight: .bold)
                     }
                     .frame(maxWidth: .infinity).padding(15)
                     .foregroundStyle(Palette.tealInk)
@@ -45,7 +45,7 @@ struct RecurringSheet: View {
                 .padding(.top, 16)
 
                 Text("Each item posts on its day and reminds you two days before.")
-                    .font(.system(size: 12))
+                    .appFont(12)
                     .foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 12)
@@ -69,15 +69,15 @@ struct RecurringSheet: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Repeating").font(.system(size: 17, weight: .bold))
+                Text("Repeating").appFont(17, weight: .bold)
                 Text("^[\(model.recurring.count) item](inflect: true)")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .appFont(12.5, weight: .medium)
                     .foregroundStyle(Palette.sub)
             }
             Spacer()
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Palette.label9)
                     .frame(width: 30, height: 30)
                     .background(Palette.chip, in: Circle())
@@ -91,15 +91,15 @@ struct RecurringSheet: View {
         let bucket = Bucket.named(item.bucket)
         return HStack(spacing: 12) {
             Image(systemName: bucket.symbol)
-                .font(.system(size: 15, weight: .semibold))
+                .appFont(15, weight: .semibold)
                 .foregroundStyle(bucket.color)
                 .frame(width: 34, height: 34)
                 .background(bucket.tint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(item.place).font(.system(size: 14, weight: .semibold)).lineLimit(1)
+                Text(item.place).appFont(14, weight: .semibold).lineLimit(1)
                 Text(item.scheduleLabel)
-                    .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                    .appFont(11.5).foregroundStyle(Palette.sub)
             }
 
             Spacer(minLength: 4)
@@ -109,7 +109,7 @@ struct RecurringSheet: View {
                     .mono(13).foregroundStyle(item.kind.color)
                 if !item.isActive {
                     Text("Paused")
-                        .font(.system(size: 10, weight: .semibold))
+                        .appFont(10, weight: .semibold)
                         .foregroundStyle(Palette.muted)
                 }
             }
@@ -151,11 +151,11 @@ struct RecurringForm: View {
             VStack(alignment: .leading, spacing: 14) {
                 HStack {
                     Text(item == nil ? "New repeating item" : "Edit repeating item")
-                        .font(.system(size: 17, weight: .bold))
+                        .appFont(17, weight: .bold)
                     Spacer()
                     Button { dismiss() } label: {
                         Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .semibold))
+                            .appFont(14, weight: .semibold)
                             .foregroundStyle(Palette.label9)
                             .frame(width: 30, height: 30)
                             .background(Palette.chip, in: Circle())
@@ -169,7 +169,7 @@ struct RecurringForm: View {
                         let isSelected = kind == candidate
                         Button { kind = candidate } label: {
                             Text(candidate == .income ? "Money in" : "Bill")
-                                .font(.system(size: 13, weight: .semibold))
+                                .appFont(13, weight: .semibold)
                                 .frame(maxWidth: .infinity).padding(9)
                                 .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
                                 .fieldBackground(isSelected ? AnyShapeStyle(Palette.teal.opacity(0.14))
@@ -185,16 +185,16 @@ struct RecurringForm: View {
                           prompt: Text(kind == .income ? "e.g. Payroll" : "e.g. Rent")
                             .foregroundStyle(Palette.muted))
                     .textFieldStyle(.plain)
-                    .font(.system(size: 15, weight: .medium))
+                    .appFont(15, weight: .medium)
                     .padding(.horizontal, 14).padding(.vertical, 13)
                     .fieldBackground(radius: 13)
                     .accessibilityLabel("Name")
 
                 HStack(spacing: 2) {
-                    Text("$").mono(14, weight: .regular).foregroundStyle(Palette.muted)
+                    Text(Fmt.currencySymbol).mono(14, weight: .regular).foregroundStyle(Palette.muted)
                     TextField("0", text: $amount)
                         .keyboardType(.decimalPad)
-                        .font(.system(size: 15, weight: .bold, design: .monospaced))
+                        .appFont(15, weight: .bold, design: .monospaced)
                         .accessibilityLabel("Amount")
                 }
                 .padding(.horizontal, 14).padding(.vertical, 13)
@@ -203,7 +203,7 @@ struct RecurringForm: View {
                 // Capped at 28 so the day exists in every month, February included.
                 Stepper(value: $day, in: 1...Recurring.maxDay) {
                     HStack {
-                        Text("Day of month").font(.system(size: 14, weight: .medium))
+                        Text("Day of month").appFont(14, weight: .medium)
                         Spacer()
                         Text("\(day)").mono(14)
                     }
@@ -212,13 +212,13 @@ struct RecurringForm: View {
                 .fieldBackground(radius: 13)
 
                 Toggle(isOn: $isActive) {
-                    Text("Active").font(.system(size: 14, weight: .medium))
+                    Text("Active").appFont(14, weight: .medium)
                 }
                 .padding(.horizontal, 14).padding(.vertical, 8)
                 .fieldBackground(radius: 13)
 
                 VStack(alignment: .leading, spacing: 9) {
-                    Text("Paid by").font(.system(size: 12, weight: .semibold))
+                    Text("Paid by").appFont(12, weight: .semibold)
                         .foregroundStyle(Palette.sub)
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
                         ForEach(model.members) { member in
@@ -227,7 +227,7 @@ struct RecurringForm: View {
                                 HStack(spacing: 7) {
                                     MemberAvatar(member: member, size: 18)
                                     Text(member.name)
-                                        .font(.system(size: 13, weight: .semibold)).lineLimit(1)
+                                        .appFont(13, weight: .semibold).lineLimit(1)
                                 }
                                 .frame(maxWidth: .infinity).padding(9)
                                 .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
@@ -243,7 +243,7 @@ struct RecurringForm: View {
                 }
 
                 VStack(alignment: .leading, spacing: 9) {
-                    Text("Category").font(.system(size: 12, weight: .semibold))
+                    Text("Category").appFont(12, weight: .semibold)
                         .foregroundStyle(Palette.sub)
                     LazyVGrid(columns: Self.columns, spacing: 8) {
                         ForEach(Bucket.list(for: kind)) { candidate in
@@ -251,12 +251,12 @@ struct RecurringForm: View {
                             Button { bucket = candidate.id } label: {
                                 VStack(spacing: 5) {
                                     Image(systemName: candidate.symbol)
-                                        .font(.system(size: 15, weight: .semibold))
+                                        .appFont(15, weight: .semibold)
                                         .foregroundStyle(candidate.color)
                                         .frame(width: 30, height: 30)
                                         .background(candidate.color.opacity(0.18),
                                                     in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                                    Text(candidate.short).font(.system(size: 10.5, weight: .semibold))
+                                    Text(candidate.short).appFont(10.5, weight: .semibold)
                                 }
                                 .frame(maxWidth: .infinity).padding(9)
                                 .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
@@ -274,7 +274,7 @@ struct RecurringForm: View {
                 let canSave = draft != nil
                 Button(action: save) {
                     Text(item == nil ? "Add" : "Save changes")
-                        .font(.system(size: 15, weight: .bold))
+                        .appFont(15, weight: .bold)
                         .frame(maxWidth: .infinity).padding(15)
                         .foregroundStyle(canSave ? Palette.tealInk : Palette.muted)
                         .background {
@@ -290,7 +290,7 @@ struct RecurringForm: View {
                         dismiss()
                     } label: {
                         Text("Delete")
-                            .font(.system(size: 14, weight: .semibold))
+                            .appFont(14, weight: .semibold)
                             .foregroundStyle(Palette.over)
                             .frame(maxWidth: .infinity).padding(13)
                     }

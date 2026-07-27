@@ -18,7 +18,7 @@ struct ChallengesSheet: View {
                 header
 
                 if !model.activeChallenges.isEmpty {
-                    Text("Running now").font(.system(size: 13, weight: .semibold))
+                    Text("Running now").appFont(13, weight: .semibold)
                         .padding(.bottom, 10)
                     VStack(spacing: 8) {
                         ForEach(model.activeChallenges, id: \.challenge.id) { progress in
@@ -30,7 +30,7 @@ struct ChallengesSheet: View {
                     .padding(.bottom, 20)
                 }
 
-                Text("Start one").font(.system(size: 13, weight: .semibold))
+                Text("Start one").appFont(13, weight: .semibold)
                     .padding(.bottom, 10)
                 VStack(spacing: 8) {
                     ForEach(templates) { template in
@@ -44,7 +44,7 @@ struct ChallengesSheet: View {
                 }
 
                 if !model.finishedChallenges.isEmpty {
-                    Text("Finished").font(.system(size: 13, weight: .semibold))
+                    Text("Finished").appFont(13, weight: .semibold)
                         .padding(.top, 20).padding(.bottom, 10)
                     VStack(spacing: 8) {
                         ForEach(model.finishedChallenges, id: \.challenge.id) { progress in
@@ -69,15 +69,15 @@ struct ChallengesSheet: View {
     private var header: some View {
         HStack {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Challenges").font(.system(size: 17, weight: .bold))
+                Text("Challenges").appFont(17, weight: .bold)
                 Text("Everyone on the budget counts")
-                    .font(.system(size: 12.5, weight: .medium))
+                    .appFont(12.5, weight: .medium)
                     .foregroundStyle(Palette.sub)
             }
             Spacer()
             Button { dismiss() } label: {
                 Image(systemName: "xmark")
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(Palette.label9)
                     .frame(width: 30, height: 30)
                     .background(Palette.chip, in: Circle())
@@ -98,18 +98,18 @@ struct ChallengesSheet: View {
     private func templateRow(_ template: Challenge) -> some View {
         HStack(spacing: 12) {
             Image(systemName: template.kind == .noSpend ? "moon.zzz.fill" : "target")
-                .font(.system(size: 15, weight: .semibold))
+                .appFont(15, weight: .semibold)
                 .foregroundStyle(Palette.teal)
                 .frame(width: 34, height: 34)
                 .background(Palette.teal.opacity(0.16),
                             in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 2) {
-                Text(template.title).font(.system(size: 14, weight: .semibold))
-                Text(window(template)).font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                Text(template.title).appFont(14, weight: .semibold)
+                Text(window(template)).appFont(11.5).foregroundStyle(Palette.sub)
             }
             Spacer(minLength: 4)
             Text(isRunning(template) ? "Running" : "Start")
-                .font(.system(size: 12, weight: .bold))
+                .appFont(12, weight: .bold)
                 .foregroundStyle(isRunning(template) ? Palette.muted : Palette.teal)
         }
         .padding(.horizontal, 13).padding(.vertical, 11)
@@ -139,20 +139,20 @@ struct ChallengeCard: View {
         VStack(alignment: .leading, spacing: 9) {
             HStack(spacing: 10) {
                 Image(systemName: symbol)
-                    .font(.system(size: 14, weight: .semibold))
+                    .appFont(14, weight: .semibold)
                     .foregroundStyle(tint)
                     .frame(width: 32, height: 32)
                     .background(tint.opacity(0.16),
                                 in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(progress.challenge.title).font(.system(size: 14, weight: .semibold))
+                    Text(progress.challenge.title).appFont(14, weight: .semibold)
                     Text(progress.detail)
-                        .font(.system(size: 11.5)).foregroundStyle(Palette.sub)
+                        .appFont(11.5).foregroundStyle(Palette.sub)
                         .lineLimit(2)
                 }
                 Spacer(minLength: 4)
                 Text(progress.statusLabel)
-                    .font(.system(size: 10.5, weight: .bold))
+                    .appFont(10.5, weight: .bold)
                     .foregroundStyle(tint)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(tint.opacity(0.16), in: Capsule())
@@ -161,11 +161,11 @@ struct ChallengeCard: View {
             ProgressBar(pct: progress.fraction * 100, fill: tint, height: 6)
 
             HStack {
-                Text(daysLabel).font(.system(size: 11)).foregroundStyle(Palette.muted)
+                Text(daysLabel).appFont(11).foregroundStyle(Palette.muted)
                 Spacer()
                 if let onAbandon {
                     Button(progress.hasEnded ? "Clear" : "Give up", action: onAbandon)
-                        .font(.system(size: 11, weight: .semibold))
+                        .appFont(11, weight: .semibold)
                         .foregroundStyle(Palette.muted)
                 }
             }

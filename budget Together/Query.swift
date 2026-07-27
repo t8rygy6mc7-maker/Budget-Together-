@@ -97,7 +97,7 @@ struct RuleQueryEngine: QueryEngine {
             if case let .keyword(word)? = subject {
                 let spent = filter(scoped, by: subject).reduce(0) { $0 + $1.amount }
                 return QueryAnswer(
-                    headline: "No cap on \"\(word)\"",
+                    headline: "No limit on \"\(word)\"",
                     detail: "Caps are set per category, not per place. You've spent \(Fmt.money2(spent)) on it \(timeframe.label) — try asking about a category like Food & Drink.",
                     entries: filter(scoped, by: subject)
                 )
@@ -118,7 +118,7 @@ struct RuleQueryEngine: QueryEngine {
         let remaining = max(0, cap - spentThisMonth)
 
         guard cap > 0 else {
-            return QueryAnswer(headline: "No cap set for \(bucket.label)",
+            return QueryAnswer(headline: "No limit set for \(bucket.label)",
                                detail: "Set one on the Budget tab and I can answer this.",
                                entries: [])
         }
@@ -139,7 +139,7 @@ struct RuleQueryEngine: QueryEngine {
 
         return QueryAnswer(
             headline: Fmt.money2(remaining),
-            detail: "left on \(bucket.label) this month, from a \(Fmt.money(cap)) cap with \(Fmt.money2(spentThisMonth)) spent.",
+            detail: "left on \(bucket.label) this month, from a \(Fmt.money(cap)) limit with \(Fmt.money2(spentThisMonth)) spent.",
             entries: []
         )
     }
