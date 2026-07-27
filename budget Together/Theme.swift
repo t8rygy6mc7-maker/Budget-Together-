@@ -40,7 +40,8 @@ enum Appearance: String, CaseIterable, Identifiable {
 // against the view's trait collection. Call sites stay scheme-agnostic — there
 // is deliberately no `if colorScheme == .dark` anywhere in the view code.
 //
-// The dark values are the original "Budget App - Midnight" comp, untouched.
+// The dark values are the original "Budget App - Midnight" comp, except for
+// `sub` and `muted`, which were lifted to clear WCAG AA — see DESIGN-NOTES §4c.
 // The light values are derived from them: hue and saturation are preserved so a
 // bucket keeps its identity across schemes, and lightness is inverted into a
 // light-surface band and then darkened until it clears WCAG AA (4.5:1) against
@@ -59,9 +60,15 @@ enum Palette {
     static let field          = Color(dark: "141620", light: "EFF1F7")
     static let chip           = Color(dark: "232838", light: "EAEDF5")
 
+    // The neutral type ladder, listed least-prominent first. Every rung clears
+    // 4.5:1 for active text on the surface that governs it — `card` in dark,
+    // `screen` in light. `muted` sits right on that floor in dark, so it has no
+    // headroom left: a lighter surface, or a lighter `chip`, breaks it first.
+    // In dark the L* order matches the order below; in light `sub` and `label9`
+    // are swapped. See DESIGN-NOTES §4c.
     static let text     = Color(dark: "EDEFF7", light: "1B1F2B")
-    static let sub      = Color(dark: "7C8199", light: "5A6076")
-    static let muted    = Color(dark: "565C72", light: "686F84")
+    static let sub      = Color(dark: "8F94AC", light: "5A6076")
+    static let muted    = Color(dark: "82889F", light: "686F84")
     static let label9   = Color(dark: "9AA0B6", light: "646B82")
     static let chipText = Color(dark: "B7BDD0", light: "474D61")
 
