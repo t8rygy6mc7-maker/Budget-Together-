@@ -1015,6 +1015,9 @@ final class AppModel: ObservableObject {
         checkCapAlerts(snapshot.entries)
         // A tab that's just been hidden can't be left selected under the user.
         if !visibleTabs.contains(tab) { tab = .home }
+        // Categories are user data, so the options behind the Siri/Shortcuts
+        // category parameter move whenever they do.
+        BudgetShortcuts.refresh()
     }
 
     // MARK: - Progressive disclosure

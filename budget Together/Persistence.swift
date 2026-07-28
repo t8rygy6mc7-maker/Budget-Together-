@@ -490,6 +490,28 @@ final class BudgetStore {
                         rolloverEnabled: house.value(forKey: "rolloverEnabled") as? Bool ?? false)
     }
 
+    // MARK: Out-of-app writes
+
+    /// Loads just enough for a write that didn't come from the UI — a Siri
+    /// phrase, a Shortcut, a widget tap — and returns the snapshot behind it.
+    ///
+    /// These can all run with no `AppModel` in existence, so nothing has
+    /// populated `CategoryRegistry` and `Bucket.named(_:)` would answer
+    /// "Uncategorised" for every id. This is the one-line prelude that makes an
+    /// intent see the same categories the app does.
+    @discardableResult
+    func prepareForBackgroundWrite() -> Snapshot {
+        let snapshot = loadSnapshot()
+        CategoryRegistry.replace(with: snapshot.categories)
+        return snapshot
+    }
+
+    /// Tells whoever is observing that data changed. Remote-change
+    /// notifications cover other devices; a local write from an intent while
+    /// the app happens to be running needs saying explicitly, or the UI keeps
+    /// showing yesterday's totals.
+    func notifyChanged() { onChange?() }
+
     // MARK: Export
 
     /// One stored limit, for the full export. The UI only ever wants the caps
