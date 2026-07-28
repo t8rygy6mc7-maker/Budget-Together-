@@ -146,15 +146,34 @@ struct MoodTotal: Identifiable {
 
 /// Whether a category is a standing commitment or discretionary. Anti-budget
 /// mode leans on this: obligations are handled, the rest is yours to spend.
-enum Cadence { case fixed, variable }
+enum Cadence: String, CaseIterable, Identifiable {
+    case fixed, variable
 
-struct Bucket: Identifiable {
+    var id: String { rawValue }
+
+    var label: String { self == .fixed ? "A fixed bill" : "Varies" }
+
+    var detail: String {
+        switch self {
+        case .fixed:    "Same every month — rent, a subscription, a transfer to savings."
+        case .variable: "Changes month to month — the day-to-day spending."
+        }
+    }
+
+    /// Fixed categories are treated as already handled rather than as money
+    /// you're deciding about, which is the whole premise of the simplified view.
+    var symbol: String { self == .fixed ? "lock.fill" : "chart.line.uptrend.xyaxis" }
+}
+
+struct Bucket: Identifiable, Equatable {
     let id: String
     let label: String
     let symbol: String
-    /// Resolved once at startup — `Color(hex:)` runs a `Scanner`, which is far
-    /// too expensive to repeat on every SwiftUI body evaluation. The dynamic
-    /// pair is likewise built once; resolving it per scheme is a trait lookup.
+    /// Resolved when the category is built, not per read — `Color(hex:)` runs a
+    /// `Scanner`, which is far too expensive to repeat on every SwiftUI body
+    /// evaluation. The dynamic pair is likewise built once; resolving it per
+    /// scheme is a trait lookup. Categories are rebuilt only when the stored
+    /// set actually changes, so this stays a startup-ish cost.
     let color: Color
     let tint: Color
     /// Halo under a bubble. A bright bloom on a dark screen becomes a heavy
@@ -163,11 +182,28 @@ struct Bucket: Identifiable {
     /// First word of `label`, for tight spots like bubbles and category chips.
     let short: String
     let cadence: Cadence
+    /// Which direction this category belongs to. Spending and income are
+    /// separate lists that share no ids.
+    let kind: EntryKind
+    /// Hidden categories keep every entry ever filed under them and still
+    /// resolve for display — they just stop being offered as a choice.
+    let isHidden: Bool
+    /// Whether this shipped with the app. Built-ins can be edited like any
+    /// other, but they can also be reset, and their ids are the ones the
+    /// keyword categoriser and the demo data refer to.
+    let isBuiltIn: Bool
+    let sortOrder: Int
+
+    /// The dark-scheme fill and its light-scheme counterpart, kept together so
+    /// a category can be round-tripped through storage.
+    let hex: String
+    let lightHex: String
 
     /// `hex` is the dark-scheme fill, `light` its light-scheme counterpart at
     /// the same hue. Fill encodes identity in both schemes — see DESIGN-NOTES §1.
     init(id: String, label: String, hex: String, light: String,
-         symbol: String, cadence: Cadence = .variable) {
+         symbol: String, cadence: Cadence = .variable, kind: EntryKind = .expense,
+         isHidden: Bool = false, isBuiltIn: Bool = true, sortOrder: Int = 0) {
         let color = Color(dark: hex, light: light)
         self.glow = Color(dark: hex, darkAlpha: 0.65, light: light, lightAlpha: 0.26)
         self.id = id
@@ -177,48 +213,157 @@ struct Bucket: Identifiable {
         self.tint = color.opacity(0.16)
         self.short = String(label.split(separator: " ").first ?? "")
         self.cadence = cadence
+        self.kind = kind
+        self.isHidden = isHidden
+        self.isBuiltIn = isBuiltIn
+        self.sortOrder = sortOrder
+        self.hex = hex
+        self.lightHex = light
+    }
+
+    static func == (a: Bucket, b: Bucket) -> Bool {
+        a.id == b.id && a.label == b.label && a.symbol == b.symbol
+            && a.hex == b.hex && a.lightHex == b.lightHex && a.cadence == b.cadence
+            && a.kind == b.kind && a.isHidden == b.isHidden && a.sortOrder == b.sortOrder
     }
 }
 
+// MARK: Built-in seeds
+
 extension Bucket {
-    static let all: [Bucket] = [
-        Bucket(id: "housing",   label: "Housing",       hex: "E86A4A", light: "BC3918", symbol: "house.fill", cadence: .fixed),
-        Bucket(id: "food",      label: "Food & Drink",  hex: "3FB984", light: "2B7E5A", symbol: "fork.knife"),
-        Bucket(id: "transport", label: "Transport",     hex: "5B8DEF", light: "1147B0", symbol: "car.fill"),
-        Bucket(id: "fun",       label: "Fun & Misc",    hex: "D45C87", light: "A82C59", symbol: "party.popper.fill"),
-        Bucket(id: "shopping",  label: "Shopping",      hex: "E0C05B", light: "886D1A", symbol: "bag.fill"),
-        Bucket(id: "personal",  label: "Health",        hex: "F6A5C8", light: "790C3B", symbol: "heart.fill"),
-        Bucket(id: "subs",      label: "Subscriptions", hex: "C69BFF", light: "390085", symbol: "repeat", cadence: .fixed),
-        Bucket(id: "savings",   label: "Savings",       hex: "5EEAD4", light: "107F6E", symbol: "banknote.fill", cadence: .fixed),
+    /// The categories a new budget starts with. These are *seeds*, not the live
+    /// list: they're written into storage on first run and are editable from
+    /// then on, so nothing outside this array should assume they still say what
+    /// they say here. Their ids are permanent, though — every stored entry,
+    /// cap, recurring item and challenge refers to a category by id.
+    static let builtInExpense: [Bucket] = [
+        Bucket(id: "housing",   label: "Housing",       hex: "E86A4A", light: "BC3918", symbol: "house.fill", cadence: .fixed, sortOrder: 0),
+        Bucket(id: "food",      label: "Food & Drink",  hex: "3FB984", light: "2B7E5A", symbol: "fork.knife", sortOrder: 1),
+        Bucket(id: "transport", label: "Transport",     hex: "5B8DEF", light: "1147B0", symbol: "car.fill", sortOrder: 2),
+        Bucket(id: "fun",       label: "Fun & Misc",    hex: "D45C87", light: "A82C59", symbol: "party.popper.fill", sortOrder: 3),
+        Bucket(id: "shopping",  label: "Shopping",      hex: "E0C05B", light: "886D1A", symbol: "bag.fill", sortOrder: 4),
+        Bucket(id: "personal",  label: "Health",        hex: "F6A5C8", light: "790C3B", symbol: "heart.fill", sortOrder: 5),
+        Bucket(id: "subs",      label: "Subscriptions", hex: "C69BFF", light: "390085", symbol: "repeat", cadence: .fixed, sortOrder: 6),
+        Bucket(id: "savings",   label: "Savings",       hex: "5EEAD4", light: "107F6E", symbol: "banknote.fill", cadence: .fixed, sortOrder: 7),
     ]
+
+    /// Where money comes from. Separate from spending because these are never
+    /// budgeted, ranked or charted as spending.
+    static let builtInIncome: [Bucket] = [
+        Bucket(id: "salary",    label: "Salary",    hex: "3FB984", light: "2B7E5A", symbol: "briefcase.fill", kind: .income, sortOrder: 0),
+        Bucket(id: "dividends", label: "Dividends", hex: "5EEAD4", light: "107F6E", symbol: "chart.line.uptrend.xyaxis", kind: .income, sortOrder: 1),
+        Bucket(id: "gifts",     label: "Gifts",     hex: "F6A5C8", light: "790C3B", symbol: "gift.fill", kind: .income, sortOrder: 2),
+        Bucket(id: "refunds",   label: "Refunds",   hex: "5B8DEF", light: "1147B0", symbol: "arrow.uturn.backward", kind: .income, sortOrder: 3),
+        Bucket(id: "other-in",  label: "Other",     hex: "E0C05B", light: "886D1A", symbol: "plus.circle.fill", kind: .income, sortOrder: 4),
+    ]
+
+    static let builtInAll: [Bucket] = builtInExpense + builtInIncome
+
+    /// The seed a built-in should snap back to when reset.
+    static func builtIn(_ id: String) -> Bucket? { builtInAll.first { $0.id == id } }
+}
+
+// MARK: Live list
+
+extension Bucket {
+    /// Visible spending categories, in the user's order.
+    static var all: [Bucket] { CategoryRegistry.visible(.expense) }
+
+    /// Visible income categories, in the user's order.
+    static var income: [Bucket] { CategoryRegistry.visible(.income) }
 
     /// Discretionary categories — the ones anti-budget mode actually watches.
-    static let discretionary: [Bucket] = all.filter { $0.cadence == .variable }
+    static var discretionary: [Bucket] { all.filter { $0.cadence == .variable } }
 
-    /// Where money comes from. Separate from `all` because these are never
-    /// budgeted, ranked or charted as spending.
-    static let income: [Bucket] = [
-        Bucket(id: "salary",    label: "Salary",    hex: "3FB984", light: "2B7E5A", symbol: "briefcase.fill"),
-        Bucket(id: "dividends", label: "Dividends", hex: "5EEAD4", light: "107F6E", symbol: "chart.line.uptrend.xyaxis"),
-        Bucket(id: "gifts",     label: "Gifts",     hex: "F6A5C8", light: "790C3B", symbol: "gift.fill"),
-        Bucket(id: "refunds",   label: "Refunds",   hex: "5B8DEF", light: "1147B0", symbol: "arrow.uturn.backward"),
-        Bucket(id: "other-in",  label: "Other",     hex: "E0C05B", light: "886D1A", symbol: "plus.circle.fill"),
-    ]
+    static func list(for kind: EntryKind) -> [Bucket] { CategoryRegistry.visible(kind) }
 
-    static func list(for kind: EntryKind) -> [Bucket] { kind == .income ? income : all }
+    /// The pickable list, plus one extra id kept in it even if hidden.
+    ///
+    /// Editing an entry that was filed under a since-hidden category has to
+    /// still show that category selected. Without this the chip row wouldn't
+    /// contain it, the selection would fall back to the default, and saving
+    /// would silently refile the entry somewhere it never was.
+    static func list(for kind: EntryKind, including id: String?) -> [Bucket] {
+        let visible = list(for: kind)
+        guard let id, !visible.contains(where: { $0.id == id }),
+              let extra = CategoryRegistry.bucket(id), extra.kind == kind
+        else { return visible }
+        return visible + [extra]
+    }
 
-    private static let byID = Dictionary(uniqueKeysWithValues: (all + income).map { ($0.id, $0) })
+    /// Category for a stored id. Resolves hidden ones too — an entry filed under
+    /// a category that's since been hidden still has to render as itself rather
+    /// than silently becoming Housing. Falls back only for ids this build has
+    /// genuinely never seen, e.g. a category created on a newer build on the
+    /// partner's phone that hasn't synced yet.
+    static func named(_ id: String) -> Bucket { CategoryRegistry.bucket(id) ?? .unknown }
 
-    /// Bucket for a stored id, falling back to the first bucket so unknown ids
-    /// (from a newer build on the partner's phone) still render.
-    static func named(_ id: String) -> Bucket { byID[id] ?? all[0] }
+    /// Stand-in for an id with no category behind it.
+    static let unknown = Bucket(id: "", label: "Uncategorised", hex: "8892B0",
+                                light: "626E93", symbol: "questionmark.circle.fill",
+                                isBuiltIn: false)
 
-    /// Pre-selected category in the add sheet, per direction.
-    static let fallback = named("food")
-    static let incomeFallback = named("salary")
-
+    /// Pre-selected category in the add sheet, per direction. Falls back to the
+    /// first visible one, since the seeded default may have been hidden.
     static func fallback(for kind: EntryKind) -> Bucket {
-        kind == .income ? incomeFallback : fallback
+        let preferred = kind == .income ? "salary" : "food"
+        if let bucket = CategoryRegistry.bucket(preferred), !bucket.isHidden { return bucket }
+        return list(for: kind).first ?? .unknown
+    }
+
+    static var fallback: Bucket { fallback(for: .expense) }
+}
+
+// MARK: - Category registry
+//
+// Categories are user data now, so the list can't be a `static let` the way it
+// was. This holds the live set, rebuilt by `AppModel` whenever the store
+// changes, and every `Bucket.all` / `.named(_:)` call site reads through it
+// without knowing that happened.
+
+enum CategoryRegistry {
+    /// All categories including hidden ones, spending first.
+    /// `nonisolated(unsafe)` on the same basis as the shared formatters in
+    /// `Fmt`: every read is a SwiftUI body evaluation or an `AppModel` method,
+    /// and every write is `AppModel.reload()` — all of it on the main actor.
+    nonisolated(unsafe) private static var storage: [Bucket] =
+        Bucket.builtInExpense + Bucket.builtInIncome
+    nonisolated(unsafe) private static var index: [String: Bucket] =
+        Dictionary(uniqueKeysWithValues: (Bucket.builtInExpense + Bucket.builtInIncome)
+            .map { ($0.id, $0) })
+
+    static var allIncludingHidden: [Bucket] { storage }
+
+    static func visible(_ kind: EntryKind) -> [Bucket] {
+        storage.filter { $0.kind == kind && !$0.isHidden }
+    }
+
+    static func hidden(_ kind: EntryKind) -> [Bucket] {
+        storage.filter { $0.kind == kind && $0.isHidden }
+    }
+
+    static func bucket(_ id: String) -> Bucket? { index[id] }
+
+    /// Swaps in a freshly loaded set. Returns whether anything actually
+    /// changed, so the caller can skip republishing when it hasn't.
+    ///
+    /// An empty set falls back to the built-in seeds rather than emptying the
+    /// registry. That case is real: between discarding the sample budget and
+    /// creating a new one there's no household to load from, and a registry
+    /// with nothing in it would make `Bucket.named(_:)` answer "Uncategorised"
+    /// for every id in the app.
+    @discardableResult
+    static func replace(with categories: [Bucket]) -> Bool {
+        let incoming = categories.isEmpty
+            ? Bucket.builtInExpense + Bucket.builtInIncome
+            : categories
+        let sorted = incoming.sorted {
+            $0.kind == $1.kind ? $0.sortOrder < $1.sortOrder : $0.kind == .expense
+        }
+        guard sorted != storage else { return false }
+        storage = sorted
+        index = Dictionary(sorted.map { ($0.id, $0) }, uniquingKeysWith: { _, last in last })
+        return true
     }
 }
 

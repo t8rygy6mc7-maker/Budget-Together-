@@ -18,6 +18,7 @@ enum CDModel {
     static let challenge = "CDChallenge"
     static let reaction  = "CDReaction"
     static let monthFlag = "CDMonthFlag"
+    static let category  = "CDCategory"
 
     static func make() -> NSManagedObjectModel {
         let model = NSManagedObjectModel()
@@ -31,6 +32,7 @@ enum CDModel {
         let challenge = entity(named: CDModel.challenge)
         let reaction  = entity(named: CDModel.reaction)
         let monthFlag = entity(named: CDModel.monthFlag)
+        let category  = entity(named: CDModel.category)
 
         household.properties = [
             attr("id",        .stringAttributeType),
@@ -76,6 +78,22 @@ enum CDModel {
             attr("isUnusual", .booleanAttributeType),
             attr("reason",    .stringAttributeType),
             attr("updatedAt", .dateAttributeType),
+        ]
+        // The spending and income categories, which are user data rather than a
+        // fixed list. `id` is permanent once written — entries, caps, recurring
+        // items and challenges all refer to a category by it.
+        category.properties = [
+            attr("id",         .stringAttributeType),
+            attr("label",      .stringAttributeType),
+            attr("symbol",     .stringAttributeType),    // SF Symbol name
+            attr("hex",        .stringAttributeType),    // dark-scheme fill
+            attr("lightHex",   .stringAttributeType),    // light-scheme counterpart
+            attr("cadence",    .stringAttributeType),    // Cadence
+            attr("kind",       .stringAttributeType),    // EntryKind
+            attr("sortOrder",  .integer64AttributeType),
+            attr("isHidden",   .booleanAttributeType),
+            attr("isBuiltIn",  .booleanAttributeType),
+            attr("createdAt",  .dateAttributeType),
         ]
         cap.properties = [
             attr("bucket",    .stringAttributeType),
@@ -144,8 +162,11 @@ enum CDModel {
         // household <->> monthFlags
         let (hToF, fToH) = relationship(name: "monthFlags", inverseName: "household",
                                         from: household, to: monthFlag, toMany: true)
+        // household <->> categories
+        let (hToCat, catToH) = relationship(name: "categories", inverseName: "household",
+                                            from: household, to: category, toMany: true)
 
-        household.properties += [hToE, hToC, hToM, hToR, hToL, hToCh, hToRe, hToF]
+        household.properties += [hToE, hToC, hToM, hToR, hToL, hToCh, hToRe, hToF, hToCat]
         entry.properties     += [eToH]
         cap.properties       += [cToH]
         member.properties    += [mToH]
@@ -154,9 +175,10 @@ enum CDModel {
         challenge.properties += [chToH]
         reaction.properties  += [reToH]
         monthFlag.properties += [fToH]
+        category.properties  += [catToH]
 
         model.entities = [household, entry, cap, member, recurring,
-                          loan, challenge, reaction, monthFlag]
+                          loan, challenge, reaction, monthFlag, category]
         return model
     }
 
@@ -396,6 +418,8 @@ final class BudgetStore {
         var recurring: [Recurring] = []
         var loans: [Loan] = []
         var challenges: [Challenge] = []
+        /// Every category including hidden ones, spending first, in user order.
+        var categories: [Bucket] = []
         /// Entry id → everyone's reactions to it.
         var reactions: [String: [Reaction]] = [:]
         /// "yyyy-MM" → flag, for months marked unrepresentative.
@@ -437,10 +461,128 @@ final class BudgetStore {
                         recurring: loadRecurring(for: house),
                         loans: loadLoans(for: house),
                         challenges: loadChallenges(for: house),
+                        categories: loadCategories(for: house),
                         reactions: loadReactions(for: house),
                         monthFlags: loadMonthFlags(for: house),
                         isSample: house.value(forKey: "isSample") as? Bool ?? false,
                         rolloverEnabled: house.value(forKey: "rolloverEnabled") as? Bool ?? false)
+    }
+
+    // MARK: Categories
+
+    /// Every category, spending first then income, each in its own sort order.
+    /// Seeds the built-ins on first read, which doubles as the migration for
+    /// budgets created before categories were user data — their entries already
+    /// use the built-in ids, so seeding is all that's needed to make them
+    /// resolve again.
+    func loadCategories(for house: NSManagedObject) -> [Bucket] {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.category)
+        request.predicate = NSPredicate(format: "household == %@", house)
+        var rows = (try? viewContext.fetch(request)) ?? []
+
+        if rows.isEmpty {
+            seedBuiltInCategories(in: house)
+            rows = (try? viewContext.fetch(request)) ?? []
+        }
+
+        return rows.compactMap(category(from:)).sorted {
+            $0.kind == $1.kind ? $0.sortOrder < $1.sortOrder : $0.kind == .expense
+        }
+    }
+
+    private func category(from obj: NSManagedObject) -> Bucket? {
+        guard let id = obj.value(forKey: "id") as? String, !id.isEmpty else { return nil }
+        return Bucket(
+            id: id,
+            label: obj.value(forKey: "label") as? String ?? id,
+            hex: obj.value(forKey: "hex") as? String ?? "8892B0",
+            light: obj.value(forKey: "lightHex") as? String ?? "626E93",
+            symbol: obj.value(forKey: "symbol") as? String ?? "questionmark.circle.fill",
+            cadence: Cadence(rawValue: obj.value(forKey: "cadence") as? String ?? "") ?? .variable,
+            kind: EntryKind(rawValue: obj.value(forKey: "kind") as? String ?? "") ?? .expense,
+            isHidden: obj.value(forKey: "isHidden") as? Bool ?? false,
+            isBuiltIn: obj.value(forKey: "isBuiltIn") as? Bool ?? false,
+            sortOrder: Int(obj.value(forKey: "sortOrder") as? Int64 ?? 0)
+        )
+    }
+
+    private func seedBuiltInCategories(in house: NSManagedObject) {
+        for seed in Bucket.builtInAll { insertCategory(seed, in: house) }
+        save()
+    }
+
+    @discardableResult
+    private func insertCategory(_ bucket: Bucket, in house: NSManagedObject) -> NSManagedObject {
+        let obj = NSManagedObject(entity: entity(CDModel.category), insertInto: viewContext)
+        obj.setValue(bucket.id, forKey: "id")
+        obj.setValue(Date(), forKey: "createdAt")
+        obj.setValue(house, forKey: "household")
+        assign(obj, toStoreOf: house)
+        write(bucket, to: obj)
+        return obj
+    }
+
+    private func write(_ bucket: Bucket, to obj: NSManagedObject) {
+        obj.setValue(bucket.label, forKey: "label")
+        obj.setValue(bucket.symbol, forKey: "symbol")
+        obj.setValue(bucket.hex, forKey: "hex")
+        obj.setValue(bucket.lightHex, forKey: "lightHex")
+        obj.setValue(bucket.cadence.rawValue, forKey: "cadence")
+        obj.setValue(bucket.kind.rawValue, forKey: "kind")
+        obj.setValue(Int64(bucket.sortOrder), forKey: "sortOrder")
+        obj.setValue(bucket.isHidden, forKey: "isHidden")
+        obj.setValue(bucket.isBuiltIn, forKey: "isBuiltIn")
+    }
+
+    /// Inserts or updates by id.
+    func saveCategory(_ bucket: Bucket) {
+        guard let house = currentHousehold() else { return }
+        if let existing = categoryObject(id: bucket.id) {
+            write(bucket, to: existing)
+        } else {
+            insertCategory(bucket, in: house)
+        }
+        save()
+    }
+
+    /// Writes a whole reordering in one transaction.
+    func saveCategoryOrder(_ buckets: [Bucket]) {
+        for bucket in buckets {
+            categoryObject(id: bucket.id)?
+                .setValue(Int64(bucket.sortOrder), forKey: "sortOrder")
+        }
+        save()
+    }
+
+    func deleteCategory(id: String) {
+        guard let obj = categoryObject(id: id) else { return }
+        viewContext.delete(obj)
+        save()
+    }
+
+    /// How many stored things point at a category. Deletion is only offered
+    /// when this is zero everywhere — a category with history behind it gets
+    /// hidden instead, so the ledger never develops holes.
+    func references(categoryID id: String) -> (entries: Int, caps: Int,
+                                               recurring: Int, challenges: Int) {
+        func count(_ entityName: String, _ predicate: NSPredicate) -> Int {
+            let request = NSFetchRequest<NSManagedObject>(entityName: entityName)
+            request.predicate = predicate
+            return (try? viewContext.count(for: request)) ?? 0
+        }
+        return (
+            entries: count(CDModel.entry, NSPredicate(format: "bucket == %@", id)),
+            caps: count(CDModel.cap, NSPredicate(format: "bucket == %@ AND amount > 0", id)),
+            recurring: count(CDModel.recurring, NSPredicate(format: "bucket == %@", id)),
+            challenges: count(CDModel.challenge, NSPredicate(format: "bucket == %@", id))
+        )
+    }
+
+    private func categoryObject(id: String) -> NSManagedObject? {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.category)
+        request.predicate = NSPredicate(format: "id == %@", id)
+        request.fetchLimit = 1
+        return (try? viewContext.fetch(request))?.first
     }
 
     // MARK: Reactions

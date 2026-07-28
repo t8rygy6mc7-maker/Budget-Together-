@@ -185,7 +185,7 @@ struct RuleQueryEngine: QueryEngine {
     /// A category name if one is mentioned, otherwise a place keyword — "coffee"
     /// isn't a category, but it is something the ledger can be searched for.
     private func parseSubject(_ text: String, context: QueryContext) -> Subject? {
-        for bucket in Bucket.all + Bucket.income {
+        for bucket in CategoryRegistry.allIncludingHidden {
             if text.contains(bucket.label.lowercased()) || text.contains(bucket.short.lowercased()) {
                 return .bucket(bucket)
             }

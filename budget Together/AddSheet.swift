@@ -86,7 +86,7 @@ struct AddSheet: View {
         // Switching direction invalidates the category, since the two lists
         // share no ids.
         .onChange(of: kind) { _, new in
-            if !Bucket.list(for: new).contains(where: { $0.id == bucket }) {
+            if !Bucket.list(for: new, including: editing?.bucket).contains(where: { $0.id == bucket }) {
                 bucket = Bucket.fallback(for: new).id
             }
             autoCategorize()
@@ -438,7 +438,7 @@ struct AddSheet: View {
                 Spacer(minLength: 0)
             }
             LazyVGrid(columns: Self.columns, spacing: 8) {
-                ForEach(Bucket.list(for: kind)) { categoryChip($0) }
+                ForEach(Bucket.list(for: kind, including: editing?.bucket)) { categoryChip($0) }
             }
         }
     }

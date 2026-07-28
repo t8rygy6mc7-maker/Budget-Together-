@@ -199,7 +199,7 @@ struct SuggestedPlanCard: View {
 
             if expanded {
                 VStack(spacing: 7) {
-                    ForEach(Bucket.all.filter { plan[$0.id] != nil }) { bucket in
+                    ForEach(model.expenseCategories.filter { plan[$0.id] != nil }) { bucket in
                         HStack(spacing: 9) {
                             Image(systemName: bucket.symbol)
                                 .appFont(11, weight: .semibold)

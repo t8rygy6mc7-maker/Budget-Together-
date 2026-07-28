@@ -141,7 +141,7 @@ struct PeopleSheet: View {
                     .padding(.top, 2)
 
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
-                    ForEach(Bucket.all) { bucket in
+                    ForEach(model.expenseCategories) { bucket in
                         let muted = mutedBuckets.contains(bucket.id)
                         Button {
                             Haptics.selected()
@@ -172,7 +172,7 @@ struct PeopleSheet: View {
         .padding(.top, 22)
         .onAppear {
             alertsOn = Notifier.shared.limitAlertsEnabled
-            mutedBuckets = Set(Bucket.all.map(\.id).filter(Notifier.shared.isMuted))
+            mutedBuckets = Set(model.expenseCategories.map(\.id).filter(Notifier.shared.isMuted))
         }
     }
 

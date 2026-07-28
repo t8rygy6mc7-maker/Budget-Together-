@@ -73,6 +73,10 @@ final class AppModel: ObservableObject {
     @Published private(set) var suggestions: [Suggestion] = []
     /// Repeating charges found in the ledger.
     @Published private(set) var subscriptions: [DetectedSubscription] = []
+    /// Every category including hidden ones, spending first, in user order.
+    /// The published copy exists so views re-render; the actual lookups still
+    /// go through `Bucket.named(_:)` and the registry behind it.
+    @Published private(set) var categories: [Bucket] = []
     /// Entry id → everyone's reactions to it.
     @Published private(set) var reactions: [String: [Reaction]] = [:]
     /// Months the household has marked unrepresentative, keyed "yyyy-MM".
@@ -316,8 +320,10 @@ final class AppModel: ObservableObject {
     /// Standing commitments — rent, subscriptions, savings transfers. In
     /// anti-budget mode these are treated as handled, not as decisions.
     var committed: Double {
-        Bucket.all
-            .filter { $0.cadence == .fixed }
+        // Hidden included, to stay consistent with `capTotal`: hiding a
+        // category doesn't clear its limit, so its money is still spoken for.
+        CategoryRegistry.allIncludingHidden
+            .filter { $0.kind == .expense && $0.cadence == .fixed }
             .reduce(0) { $0 + (caps[$1.id] ?? 0) }
     }
 
@@ -507,13 +513,19 @@ final class AppModel: ObservableObject {
         }
         let span = Double(max(months.count, 1))
 
-        return byBucket.compactMapValues { total in
-            let monthly = total / span * 1.1        // 10% headroom
-            guard monthly >= 1 else { return nil }
-            // Round to a figure someone would actually say out loud.
-            let step: Double = monthly < 100 ? 10 : (monthly < 500 ? 25 : 50)
-            return (monthly / step).rounded(.up) * step
-        }
+        // Only propose limits for categories that are actually on offer —
+        // suggesting one for a category the user has hidden would put a number
+        // on the plan with no row anywhere to change it.
+        let offerable = Set(expenseCategories.map(\.id))
+        return byBucket
+            .filter { offerable.contains($0.key) }
+            .compactMapValues { total in
+                let monthly = total / span * 1.1        // 10% headroom
+                guard monthly >= 1 else { return nil }
+                // Round to a figure someone would actually say out loud.
+                let step: Double = monthly < 100 ? 10 : (monthly < 500 ? 25 : 50)
+                return (monthly / step).rounded(.up) * step
+            }
     }
 
     /// Writes a whole plan at once, for the suggestion flow and onboarding.
@@ -580,6 +592,8 @@ final class AppModel: ObservableObject {
         case capChanged(bucket: String, month: String, previous: Double)
         case capsMoved(from: String, to: String, month: String,
                        fromPrevious: Double, toPrevious: Double)
+        case categoryChanged(before: Bucket)
+        case categoryDeleted(Bucket)
     }
 
     private var pendingUndo: UndoableChange?
@@ -645,6 +659,14 @@ final class AppModel: ObservableObject {
         case let .capsMoved(from, to, month, fromPrevious, toPrevious):
             store.setCap(bucket: from, month: month, amount: fromPrevious)
             store.setCap(bucket: to, month: month, amount: toPrevious)
+
+        // Both restore by id, so an edit and a delete are the same write —
+        // `saveCategory` inserts when the row is gone and updates when it isn't.
+        case let .categoryChanged(before):
+            store.saveCategory(before)
+
+        case let .categoryDeleted(bucket):
+            store.saveCategory(bucket)
         }
         Haptics.undone()
         dismissUndo()
@@ -657,6 +679,140 @@ final class AppModel: ObservableObject {
                        memberID: entry.memberID, kind: entry.kind, mood: entry.mood,
                        note: entry.note, isPrivate: entry.isPrivate,
                        createdAt: entry.createdAt)
+    }
+
+    // MARK: - Categories
+    //
+    // Categories are the household's own list, not a fixed eight. Built-ins are
+    // seeded rows like any other and can be renamed, recoloured, re-iconed,
+    // reordered, hidden and reset — the one thing that never changes is a
+    // category's id, because every entry, cap, recurring item and challenge in
+    // the ledger points at it.
+
+    func categories(for kind: EntryKind, includeHidden: Bool = false) -> [Bucket] {
+        categories.filter { $0.kind == kind && (includeHidden || !$0.isHidden) }
+    }
+
+    var expenseCategories: [Bucket] { categories(for: .expense) }
+    var incomeCategories: [Bucket] { categories(for: .income) }
+    func hiddenCategories(for kind: EntryKind) -> [Bucket] {
+        categories.filter { $0.kind == kind && $0.isHidden }
+    }
+
+    /// A blank category ready to be filled in, pre-styled so it looks like part
+    /// of the set rather than a placeholder the user has to decorate.
+    func draftCategory(for kind: EntryKind) -> Bucket {
+        let colour = CategoryColor.leastUsed(among: categories.filter { $0.kind == kind })
+        let next = (categories.filter { $0.kind == kind }.map(\.sortOrder).max() ?? -1) + 1
+        return Bucket(id: "cat-" + UUID().uuidString, label: "", hex: colour.hex,
+                      light: colour.light,
+                      symbol: kind == .income ? "banknote.fill" : "tag.fill",
+                      cadence: .variable, kind: kind, isBuiltIn: false, sortOrder: next)
+    }
+
+    /// Creates or updates. Rejects an empty name rather than storing one, since
+    /// a nameless category is unpickable everywhere it appears.
+    func saveCategory(_ bucket: Bucket) {
+        let trimmed = bucket.label.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        let existing = categories.first { $0.id == bucket.id }
+        if let existing {
+            offerUndo(.categoryChanged(before: existing),
+                      message: "Updated \(existing.label).")
+        }
+        store.saveCategory(Bucket(id: bucket.id, label: trimmed, hex: bucket.hex,
+                                  light: bucket.lightHex, symbol: bucket.symbol,
+                                  cadence: bucket.cadence, kind: bucket.kind,
+                                  isHidden: bucket.isHidden, isBuiltIn: bucket.isBuiltIn,
+                                  sortOrder: bucket.sortOrder))
+        Haptics.saved()
+        reload()
+    }
+
+    /// Hiding is the safe counterpart to deleting: the category stops being
+    /// offered anywhere, but every entry ever filed under it keeps rendering as
+    /// itself and keeps counting toward the month's totals.
+    /// Whether hiding this one would leave its direction with nothing to pick.
+    /// The add sheet has to be able to offer *something*, so the last visible
+    /// category in a list stays — the same reason the last person on the budget
+    /// can't be removed.
+    func canHideCategory(_ id: String) -> Bool {
+        guard let bucket = categories.first(where: { $0.id == id }) else { return false }
+        return bucket.isHidden || categories(for: bucket.kind).count > 1
+    }
+
+    func setCategoryHidden(_ hidden: Bool, id: String) {
+        guard let bucket = categories.first(where: { $0.id == id }),
+              !hidden || canHideCategory(id) else { return }
+        offerUndo(.categoryChanged(before: bucket),
+                  message: hidden ? "Hid \(bucket.label)." : "\(bucket.label) is back.")
+        store.saveCategory(Bucket(id: bucket.id, label: bucket.label, hex: bucket.hex,
+                                  light: bucket.lightHex, symbol: bucket.symbol,
+                                  cadence: bucket.cadence, kind: bucket.kind,
+                                  isHidden: hidden, isBuiltIn: bucket.isBuiltIn,
+                                  sortOrder: bucket.sortOrder))
+        Haptics.selected()
+        reload()
+    }
+
+    /// What still points at a category, and therefore whether deleting it would
+    /// leave holes in the ledger.
+    func categoryUsage(_ id: String) -> (entries: Int, caps: Int,
+                                         recurring: Int, challenges: Int) {
+        store.references(categoryID: id)
+    }
+
+    /// Whether this category can be removed outright rather than hidden. A
+    /// built-in never can — resetting it is the equivalent, and its id may be
+    /// referenced by the keyword categoriser.
+    func canDeleteCategory(_ id: String) -> Bool {
+        guard let bucket = categories.first(where: { $0.id == id }), !bucket.isBuiltIn,
+              // Deleting the last visible one would leave nothing to file
+              // against, exactly as hiding it would.
+              bucket.isHidden || categories(for: bucket.kind).count > 1
+        else { return false }
+        let usage = categoryUsage(id)
+        return usage.entries == 0 && usage.caps == 0
+            && usage.recurring == 0 && usage.challenges == 0
+    }
+
+    func deleteCategory(_ id: String) {
+        guard canDeleteCategory(id),
+              let bucket = categories.first(where: { $0.id == id }) else { return }
+        offerUndo(.categoryDeleted(bucket), message: "Deleted \(bucket.label).")
+        store.deleteCategory(id: id)
+        reload()
+    }
+
+    /// Puts a built-in back to the label, colour, icon and cadence it shipped
+    /// with. Its position and whether it's hidden are left alone — those are
+    /// arrangement, not identity.
+    func resetCategory(_ id: String) {
+        guard let current = categories.first(where: { $0.id == id }),
+              let seed = Bucket.builtIn(id) else { return }
+        offerUndo(.categoryChanged(before: current), message: "Reset \(current.label).")
+        store.saveCategory(Bucket(id: seed.id, label: seed.label, hex: seed.hex,
+                                  light: seed.lightHex, symbol: seed.symbol,
+                                  cadence: seed.cadence, kind: seed.kind,
+                                  isHidden: current.isHidden, isBuiltIn: true,
+                                  sortOrder: current.sortOrder))
+        Haptics.saved()
+        reload()
+    }
+
+    /// Applies a drag reorder within one direction's list.
+    func moveCategories(for kind: EntryKind, from source: IndexSet, to destination: Int) {
+        var visible = categories(for: kind)
+        visible.move(fromOffsets: source, toOffset: destination)
+        let renumbered = visible.enumerated().map { index, bucket in
+            Bucket(id: bucket.id, label: bucket.label, hex: bucket.hex,
+                   light: bucket.lightHex, symbol: bucket.symbol, cadence: bucket.cadence,
+                   kind: bucket.kind, isHidden: bucket.isHidden,
+                   isBuiltIn: bucket.isBuiltIn, sortOrder: index)
+        }
+        store.saveCategoryOrder(renumbered)
+        Haptics.selected()
+        reload()
     }
 
     // MARK: - Shortcuts
@@ -768,6 +924,11 @@ final class AppModel: ObservableObject {
         }
 
         let snapshot = store.loadSnapshot(capsFor: monthKey)
+        // The registry has to be current *before* anything below reads a
+        // category — the digest classifies spending by cadence, and the wins
+        // and insights that follow it both resolve buckets by id.
+        CategoryRegistry.replace(with: snapshot.categories)
+        categories = snapshot.categories
         caps = snapshot.caps
         recurring = snapshot.recurring
         loans = snapshot.loans
@@ -1047,8 +1208,12 @@ final class AppModel: ObservableObject {
             }
         }
 
-        digest.ranked = rank(Bucket.all, by: digest.totals)
-        digest.incomeRanked = rank(Bucket.income, by: incomeTotals)
+        // Ranked from *every* category, hidden included. A hidden category's
+        // past spending still counts toward `spent`, so leaving it out of the
+        // breakdown would show a total that its own parts don't add up to.
+        let everything = CategoryRegistry.allIncludingHidden
+        digest.ranked = rank(everything.filter { $0.kind == .expense }, by: digest.totals)
+        digest.incomeRanked = rank(everything.filter { $0.kind == .income }, by: incomeTotals)
         digest.byMood = moodTotals
             .map { MoodTotal(mood: $0.key, total: $0.value.amount, count: $0.value.count) }
             .sorted { $0.total > $1.total }

@@ -5,6 +5,7 @@ struct BudgetView: View {
     @State private var showRecurring = false
     @State private var showLoans = false
     @State private var markingUnusual = false
+    @State private var showCategories = false
 
     var body: some View {
         let totals = model.month.totals
@@ -71,14 +72,81 @@ struct BudgetView: View {
                 .padding(.bottom, 16)
 
             VStack(spacing: 9) {
-                ForEach(Bucket.all) { bucket in
+                ForEach(model.expenseCategories) { bucket in
                     BudgetRow(bucket: bucket, actual: totals[bucket.id] ?? 0)
                 }
             }
+
+            categoriesCard.padding(.top, 12)
+            strandedHiddenRows(totals: totals)
         }
         .sheet(isPresented: $showRecurring) { RecurringSheet().environmentObject(model) }
         .sheet(isPresented: $showLoans) { LoansSheet().environmentObject(model) }
         .sheet(isPresented: $markingUnusual) { UnusualMonthSheet().environmentObject(model) }
+        .sheet(isPresented: $showCategories) { CategoriesSheet().environmentObject(model) }
+    }
+
+    /// Way into the category editor.
+    private var categoriesCard: some View {
+        Button { showCategories = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "square.grid.2x2.fill")
+                    .appFont(15, weight: .semibold)
+                    .foregroundStyle(Palette.teal)
+                    .frame(width: 34, height: 34)
+                    .background(Palette.teal.opacity(0.16),
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Categories").appFont(14, weight: .semibold)
+                    Text("Rename them, recolour them, add your own")
+                        .appFont(11.5).foregroundStyle(Palette.sub)
+                        .lineLimit(2).multilineTextAlignment(.leading)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .appFont(12, weight: .semibold)
+                    .foregroundStyle(Palette.muted)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .card(border: Palette.cardBorderSoft, radius: 15)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Hidden categories that still hold a limit or this month's spending.
+    ///
+    /// Hiding doesn't touch the arithmetic — the limit still counts toward the
+    /// planned total and the spending still counts toward what's gone. If these
+    /// rows weren't surfaced somewhere, that money would be inside the totals
+    /// with no row on the screen that accounts for it, which is the sort of
+    /// discrepancy that makes people stop trusting the whole app.
+    @ViewBuilder
+    private func strandedHiddenRows(totals: [String: Double]) -> some View {
+        let stranded = model.hiddenCategories(for: .expense)
+            .filter { (model.caps[$0.id] ?? 0) > 0 || (totals[$0.id] ?? 0) > 0 }
+        if !stranded.isEmpty {
+            VStack(alignment: .leading, spacing: 9) {
+                HStack(spacing: 6) {
+                    Image(systemName: "eye.slash.fill")
+                        .appFont(10, weight: .semibold)
+                    Text("Hidden, but still counting")
+                        .appFont(12, weight: .semibold)
+                }
+                .foregroundStyle(Palette.sub)
+
+                Text("These aren't offered when you log something, but they still "
+                   + "hold a limit or this month's spending, so they're still part "
+                   + "of the totals above.")
+                    .appFont(11.5)
+                    .foregroundStyle(Palette.muted)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                ForEach(stranded) { bucket in
+                    BudgetRow(bucket: bucket, actual: totals[bucket.id] ?? 0)
+                }
+            }
+            .padding(.top, 22)
+        }
     }
 
     /// Carrying an underspend forward. Off by default, because it changes what

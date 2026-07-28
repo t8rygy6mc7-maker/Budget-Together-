@@ -246,7 +246,7 @@ struct RecurringForm: View {
                     Text("Category").appFont(12, weight: .semibold)
                         .foregroundStyle(Palette.sub)
                     LazyVGrid(columns: Self.columns, spacing: 8) {
-                        ForEach(Bucket.list(for: kind)) { candidate in
+                        ForEach(Bucket.list(for: kind, including: item?.bucket)) { candidate in
                             let isSelected = bucket == candidate.id
                             Button { bucket = candidate.id } label: {
                                 VStack(spacing: 5) {
@@ -306,7 +306,7 @@ struct RecurringForm: View {
         .tint(Palette.teal)
         .onAppear(perform: load)
         .onChange(of: kind) { _, new in
-            if !Bucket.list(for: new).contains(where: { $0.id == bucket }) {
+            if !Bucket.list(for: new, including: item?.bucket).contains(where: { $0.id == bucket }) {
                 bucket = Bucket.fallback(for: new).id
             }
         }
