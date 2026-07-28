@@ -390,23 +390,173 @@ Accent colours sit at 4.08–4.67 against `chip` (`#EAEDF5`), just under AA. In
 practice accents are never drawn on chip — `chipText` is — but if that changes,
 lighten `chip` or darken the accents.
 
-## 5. IA and flow gaps
+## 5. IA and flow
 
-- **No month navigation.** Everything is hardcoded to the current month.
-  `MonthDigest.previousSpent` means the data path is half built.
-- **Home and Stats answer the same question.** Both are "where did the money
-  go". If Home becomes "are we OK, and what can I spend today" and Stats stays
-  retrospective, the four tabs earn their space. Folding Budget into Stats
-  gets to three tabs.
-- **Seeded caps are almost certainly wrong.** New households get
-  `AppModel.defaultCaps` ($1,300 housing, $500 food). Every pace cue is
-  meaningless until those are real, so onboarding should ask for a monthly
-  total and split it.
-- **`LogView` has no filter, search, or edit** — only delete. Per-person
-  filtering is the obvious ask in a shared app.
-- **The "together" half is thin.** An 8px dot per entry and one split bar. No
-  shared-vs-personal distinction, no settle-up, no signal when a partner logs
-  something. That's the differentiator, and it's unbuilt.
+Rewritten 27 July 2026, after the usability pass (`4c6bada`…`0671715`). Most of
+what this section listed as missing is now built, and one item was resolved by
+deciding the opposite of what it recommended. What follows is what shipped, the
+mechanics that shipped without ever being written down, and what's still open.
+
+### Settled
+
+**Month navigation.** `MonthStepper` (`RootView.swift:134`) sits in the header of
+all four tabs and drives a single selection for the whole app —
+`AppModel.selectedMonth`, stepped by `stepMonth(_:)` and reset by
+`goToCurrentMonth()`. Forward stops at the current month, since there's nothing
+to show past it; tapping the label jumps back. `isCurrentMonth` turned out to be
+the load-bearing part: pace, safe-daily, days-left, rollover and the weekly
+framing all suppress themselves on a closed month rather than reporting a figure
+that can't mean anything. `MonthDigest.previousSpent` is now wired through to
+`monthOverMonth`.
+
+**Onboarding asks for nothing, and seeds no caps.** This resolved the opposite
+way from the recommendation it replaces. `createHousehold` takes an *optional*
+`monthlyTotal`, and with nothing supplied the household starts with **no limits
+at all** (`AppModel.swift:156`); the field is folded behind "Set a monthly figure
+now (optional)" on `PairingView`. Asking for a number on the first screen makes
+people commit before they've seen anything, and the ones who don't know their
+monthly total — the ones with most to gain — are exactly the ones it turns away.
+
+That makes *no plan* a normal starting state rather than a broken one, which has
+consequences everywhere: `hasPlan` guards every cap-derived figure, anti-budget
+mode is unavailable without one, and Home omits the "Left to spend / A day from
+here" row rather than announcing `$0` to someone who simply hasn't set anything
+yet.
+
+The number is earned later instead. `suggestedPlan()` derives a per-category
+limit from real spending — each category's own monthly average plus 10% headroom,
+rounded to a figure someone would say out loud ($10/$25/$50 steps by magnitude) —
+and `canSuggestPlan` withholds the offer until there are 10+ expenses and no plan
+yet. `SuggestedPlanCard` presents it on Budget. Hidden categories are filtered
+out, so no limit can land on the plan without a row anywhere to change it.
+
+There's a third way in as well: **"Have a look around first"**
+(`startLookingAround()`) fills the app with a worked example, and
+`discardSampleAndStartOver()` throws it away, so a first real entry never lands
+in a demo household next to Sam's rent.
+
+**`LogView` has filters and edit.** Kind (`All` / `Spending` / `Income`) and
+per-person chips, both view-local; tapping any row opens `AddSheet` in edit mode.
+Delete is no longer the only verb.
+
+**Search is still missing**, and that part of the original bullet stands. The
+filters answer *who* and *which direction*; they don't answer "what did we pay
+that plumber". That question gets more common the more history there is — which
+is precisely when scrolling stops being an answer.
+
+**The "together" half.** Entries carry a free-text `note` in the spender's own
+words, and anyone can react to one: `ReactionKind` is four options (`heart`,
+`thumbsUp`, `flame`, `smile`), one per person per entry, tap-again to clear.
+Reactions are their own `CDReaction` rows rather than a field on the entry, so
+two people reacting from two phones merge instead of overwriting each other.
+`EntryRow.showsSocial` keeps notes and reactions off Home, where the list is a
+glance, and on in the log, where it's the shared space. `LogView` also opens with
+an ambient presence line — overlapping avatars plus "Alex added something today"
+— which reports that somebody is keeping up their end without naming a figure.
+That distinction is the whole design: company, not surveillance.
+
+### Mechanics that shipped undocumented
+
+Most of these are one idea: **a budget you've broken should offer you a move, not
+just a verdict.**
+
+- **Undo on every destructive action.** `AppModel.UndoableChange` covers nine
+  cases — deleted entries (with their reactions), edits, recurring items, loans,
+  members (with all their entries), cap changes, cap moves, and category edits
+  and deletions. Stored as data rather than closures, so nothing captures `self`
+  and the pending change stays inspectable. The offer stands 12 seconds, up from
+  7: the window has to cover noticing the toast, reading it, deciding, *and*
+  reaching the button, while it covers part of the list the whole time. The point
+  isn't recovery — most deletions are deliberate — it's that people tap and
+  explore more freely when a mistake visibly costs one tap.
+
+- **Move money between categories.** `MoveMoneySheet` reallocates headroom from
+  one category to another for the selected month, prefilled with exactly the
+  shortfall. The plan total never changes, and that's what keeps it honest — it's
+  a reallocation, not a quiet raise, so a household reaching for it repeatedly
+  can still see the overall figure holding steady. With every other category
+  already spent up, it says so and suggests raising the limit directly instead.
+
+- **Rollover.** Off by default, toggled on Budget. What last month left on the
+  table carries into this one (`AppModel.rollover` → `plannedTotal`), current
+  month only, and **only ever positive** — carrying an overspend forward would be
+  a punishment mechanic, and this exists to be the opposite of one.
+
+- **Unusual months.** A month can be flagged with a reason (`markMonthUnusual`,
+  `UnusualMonthSheet`: seven presets plus free text). It keeps its entries and
+  its totals — it happened — but drops out of streaks, badges and the
+  month-over-month comparison, and `monthOverMonth` returns `nil` when either
+  side of the comparison is flagged. The argument is arithmetic before it's
+  kindness: one month with a deposit and a moving van in it sits in the trailing
+  average for the next six, and the app spends that whole stretch reporting a
+  decline that never happened.
+
+- **One forgiven day in the streak.** `Wins.graceDays = 1`. A single
+  over-allowance day is absorbed inside a run; a second ends it. The forgiven day
+  is carried, not credited — it doesn't extend the count — and `graceUsed` is
+  surfaced so the next slip doesn't read as an unexplained reset. Without it the
+  first dinner out in a good fortnight zeroes the counter, and a counter that
+  punishes one ordinary evening gets ignored by about the third time it happens.
+
+- **Limit alerts are opt-in.** They used to be on for everything from first
+  launch: the app's loudest possible voice, carrying its least welcome message,
+  unprompted. `limitAlertsEnabled` is now off until asked for, the system
+  permission prompt is attached to the user turning it on rather than to launch,
+  and each category can be muted individually (`Notifier.setMuted(_:for:)`) —
+  health being the obvious case where an unsolicited push lands worst. Raising a
+  cap clears that month's fired flags, so new headroom can alert on its own
+  terms.
+
+- **Progressive tab disclosure.** `AppModel.visibleTabs` starts at Home and Log.
+  Budget appears once there's a plan or three entries, Stats at five. Both stay
+  reachable from Home before that, so nothing is actually locked away, and
+  `revealedTabs` makes a revealed tab permanent — having one vanish again under
+  someone who just used it would be worse than never hiding it. `reload()` moves
+  off a tab that's just been hidden rather than leaving it selected.
+
+- **Dynamic Type throughout.** Every font was a hardcoded `.system(size:)`, which
+  silently ignores the text size the user chose — in a money app, for the users
+  most likely to have changed it. `.appFont()` (`Comfort.swift`) is the drop-in
+  replacement: `@ScaledMetric` against a text style picked by size band, so a
+  9.5pt tab label scales harder than a 44pt balance and the hierarchy survives
+  instead of collapsing into one size. `mono()` gained `lineLimit(1)` and
+  `minimumScaleFactor(0.5)`, because an unconstrained "$1,965" breaking after the
+  comma isn't a degraded reading of the number — it's a different number.
+  Layouts that can't survive the top of the range switch rather than truncate:
+  `prefersStackedLayout` turns `StatRow`'s three columns into rows, and
+  `prefersPlainList` swaps the bubble cloud for the honest ranked list §3 asks
+  for.
+
+Two further changes landed immediately after the pass and belong here too:
+
+- **Categories are user-defined.** `CategoryRegistry` replaces the fixed eight,
+  which can now be added to, renamed, recoloured and hidden. §1's bucket table is
+  therefore the *seed* set, not the whole set. Colours come from a closed list of
+  the thirteen pairs already measured in §4b rather than a free colour well: a
+  free picker would let someone choose a hue with no verified light counterpart,
+  which fails in exactly one direction — the light scheme, on somebody else's
+  phone, where the person who chose it never looks.
+
+- **Export and erase.** `DataSheet` puts both on one screen deliberately. An app
+  that keeps everything on-device has to let you take it away *and* destroy it,
+  or "we never see your data" just means "you can't leave". Erase requires typing
+  `DELETE`, since a destructive-role button is one stray tap away and a word you
+  have to spell is not.
+
+### Still open
+
+- **Home and Stats still overlap.** Home now opens with a plain-language summary
+  sentence rather than a large number and a red badge, and leads with
+  safe-to-spend wherever there's a plan — which is what this section asked for.
+  But the bubble cloud is still on Home, directly above the same "where did the
+  money go" material Stats covers retrospectively. Moving it (§3) is what
+  actually separates the two questions; until then the split is softer than it
+  looks. Folding Budget into Stats still gets to three tabs.
+- **No search in the log.** As above — the filters don't reach it.
+- **No shared-vs-personal split, and no settle-up.** Notes, reactions and
+  presence made the log feel shared; none of them answer "we each put in $X, so
+  who owes whom". `SplitBar` still reports proportions of spending, not balance.
+  This is the last structurally missing piece of the differentiator.
 
 ## Suggested order of work
 
