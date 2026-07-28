@@ -36,7 +36,7 @@ enum CDModel {
 
         household.properties = [
             attr("id",        .stringAttributeType),
-            attr("name",      .stringAttributeType),
+            secret("name",    .stringAttributeType),
             attr("createdAt", .dateAttributeType),
             // Sample households are created by "Look around first" and are
             // wiped wholesale when the user starts their own.
@@ -47,14 +47,14 @@ enum CDModel {
         entry.properties = [
             attr("id",         .stringAttributeType),
             attr("date",       .stringAttributeType),   // "yyyy-MM-dd", matches Entry.date
-            attr("place",      .stringAttributeType),
+            secret("place",    .stringAttributeType),
             attr("bucket",     .stringAttributeType),
-            attr("amount",     .doubleAttributeType),
+            secret("amount",   .doubleAttributeType),
             attr("memberID",   .stringAttributeType),   // CDMember.id of whoever spent it
             attr("memberRole", .stringAttributeType),   // legacy two-person field, migrated on first load
             attr("kind",       .stringAttributeType),   // EntryKind; nil predates income and reads as expense
-            attr("mood",       .stringAttributeType),   // Mood; nil means untagged, which is normal
-            attr("note",       .stringAttributeType),   // free text; nil and "" are the same thing
+            secret("mood",     .stringAttributeType),   // Mood; nil means untagged, which is normal
+            secret("note",     .stringAttributeType),   // free text; nil and "" are the same thing
             attr("isPrivate",  .booleanAttributeType),  // kept out of the shared store
             // Entries are found by this, not by the household relationship: a
             // private entry lives in a different store from the household, and
@@ -76,7 +76,7 @@ enum CDModel {
         monthFlag.properties = [
             attr("month",     .stringAttributeType),     // "yyyy-MM"
             attr("isUnusual", .booleanAttributeType),
-            attr("reason",    .stringAttributeType),
+            secret("reason",  .stringAttributeType),
             attr("updatedAt", .dateAttributeType),
         ]
         // The spending and income categories, which are user data rather than a
@@ -84,7 +84,7 @@ enum CDModel {
         // items and challenges all refer to a category by it.
         category.properties = [
             attr("id",         .stringAttributeType),
-            attr("label",      .stringAttributeType),
+            secret("label",    .stringAttributeType),
             attr("symbol",     .stringAttributeType),    // SF Symbol name
             attr("hex",        .stringAttributeType),    // dark-scheme fill
             attr("lightHex",   .stringAttributeType),    // light-scheme counterpart
@@ -97,21 +97,21 @@ enum CDModel {
         ]
         cap.properties = [
             attr("bucket",    .stringAttributeType),
-            attr("amount",    .doubleAttributeType),
+            secret("amount",  .doubleAttributeType),
             attr("month",     .stringAttributeType),      // "yyyy-MM"; nil is the pre-history baseline
             attr("updatedAt", .dateAttributeType),        // used to dedupe conflicting caps
         ]
         member.properties = [
             attr("id",         .stringAttributeType),
-            attr("name",       .stringAttributeType),
+            secret("name",     .stringAttributeType),
             attr("colorIndex", .integer64AttributeType),  // index into MemberStyle.all
             attr("createdAt",  .dateAttributeType),       // also the display order
         ]
         recurring.properties = [
             attr("id",              .stringAttributeType),
-            attr("place",           .stringAttributeType),
+            secret("place",         .stringAttributeType),
             attr("bucket",          .stringAttributeType),
-            attr("amount",          .doubleAttributeType),
+            secret("amount",        .doubleAttributeType),
             attr("memberID",        .stringAttributeType),
             attr("kind",            .stringAttributeType),
             attr("dayOfMonth",      .integer64AttributeType),
@@ -121,18 +121,18 @@ enum CDModel {
         ]
         loan.properties = [
             attr("id",             .stringAttributeType),
-            attr("name",           .stringAttributeType),
-            attr("balance",        .doubleAttributeType),
-            attr("rate",           .doubleAttributeType),    // annual %, 0 for interest-free
-            attr("monthlyPayment", .doubleAttributeType),
+            secret("name",         .stringAttributeType),
+            secret("balance",      .doubleAttributeType),
+            secret("rate",         .doubleAttributeType),    // annual %, 0 for interest-free
+            secret("monthlyPayment", .doubleAttributeType),
             attr("createdAt",      .dateAttributeType),
         ]
         challenge.properties = [
             attr("id",        .stringAttributeType),
-            attr("title",     .stringAttributeType),
+            secret("title",   .stringAttributeType),
             attr("kind",      .stringAttributeType),   // ChallengeKind
             attr("bucket",    .stringAttributeType),   // nil means all spending
-            attr("target",    .doubleAttributeType),
+            secret("target",  .doubleAttributeType),
             attr("startDate", .stringAttributeType),   // "yyyy-MM-dd", inclusive
             attr("endDate",   .stringAttributeType),
             attr("createdAt", .dateAttributeType),
@@ -194,6 +194,28 @@ enum CDModel {
         a.name = name
         a.attributeType = type
         a.isOptional = true
+        return a
+    }
+
+    /// An attribute that carries something *about the person* rather than
+    /// something the app needs to look rows up by.
+    ///
+    /// `allowsCloudEncryption` puts the value in the CloudKit record's
+    /// `encryptedValues` rather than its plain fields, which is what makes the
+    /// end-to-end claim true rather than aspirational. It is inert today —
+    /// `cloudSyncEnabled` is `false` and nothing is mirrored — but it is set
+    /// now because it is free now and a migration later: once records exist in
+    /// iCloud with a field in the clear, moving that field into the encrypted
+    /// side means rewriting every record that was ever synced.
+    ///
+    /// Identifiers, dates, enum tags, flags, ordering and timestamps stay in
+    /// the clear so they remain usable in predicates and sort descriptors. What
+    /// gets encrypted is the part that would actually tell someone reading the
+    /// records something about this household: what things cost, what they were
+    /// called, where they happened, and how they felt about them.
+    private static func secret(_ name: String, _ type: NSAttributeType) -> NSAttributeDescription {
+        let a = attr(name, type)
+        a.allowsCloudEncryption = true
         return a
     }
 
@@ -467,6 +489,73 @@ final class BudgetStore {
                         isSample: house.value(forKey: "isSample") as? Bool ?? false,
                         rolloverEnabled: house.value(forKey: "rolloverEnabled") as? Bool ?? false)
     }
+
+    // MARK: Export
+
+    /// One stored limit, for the full export. The UI only ever wants the caps
+    /// in force for a given month; a backup wants every row that ever existed.
+    struct CapRow {
+        let bucket: String
+        /// "yyyy-MM", or "" for the pre-months baseline.
+        let month: String
+        let amount: Double
+        let updatedAt: Date?
+    }
+
+    func allCaps() -> [CapRow] {
+        guard let house = currentHousehold() else { return [] }
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.cap)
+        request.predicate = NSPredicate(format: "household == %@", house)
+        return ((try? viewContext.fetch(request)) ?? []).compactMap { obj in
+            guard let bucket = obj.value(forKey: "bucket") as? String else { return nil }
+            return CapRow(bucket: bucket,
+                          month: obj.value(forKey: "month") as? String ?? "",
+                          amount: obj.value(forKey: "amount") as? Double ?? 0,
+                          updatedAt: obj.value(forKey: "updatedAt") as? Date)
+        }
+        .sorted { $0.month == $1.month ? $0.bucket < $1.bucket : $0.month < $1.month }
+    }
+
+    var householdName: String {
+        currentHousehold()?.value(forKey: "name") as? String ?? "Together"
+    }
+
+    // MARK: Erase
+
+    /// Deletes everything this app has ever stored on the device, including the
+    /// per-device preferences that live outside Core Data.
+    ///
+    /// Deliberately blunt: it walks every entity rather than relying on the
+    /// household cascade, because entries and reactions are matched by id and
+    /// a private entry has no household relationship at all — a cascade would
+    /// leave exactly the most sensitive rows behind.
+    func eraseEverything() {
+        let entities = [CDModel.entry, CDModel.reaction, CDModel.cap, CDModel.member,
+                        CDModel.recurring, CDModel.loan, CDModel.challenge,
+                        CDModel.monthFlag, CDModel.category, CDModel.household]
+        for name in entities {
+            let request = NSFetchRequest<NSManagedObject>(entityName: name)
+            for obj in (try? viewContext.fetch(request)) ?? [] { viewContext.delete(obj) }
+        }
+        save()
+
+        // Anything the app kept in UserDefaults is data about the user too.
+        if let defaults {
+            for key in defaults.dictionaryRepresentation().keys
+            where Self.ownedDefaultsKeys.contains(key)
+                || key.hasPrefix("capAlert.") || key.hasPrefix("limitAlertMuted.") {
+                defaults.removeObject(forKey: key)
+            }
+        }
+        localMemberIDInMemory = nil
+    }
+
+    /// Keys this app owns. Listed rather than wildcarded so a wipe can never
+    /// reach into another framework's preferences.
+    private static let ownedDefaultsKeys: Set<String> = [
+        localMemberKey, "antiBudgetMode", "appearance",
+        "notificationsRequested", "limitAlertsEnabled",
+    ]
 
     // MARK: Categories
 

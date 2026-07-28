@@ -681,6 +681,69 @@ final class AppModel: ObservableObject {
                        createdAt: entry.createdAt)
     }
 
+    // MARK: - Your data
+    //
+    // The two obligations that come with keeping everything on-device: a way
+    // to take it with you, and a way to destroy it. Both operate on the whole
+    // ledger, not the selected month.
+
+    /// A file ready for the share sheet.
+    struct ExportFile: Identifiable {
+        let url: URL
+        var id: URL { url }
+    }
+
+    private func fullSnapshot() -> BudgetStore.Snapshot { store.loadSnapshot() }
+
+    func exportCSV() -> ExportFile? {
+        let snapshot = fullSnapshot()
+        let csv = DataExport.csv(entries: snapshot.entries) { [weak self] id in
+            self?.member(id).name ?? "Someone"
+        }
+        guard let data = csv.data(using: .utf8) else { return nil }
+        let name = DataExport.filename(budget: store.householdName, ext: "csv")
+        return DataExport.writeTemporary(data, named: name).map(ExportFile.init)
+    }
+
+    func exportJSON() -> ExportFile? {
+        let snapshot = fullSnapshot()
+        guard let data = DataExport.json(
+            name: store.householdName,
+            entries: snapshot.entries,
+            categories: snapshot.categories,
+            members: snapshot.members,
+            caps: store.allCaps(),
+            recurring: snapshot.recurring,
+            loans: snapshot.loans,
+            challenges: snapshot.challenges,
+            monthFlags: snapshot.monthFlags,
+            reactions: snapshot.reactions,
+            rolloverEnabled: snapshot.rolloverEnabled
+        ) else { return nil }
+        let name = DataExport.filename(budget: store.householdName, ext: "json")
+        return DataExport.writeTemporary(data, named: name).map(ExportFile.init)
+    }
+
+    /// How much there is to lose, for the confirmation copy. Vague warnings get
+    /// dismissed; a count of what's about to go does not.
+    var dataFootprint: (entries: Int, people: Int, months: Int) {
+        let months = Set(allEntries.map { String($0.date.prefix(7)) })
+        return (allEntries.count, members.count, months.count)
+    }
+
+    /// Destroys everything, irreversibly, on this device. Deliberately offers
+    /// no undo — `offerUndo` is for slips, and this one is guarded by typing
+    /// the word instead.
+    func eraseEverything() {
+        dismissUndo()
+        store.eraseEverything()
+        revealedTabs = []
+        isSimplified = false
+        selectedMonth = Date()
+        tab = .home
+        reload()
+    }
+
     // MARK: - Categories
     //
     // Categories are the household's own list, not a fixed eight. Built-ins are

@@ -14,6 +14,7 @@ struct PeopleSheet: View {
     @State private var alertsOn = false
     @State private var mutedBuckets: Set<String> = []
     @State private var deniedBySystem = false
+    @State private var showData = false
     @FocusState private var newNameFocused: Bool
 
     var body: some View {
@@ -35,10 +36,12 @@ struct PeopleSheet: View {
 
                 alertsSection
                 appearanceSection
+                dataSection
             }
             .padding(.horizontal, 22)
             .padding(.bottom, 22)
         }
+        .sheet(isPresented: $showData) { DataSheet().environmentObject(model) }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Palette.sheetBg)
@@ -85,6 +88,44 @@ struct PeopleSheet: View {
             .accessibilityLabel("Close")
         }
         .padding(.top, 6).padding(.bottom, 16)
+    }
+
+    /// Export and erase. Sits at the bottom of the only settings surface the
+    /// app has, rather than behind a menu, because a promise about data you
+    /// can't find the controls for isn't much of a promise.
+    private var dataSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("YOUR DATA")
+                .appFont(10, weight: .bold).tracking(0.8)
+                .foregroundStyle(Palette.label9)
+
+            Button { showData = true } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "square.and.arrow.up.on.square")
+                        .appFont(15, weight: .semibold)
+                        .foregroundStyle(Palette.teal)
+                        .frame(width: 34, height: 34)
+                        .background(Palette.teal.opacity(0.16),
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Export or delete everything")
+                            .appFont(14, weight: .semibold)
+                        Text("It's all on this phone — take a copy, or wipe it.")
+                            .appFont(11.5).foregroundStyle(Palette.sub)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .multilineTextAlignment(.leading)
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right")
+                        .appFont(12, weight: .semibold)
+                        .foregroundStyle(Palette.muted)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .card(border: Palette.cardBorderSoft, radius: 15)
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.top, 22)
     }
 
     /// Limit alerts: off unless asked for, and silenceable per category.
