@@ -253,6 +253,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Used only to hear an amount you speak into the add screen. The audio is transcribed on your device and never leaves it.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "The notice above is Apple's standard wording. This app requires on-device recognition, so what you say is transcribed by this iPhone and is not sent away for processing.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -284,6 +286,8 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Used only to hear an amount you speak into the add screen. The audio is transcribed on your device and never leaves it.";
+				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "The notice above is Apple's standard wording. This app requires on-device recognition, so what you say is transcribed by this iPhone and is not sent away for processing.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

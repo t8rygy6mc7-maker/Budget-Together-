@@ -33,6 +33,9 @@ struct AddSheet: View {
 
     @FocusState private var amountFocused: Bool
 
+    /// On-device speech, for saying an amount instead of typing it.
+    @StateObject private var voice = VoiceAmountListener()
+
     /// A snapshot of what an add wrote, taken at save time so the receipt keeps
     /// reading correctly after the form is cleared for the next entry.
     private struct Receipt {
@@ -83,6 +86,7 @@ struct AddSheet: View {
         .tint(Palette.teal)
         .sheet(isPresented: $showPeople) { PeopleSheet().environmentObject(model) }
         .onAppear(perform: load)
+        .onDisappear { voice.stop() }
         // Switching direction invalidates the category, since the two lists
         // share no ids.
         .onChange(of: kind) { _, new in
@@ -374,19 +378,88 @@ struct AddSheet: View {
     private var tint: Color { kind == .income ? Palette.green : Palette.teal }
 
     private var amountField: some View {
-        HStack(spacing: 2) {
-            Text(kind.sign + Fmt.currencySymbol).mono(14, weight: .regular)
-                .foregroundStyle(Palette.muted)
-            TextField("0", text: $amount)
-                .keyboardType(.decimalPad)
-                .multilineTextAlignment(.center)
-                .focused($amountFocused)
-                .appFont(46, weight: .bold, design: .monospaced)
-                .foregroundStyle(kind == .income ? Palette.green : Palette.text)
-                .frame(maxWidth: 220)
-                .accessibilityLabel("Amount")
+        VStack(spacing: 6) {
+            HStack(spacing: 2) {
+                Text(kind.sign + Fmt.currencySymbol).mono(14, weight: .regular)
+                    .foregroundStyle(Palette.muted)
+                TextField("0", text: $amount)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.center)
+                    .focused($amountFocused)
+                    .appFont(46, weight: .bold, design: .monospaced)
+                    .foregroundStyle(kind == .income ? Palette.green : Palette.text)
+                    .frame(maxWidth: 220)
+                    .accessibilityLabel("Amount")
+            }
+            voiceButton
         }
         .padding(.bottom, 6)
+    }
+
+    /// Say the amount instead of typing it.
+    ///
+    /// Hidden entirely when the device can't transcribe on-device — see
+    /// `VoiceInput.swift` for why there is no network fallback.
+    @ViewBuilder
+    private var voiceButton: some View {
+        if voice.isSupported {
+            VStack(spacing: 6) {
+                Button {
+                    if voice.isListening { finishListening() } else { beginListening() }
+                } label: {
+                    HStack(spacing: 7) {
+                        Image(systemName: voice.isListening ? "stop.circle.fill" : "mic.fill")
+                            .appFont(12, weight: .semibold)
+                        Text(voice.isListening ? "Listening — tap to stop" : "Say it instead")
+                            .appFont(12.5, weight: .semibold)
+                    }
+                    .foregroundStyle(voice.isListening ? Palette.over : Palette.teal)
+                    .padding(.horizontal, 13).padding(.vertical, 8)
+                    .background(
+                        (voice.isListening ? Palette.over : Palette.teal).opacity(0.14),
+                        in: Capsule()
+                    )
+                }
+                .accessibilityLabel(voice.isListening ? "Stop listening" : "Say the amount")
+
+                if voice.isListening, !voice.transcript.isEmpty {
+                    Text(voice.transcript)
+                        .appFont(11.5)
+                        .foregroundStyle(Palette.sub)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.center)
+                        .transition(.opacity)
+                }
+                if case let .unavailable(reason) = voice.state {
+                    Text(reason)
+                        .appFont(11)
+                        .foregroundStyle(Palette.muted)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .animation(.easeInOut(duration: 0.2), value: voice.isListening)
+        }
+    }
+
+    private func beginListening() {
+        amountFocused = false
+        Task { await voice.start() }
+    }
+
+    /// Takes whatever was heard. The amount fills the field; anything else said
+    /// fills the place, but only when the user hasn't typed one — a transcript
+    /// should never overwrite something they entered deliberately.
+    private func finishListening() {
+        voice.stop()
+        if let heard = voice.amount {
+            amount = Fmt.plain(heard)
+            Haptics.saved()
+        }
+        let rest = voice.remainder.trimmingCharacters(in: .whitespaces)
+        if !rest.isEmpty, place.trimmingCharacters(in: .whitespaces).isEmpty {
+            place = rest
+        }
     }
 
     /// Optional. The placeholder says so, because a field that looks required
