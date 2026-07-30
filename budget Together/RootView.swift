@@ -73,20 +73,15 @@ struct BottomBar: View {
         let split = (tabs.count + 1) / 2
 
         ZStack {
+            // Every tab takes an equal share of what's left after the gap, so
+            // the row reads evenly and the gap lands dead centre — but only
+            // because `visibleTabs` never hands back an odd number. Split three
+            // tabs around a centred gap and one of them ends up stranded
+            // against the edge; that's why the pair is all-or-nothing there.
             HStack(spacing: 0) {
-                // Each side gets equal width regardless of how many tabs it
-                // holds, so the gap — and the floating button pinned to the
-                // bar's true center — stays centered even when a side has an
-                // uneven tab count (e.g. Stats hidden pre-plan gives 2-and-1).
-                HStack(spacing: 0) {
-                    ForEach(tabs.prefix(split), id: \.self) { navButton($0) }
-                }
-                .frame(maxWidth: .infinity)
+                ForEach(tabs.prefix(split), id: \.self) { navButton($0) }
                 Spacer().frame(width: 56)   // gap for the floating add button
-                HStack(spacing: 0) {
-                    ForEach(tabs.dropFirst(split), id: \.self) { navButton($0) }
-                }
-                .frame(maxWidth: .infinity)
+                ForEach(tabs.dropFirst(split), id: \.self) { navButton($0) }
             }
             .padding(.horizontal, 26)
             .padding(.vertical, 11)
@@ -115,6 +110,11 @@ struct BottomBar: View {
             .accessibilityLabel("Add something")
             .offset(y: -24)
         }
+        // `offset` moves the button when it draws but not when it lays out, so
+        // without this the bottom inset reserves only the bar's own height and
+        // the raised half of the button covers whatever content scrolled to the
+        // bottom of the screen. Reserving the overhang keeps the two apart.
+        .padding(.top, 24)
     }
 
     private func navButton(_ tab: Tab) -> some View {

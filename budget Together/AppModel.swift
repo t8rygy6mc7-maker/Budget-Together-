@@ -1046,15 +1046,24 @@ final class AppModel: ObservableObject {
     /// Which tabs the bottom bar shows. Budget and Stats stay out of the way
     /// until there's something in them worth opening; both are still reachable
     /// from Home before that, so nothing is actually locked away.
+    ///
+    /// They arrive as a pair, never one at a time, and that's a layout
+    /// constraint as much as a product one. The bar carves a centred gap for
+    /// the add button, and with an odd number of tabs an evenly spaced row and
+    /// a centred gap are mutually exclusive — three tabs either strand one
+    /// against the edge or push the button off centre. All-or-nothing keeps the
+    /// bar at two tabs or four. `BottomBar` depends on that being true.
     var visibleTabs: [Tab] {
-        var tabs: [Tab] = [.home, .log]
-        if hasPlan || totalEntryCount >= 3 || revealedTabs.contains(.budget) {
-            tabs.append(.budget)
-        }
-        if totalEntryCount >= 5 || revealedTabs.contains(.stats) {
-            tabs.append(.stats)
-        }
-        return tabs
+        [.home, .log] + (showsFullBar ? [.budget, .stats] : [])
+    }
+
+    /// Whether the household has earned the second pair of tabs. The threshold
+    /// is the later of the two the pair used to have separately — a Stats tab
+    /// over three entries is a chart of nothing — so Budget now waits for it
+    /// too. Nothing is lost by that: Home links straight into Budget until
+    /// then, and taking that link reveals the pair.
+    private var showsFullBar: Bool {
+        totalEntryCount >= 5 || !revealedTabs.isEmpty
     }
 
     /// Opens a tab that isn't in the bar yet, and keeps it there.

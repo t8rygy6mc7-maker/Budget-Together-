@@ -141,9 +141,15 @@ struct HomeView: View {
     /// this, progressive disclosure would be a locked door rather than a tidy
     /// one — someone who arrives knowing exactly what they want to set up has
     /// to be able to go and set it up.
+    ///
+    /// It has to stay put for a household that already has a plan but hasn't
+    /// earned the tab yet: the bar reveals Budget and Stats as a pair, so
+    /// setting limits no longer puts Budget in the bar by itself, and this is
+    /// the only door to them until it does.
     @ViewBuilder
     private var planStrip: some View {
-        if !model.hasPlan, model.isCurrentMonth {
+        if model.isCurrentMonth,
+           !model.hasPlan || !model.visibleTabs.contains(.budget) {
             Button { model.reveal(.budget) } label: {
                 HStack(spacing: 12) {
                     Image(systemName: "slider.horizontal.3")
@@ -153,11 +159,13 @@ struct HomeView: View {
                         .background(Palette.teal.opacity(0.16),
                                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                     VStack(alignment: .leading, spacing: 2) {
-                        Text(model.canSuggestPlan
-                             ? "Ready to set some limits?"
+                        Text(model.hasPlan ? "Your spending limits"
+                             : model.canSuggestPlan ? "Ready to set some limits?"
                              : "Want to set spending limits?")
                             .appFont(13, weight: .semibold).lineLimit(1)
-                        Text(model.canSuggestPlan
+                        Text(model.hasPlan
+                             ? "Change them whenever they stop fitting."
+                             : model.canSuggestPlan
                              ? "There's enough here now to suggest some."
                              : "Optional — tracking works fine without them.")
                             .appFont(11.5).foregroundStyle(Palette.sub)
