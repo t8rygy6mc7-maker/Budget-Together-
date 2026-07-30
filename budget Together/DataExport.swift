@@ -52,7 +52,7 @@ enum DataExport {
     /// RFC 4180: wrap in quotes when the value contains a comma, a quote or a
     /// newline, and double any embedded quotes. A note saying `He said "fine"`
     /// otherwise shreds every column to its right.
-    private static func escape(_ field: String) -> String {
+    private nonisolated static func escape(_ field: String) -> String {
         guard field.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" })
         else { return field }
         return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
@@ -173,21 +173,67 @@ enum DataExport {
 
     // MARK: Files
 
+    /// Prefix for the per-export folders, so a sweep can tell ours apart from
+    /// anything else the system parks in the temporary directory.
+    private static let folderPrefix = "export-"
+
     /// Writes to a uniquely-named temp directory and hands back the URL.
     ///
     /// A fresh subdirectory per export, rather than a fixed filename in the
     /// shared temp dir, so two exports in a row can't have the second one
     /// overwrite a file the share sheet is still reading from the first.
+    ///
+    /// Two things this owes the privacy promise. The file is the entire ledger
+    /// in the clear, so it's written with data protection on — locking the
+    /// phone should make it unreadable, exactly as the Core Data store is.
+    /// `UnlessOpen` rather than plain `Complete` so a share target that's still
+    /// uploading when the screen goes off doesn't fail halfway. And every
+    /// export left over from a previous session is swept first: iOS only
+    /// empties the temporary directory under storage pressure, so without this
+    /// a year of "just checking the CSV" is a year of complete financial
+    /// histories lying around in plaintext.
     static func writeTemporary(_ data: Data, named filename: String) -> URL? {
+        purgeStaleExports()
         let folder = FileManager.default.temporaryDirectory
-            .appendingPathComponent("export-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent(folderPrefix + UUID().uuidString, isDirectory: true)
         do {
-            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try FileManager.default.createDirectory(
+                at: folder, withIntermediateDirectories: true,
+                attributes: [.protectionKey: FileProtectionType.completeUnlessOpen])
             let url = folder.appendingPathComponent(filename)
-            try data.write(to: url, options: .atomic)
+            try data.write(to: url, options: [.atomic, .completeFileProtectionUnlessOpen])
             return url
         } catch {
             return nil
+        }
+    }
+
+    /// Removes export folders old enough that nothing can still be sharing
+    /// them. An hour is far longer than a share sheet lives and far shorter
+    /// than "until the device runs out of space", which is the alternative.
+    static func purgeStaleExports(olderThan age: TimeInterval = 3600) {
+        purgeExports { url in
+            let created = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate
+            return Date().timeIntervalSince(created ?? .distantPast) > age
+        }
+    }
+
+    /// Removes every export, regardless of age. "Delete everything" has to mean
+    /// the copies too, or the most complete file the app ever produced is the
+    /// one thing that survives being erased.
+    static func purgeAllExports() {
+        purgeExports { _ in true }
+    }
+
+    private static func purgeExports(where shouldRemove: (URL) -> Bool) {
+        let manager = FileManager.default
+        let contents = try? manager.contentsOfDirectory(
+            at: manager.temporaryDirectory,
+            includingPropertiesForKeys: [.creationDateKey],
+            options: [.skipsHiddenFiles])
+        for url in contents ?? []
+        where url.lastPathComponent.hasPrefix(folderPrefix) && shouldRemove(url) {
+            try? manager.removeItem(at: url)
         }
     }
 

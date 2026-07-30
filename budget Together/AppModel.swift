@@ -399,9 +399,27 @@ final class AppModel: ObservableObject {
         guard !isUnusual(previousKey), !isSelectedMonthUnusual else { return nil }
         let previous = month.previousSpent
         guard previous > 0 else { return nil }
-        let change = Int((((month.spent - previous) / previous) * 100).rounded())
+        let change = Fmt.whole(((month.spent - previous) / previous) * 100)
         guard change != 0 else { return nil }
         return (abs(change), change < 0)
+    }
+
+    /// Below this many purchases the ranking turns over with every entry, and a
+    /// "takeaway" is really just the last thing somebody bought wearing a
+    /// percentage.
+    private static let minimumEntriesForTakeaway = 4
+
+    /// One readable thing about where the month's money actually went, for the
+    /// line under the total. `nil` whenever the honest answer is "not enough to
+    /// say yet" — with two purchases logged, "Food & Drink is 100% of the
+    /// total" is arithmetic dressed up as a pattern.
+    var spendTakeaway: String? {
+        guard spent > 0 else { return nil }
+        let logged = month.entries.filter { $0.kind == .expense && !$0.belowTheLine }
+        guard logged.count >= Self.minimumEntriesForTakeaway else { return nil }
+        return Copy.takeaway(shares: month.ranked.map {
+            (label: $0.bucket.label, share: $0.total / spent * 100)
+        })
     }
 
     // MARK: - Bindings & mutations (write through to the store)
@@ -409,7 +427,16 @@ final class AppModel: ObservableObject {
     func capBinding(_ id: String) -> Binding<Double> {
         Binding(
             get: { self.caps[id] ?? 0 },
-            set: { newValue in
+            set: { typed in
+                // The cap field binds a `Double` straight to a `TextField`, so
+                // unlike every other money field in the app it never passes
+                // through `Fmt.amount(from:)`. Without this, a decimal pad with
+                // a minus key — or a paste — writes a negative limit, and a
+                // negative limit propagates into `capTotal`, `left`,
+                // `safeDaily` and the pace maths as a silently nonsensical
+                // plan. Clamp on the way in; the field redraws with what was
+                // actually stored.
+                let newValue = typed.isFinite ? min(max(typed, 0), Fmt.maxAmount) : 0
                 self.caps[id] = newValue            // optimistic UI update
                 self.store.setCap(bucket: id, month: self.monthKey, amount: newValue)
                 // A new limit deserves a fresh judgement — raising a limit should
@@ -732,6 +759,15 @@ final class AppModel: ObservableObject {
         return DataExport.writeTemporary(data, named: name).map(ExportFile.init)
     }
 
+    /// How many entries are marked private, for the export warning.
+    ///
+    /// A private entry is the one thing the app promises never leaves the
+    /// device, and an export is the one place that promise passes out of the
+    /// app's hands. The file has to keep them — a backup that quietly drops
+    /// rows isn't a backup — so the export screen says so instead, and only
+    /// when there's actually something to say.
+    var privateEntryCount: Int { allEntries.filter(\.isPrivate).count }
+
     /// How much there is to lose, for the confirmation copy. Vague warnings get
     /// dismissed; a count of what's about to go does not.
     var dataFootprint: (entries: Int, people: Int, months: Int) {
@@ -745,6 +781,10 @@ final class AppModel: ObservableObject {
     func eraseEverything() {
         dismissUndo()
         store.eraseEverything()
+        // An export is the most complete copy the app ever makes. Leaving one
+        // in the temporary directory would mean the single most revealing file
+        // is the one thing that survives being erased.
+        DataExport.purgeAllExports()
         revealedTabs = []
         isSimplified = false
         selectedMonth = Date()

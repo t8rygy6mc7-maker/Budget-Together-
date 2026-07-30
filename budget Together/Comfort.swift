@@ -60,10 +60,6 @@ extension DynamicTypeSize {
     /// Past this, horizontal rows of three or four items stop fitting and the
     /// layouts that use them switch to stacking.
     var prefersStackedLayout: Bool { self >= .accessibility1 }
-
-    /// The bubble cloud's hand-placed circles can't hold text that's grown this
-    /// far; Home falls back to the honest ranked list instead.
-    var prefersPlainList: Bool { self >= .xxxLarge }
 }
 
 // MARK: - Stat row

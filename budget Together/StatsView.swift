@@ -101,7 +101,7 @@ struct StatsView: View {
                             Text(item.bucket.label).appFont(13, weight: .medium)
                             Spacer(minLength: 4)
                             Text(Fmt.money(item.total)).mono(13)
-                            Text("\(Int(pct.rounded()))%")
+                            Text("\(Fmt.whole(pct))%")
                                 .appFont(11.5).foregroundStyle(Palette.sub)
                                 .frame(width: 38, alignment: .trailing)
                         }
@@ -120,7 +120,7 @@ struct StatsView: View {
                 .lineLimit(1)
             Spacer(minLength: 4)
             Text(Fmt.money(person.total)).mono(12.5)
-            Text("\(Int(share.rounded()))%")
+            Text("\(Fmt.whole(share))%")
                 .appFont(11.5).foregroundStyle(Palette.sub)
                 .frame(width: 38, alignment: .trailing)
         }
@@ -219,7 +219,7 @@ struct MoodCard: View {
     private var prompt: String? {
         guard let top = totals.first, top.mood.isWorthNoticing,
               tagged > 0, top.total / tagged >= 0.3 else { return nil }
-        return "\(top.mood.label) accounts for \(Int((top.total / tagged * 100).rounded()))% of what you tagged — \(Fmt.money(top.total)) across \(Fmt.count(top.count, "buy", plural: "buys"))."
+        return "\(top.mood.label) accounts for \(Fmt.whole(top.total / tagged * 100))% of what you tagged — \(Fmt.money(top.total)) across \(Fmt.count(top.count, "buy", plural: "buys"))."
     }
 }
 

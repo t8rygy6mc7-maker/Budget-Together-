@@ -9,6 +9,7 @@ struct BudgetTogetherApp: App {
 
 struct RootView: View {
     @StateObject private var model = AppModel()
+    @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
         Group {
@@ -25,6 +26,12 @@ struct RootView: View {
         // Drives the whole tree, sheets included: every `Palette` token is a
         // dynamic colour that resolves against the scheme set here.
         .preferredColorScheme(model.appearance.colorScheme)
+        // Covers the screen the moment the app stops being frontmost, before
+        // iOS takes the picture it shows in the app switcher. See `PrivacyCover`.
+        .overlay {
+            if scenePhase != .active { PrivacyCover() }
+        }
+        .animation(.easeInOut(duration: 0.15), value: scenePhase)
     }
 
     private var main: some View {
@@ -60,10 +67,58 @@ struct RootView: View {
     }
 }
 
+// MARK: - Privacy cover
+
+/// What the app looks like from outside itself.
+///
+/// When an app stops being frontmost, iOS photographs it and keeps the picture
+/// to show in the app switcher — and, once taken, that picture is a page of
+/// somebody's finances sitting in a cache the app doesn't control. Every other
+/// promise this app makes is about the data on disk; this is the copy nobody
+/// asked for. Covering the window before the shutter goes means the switcher
+/// shows the app's own face instead of a month's spending, and a phone handed
+/// over to show a photo doesn't quietly show a salary.
+///
+/// Tied to `scenePhase != .active` rather than to backgrounding alone, because
+/// the picture is taken on the way out and `.background` arrives too late to be
+/// sure of beating it. The cost is that a system permission alert — the
+/// microphone, notifications — briefly shows this instead of the screen behind
+/// it. Deliberately built to read as a deliberate screen rather than a blank
+/// one, so that moment looks like the app resting, not the app breaking.
+struct PrivacyCover: View {
+    var body: some View {
+        ZStack {
+            Palette.screen
+            Image(systemName: "heart.text.square.fill")
+                .appFont(34, weight: .semibold)
+                .foregroundStyle(Palette.tealInk)
+                .frame(width: 74, height: 74)
+                .background(Palette.tealGradient,
+                            in: RoundedRectangle(cornerRadius: 22, style: .continuous))
+        }
+        .ignoresSafeArea()
+        .transition(.opacity)
+        // The switcher thumbnail isn't something anyone navigates, and reading
+        // it out would announce a screen the user never opened.
+        .accessibilityHidden(true)
+    }
+}
+
 // MARK: - Bottom navigation
 
 struct BottomBar: View {
     @EnvironmentObject var model: AppModel
+
+    /// The add button, and the gap the row of tabs leaves for it. The gap is
+    /// deliberately wider than the button: shoulder to shoulder with a tab on
+    /// either side, the one control that starts everything in this app read as
+    /// the fifth item in a row of five.
+    private static let addSize: CGFloat = 60
+    private static let addGap: CGFloat = 78
+    /// How far the button rides above the bar. `offset` moves it when it draws
+    /// but not when it lays out, so the same figure has to be reserved as
+    /// padding or the overhang covers whatever scrolled up behind it.
+    private static let addLift: CGFloat = 24
 
     var body: some View {
         // Budget and Stats only appear once there's something in them to look
@@ -80,7 +135,7 @@ struct BottomBar: View {
             // against the edge; that's why the pair is all-or-nothing there.
             HStack(spacing: 0) {
                 ForEach(tabs.prefix(split), id: \.self) { navButton($0) }
-                Spacer().frame(width: 56)   // gap for the floating add button
+                Spacer().frame(width: Self.addGap)   // gap for the floating add button
                 ForEach(tabs.dropFirst(split), id: \.self) { navButton($0) }
             }
             .padding(.horizontal, 26)
@@ -100,21 +155,19 @@ struct BottomBar: View {
                 model.isAddingEntry = true
             } label: {
                 Image(systemName: "plus")
-                    .appFont(25, weight: .bold)
+                    .appFont(27, weight: .bold)
                     .foregroundStyle(Palette.tealInk)
-                    .frame(width: 56, height: 56)
+                    .frame(width: Self.addSize, height: Self.addSize)
                     .background(Palette.tealGradient,
-                                in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                    .shadow(color: Palette.addGlow, radius: 13, x: 0, y: 12)
+                                in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                    .shadow(color: Palette.addGlow, radius: 17, x: 0, y: 11)
             }
             .accessibilityLabel("Add something")
-            .offset(y: -24)
+            .offset(y: -Self.addLift)
         }
-        // `offset` moves the button when it draws but not when it lays out, so
-        // without this the bottom inset reserves only the bar's own height and
-        // the raised half of the button covers whatever content scrolled to the
-        // bottom of the screen. Reserving the overhang keeps the two apart.
-        .padding(.top, 24)
+        // Reserving the overhang keeps the raised half of the button off
+        // whatever content has scrolled to the bottom of the screen.
+        .padding(.top, Self.addLift + 2)
     }
 
     private func navButton(_ tab: Tab) -> some View {
@@ -130,7 +183,12 @@ struct BottomBar: View {
                     .lineLimit(1)
                     .minimumScaleFactor(0.85)
             }
-            .foregroundStyle(isSelected ? Palette.teal : Palette.muted)
+            // The selected tab used to be teal, which is also the add button's
+            // colour, two inches away. Navigation and the primary action were
+            // shouting the same word. Selection is carried by contrast instead
+            // — `text` against `muted` is a wider gap than teal ever was — and
+            // teal now means "this is the thing to press".
+            .foregroundStyle(isSelected ? Palette.text : Palette.muted)
             .frame(maxWidth: .infinity)
         }
         .accessibilityAddTraits(isSelected ? .isSelected : [])

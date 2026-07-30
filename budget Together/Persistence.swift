@@ -300,6 +300,10 @@ final class BudgetStore {
                 return
             }
             self?.captureStore(for: desc)
+            // `AppModel` performs its first reload while the persistent store
+            // may still be opening. Tell it to retry once the store is ready so
+            // a returning household is not left at the pairing screen.
+            self?.onChange?()
         }
 
         viewContext.automaticallyMergesChangesFromParent = true
@@ -329,8 +333,7 @@ final class BudgetStore {
 
         let support = NSPersistentContainer.defaultDirectoryURL()
         base.url = support.appendingPathComponent("BudgetTogether.private.sqlite")
-        base.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
-        base.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+        Self.configureCommonOptions(base)
 
         guard Self.cloudSyncEnabled else {
             // Local-only mode (Step 1/2): single on-disk store, no CloudKit.
@@ -345,14 +348,38 @@ final class BudgetStore {
         base.configuration = "Default"
 
         let shared = NSPersistentStoreDescription(url: support.appendingPathComponent("BudgetTogether.shared.sqlite"))
-        shared.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
-        shared.setOption(true as NSNumber, forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+        Self.configureCommonOptions(shared)
         let sharedOptions = NSPersistentCloudKitContainerOptions(containerIdentifier: Self.containerIdentifier)
         sharedOptions.databaseScope = .shared
         shared.cloudKitContainerOptions = sharedOptions
         shared.configuration = "Default"
 
         container.persistentStoreDescriptions = [base, shared]
+    }
+
+    /// How the ledger is protected on disk.
+    ///
+    /// Stated explicitly rather than inherited: without the key, the class the
+    /// file gets depends on the target's data-protection entitlement, which is
+    /// a build setting somebody can change without ever opening this file. What
+    /// it buys is that the sqlite file is encrypted with a key derived from the
+    /// device passcode and is unreadable until the phone has been unlocked once
+    /// since boot — which is the state a phone that's been taken is in.
+    ///
+    /// Deliberately not `.complete`, which would keep it sealed whenever the
+    /// screen is off. The app logs from the lock screen: `LogSpendIntent` runs
+    /// with `openAppWhenRun = false`, so Siri can launch it into the background
+    /// on a locked device, and under `.complete` opening the store there would
+    /// simply fail. Silently losing the spend somebody just said is a worse
+    /// outcome than the narrow window this closes.
+    private static let fileProtection = FileProtectionType.completeUntilFirstUserAuthentication
+
+    private static func configureCommonOptions(_ description: NSPersistentStoreDescription) {
+        description.setOption(true as NSNumber, forKey: NSPersistentHistoryTrackingKey)
+        description.setOption(true as NSNumber,
+                              forKey: NSPersistentStoreRemoteChangeNotificationPostOptionKey)
+        description.setOption(fileProtection.rawValue as NSString,
+                              forKey: NSPersistentStoreFileProtectionKey)
     }
 
     private func captureStore(for description: NSPersistentStoreDescription) {
@@ -455,8 +482,9 @@ final class BudgetStore {
     /// Value-type snapshot for the UI, newest entry first. `capsFor` selects
     /// which month's limits come back; entries are always the full history, so
     /// the caller can digest any month and chart across them.
-    func loadSnapshot(capsFor month: String = Fmt.isoMonth(Date())) -> Snapshot {
+    func loadSnapshot(capsFor month: String? = nil) -> Snapshot {
         guard let house = currentHousehold() else { return Snapshot() }
+        let capsMonth = month ?? Fmt.isoMonth(Date())
 
         backfillHouseholdIDs(for: house)
         let rows = fetchEntryObjects(for: house)
@@ -480,7 +508,7 @@ final class BudgetStore {
             )
         }
         return Snapshot(entries: entries,
-                        caps: loadCaps(for: house, month: month),
+                        caps: loadCaps(for: house, month: capsMonth),
                         members: loadMembers(for: house),
                         recurring: loadRecurring(for: house),
                         loans: loadLoans(for: house),
@@ -562,6 +590,7 @@ final class BudgetStore {
             for obj in (try? viewContext.fetch(request)) ?? [] { viewContext.delete(obj) }
         }
         save()
+        rebuildStores()
 
         // Anything the app kept in UserDefaults is data about the user too.
         if let defaults {
@@ -580,6 +609,55 @@ final class BudgetStore {
         localMemberKey, "antiBudgetMode", "appearance",
         "notificationsRequested", "limitAlertsEnabled",
     ]
+
+    /// Destroys the store file and opens a fresh empty one in its place.
+    ///
+    /// Deleting the rows is not the same as deleting the data, and for this app
+    /// the difference is the whole promise. Persistent history tracking is on,
+    /// so alongside the rows the store keeps a transaction log of every change
+    /// the app has ever made — the values included — and deleting the objects
+    /// doesn't touch it. Freed sqlite pages hold their old contents too, until
+    /// something happens to overwrite them. "There is no copy on a server to
+    /// restore from" is only true if there isn't one on the phone either.
+    ///
+    /// Failure here is left recoverable on purpose: the rows are already gone
+    /// by the time this runs, so the worst case is residue in a file the user
+    /// can still remove by deleting the app.
+    private func rebuildStores() {
+        let coordinator = container.persistentStoreCoordinator
+        viewContext.reset()
+
+        // Snapshotted, because removing a store mutates the coordinator's list.
+        for store in Array(coordinator.persistentStores) {
+            // The in-memory store used by previews has nothing on disk to take.
+            guard let url = store.url, url.isFileURL, url.path != "/dev/null" else { continue }
+            do {
+                try coordinator.remove(store)
+                try coordinator.destroyPersistentStore(at: url, type: .sqlite)
+            } catch {
+                assertionFailure("Failed to destroy store: \(error)")
+                continue
+            }
+            // `destroyPersistentStore` is documented as leaving the file in
+            // place, truncated. The write-ahead log and shared-memory files
+            // beside it are where the most recent transactions live, so those
+            // go as well rather than being left to be recovered from.
+            for suffix in ["", "-wal", "-shm"] {
+                try? FileManager.default.removeItem(
+                    at: URL(fileURLWithPath: url.path + suffix))
+            }
+        }
+
+        privateStore = nil
+        sharedStore = nil
+        container.loadPersistentStores { [weak self] desc, error in
+            if let error {
+                assertionFailure("Failed to reopen store after erase: \(error)")
+                return
+            }
+            self?.captureStore(for: desc)
+        }
+    }
 
     // MARK: Categories
 

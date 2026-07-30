@@ -134,6 +134,35 @@ enum Copy {
         )
     }
 
+    // MARK: The line under the month's total
+
+    /// What the total is made of, in one sentence.
+    ///
+    /// Deliberately an observation and never advice. "Food & Drink is 77% of
+    /// the total" is a fact about a month; "you're spending too much on food"
+    /// is a stranger with an opinion about somebody's dinner. Rule 2 above
+    /// applies here more than anywhere else in this file, because this line
+    /// sits directly under the biggest number on the screen.
+    ///
+    /// - Parameter shares: every category with spending this month, as a
+    ///   percentage of the month's total, biggest first.
+    static func takeaway(shares: [(label: String, share: Double)]) -> String? {
+        guard let top = shares.first else { return nil }
+        // With one category the sentence would restate the total in words.
+        guard shares.count > 1 else { return nil }
+
+        if top.share >= 40 {
+            return "\(top.label) is \(Fmt.whole(top.share))% of the total."
+        }
+        let pair = top.share + shares[1].share
+        if shares.count > 2, pair >= 55 {
+            return "\(top.label) and \(shares[1].label) are "
+                 + "\(Fmt.whole(pair))% of the total between them."
+        }
+        return "Spread across \(Fmt.count(shares.count, "category", plural: "categories")) — "
+             + "\(top.label) leads at \(Fmt.whole(top.share))%."
+    }
+
     // MARK: Streaks
 
     static func streakLine(days: Int, graceUsed: Bool) -> String {

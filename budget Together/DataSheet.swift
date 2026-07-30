@@ -118,8 +118,35 @@ struct DataSheet: View {
                 .appFont(11)
                 .foregroundStyle(Palette.muted)
                 .fixedSize(horizontal: false, vertical: true)
+
+            privateNote
         }
         .padding(.bottom, 26)
+    }
+
+    /// The one place the "private stays on this device" promise can be handed
+    /// out of the app's control. The file keeps private entries — dropping rows
+    /// would make it a bad backup — so this says plainly that it does, while
+    /// the user still has the choice of who to send it to.
+    @ViewBuilder
+    private var privateNote: some View {
+        let count = model.privateEntryCount
+        if count > 0 {
+            HStack(alignment: .top, spacing: 8) {
+                Image(systemName: "lock.fill")
+                    .appFont(10, weight: .semibold)
+                    .foregroundStyle(Palette.moodJoy)
+                    .padding(.top, 1)
+                Text("\(Fmt.count(count, "private entry", plural: "private entries")) "
+                   + "will be in the file, marked private. Nothing has left this phone "
+                   + "so far — sharing the file is the moment that changes.")
+                    .appFont(11)
+                    .foregroundStyle(Palette.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 2)
+            .accessibilityElement(children: .combine)
+        }
     }
 
     private func exportRow(title: String, detail: String, symbol: String,

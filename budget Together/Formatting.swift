@@ -94,17 +94,40 @@ enum Fmt {
     /// Bare number for putting an existing amount back into a text field —
     /// no currency symbol, no grouping, and no trailing ".0" on whole dollars.
     static func plain(_ n: Double) -> String {
-        n == n.rounded() ? String(Int(n)) : String(format: "%.2f", n)
+        n == n.rounded() ? String(whole(n)) : String(format: "%.2f", n)
     }
 
+    /// The largest figure the app will accept on a single line.
+    ///
+    /// Not a limit anyone will meet: it's a billion, and this app is somebody
+    /// logging a coffee. It's here because the alternative is unbounded, and an
+    /// unbounded amount doesn't stay in its own row — it lands in a total, then
+    /// an average, then a percentage, and one of those is an `Int(_:)` away
+    /// from trapping. A typo with the decimal pad held down, or a Shortcut
+    /// handing over a stray `Double`, shouldn't be able to make a screen
+    /// un-openable.
+    static let maxAmount: Double = 1_000_000_000
+
     /// Reads a typed amount, tolerating the user's decimal separator. Returns
-    /// `nil` for anything that isn't a positive number.
+    /// `nil` for anything that isn't a positive number within `maxAmount`.
     static func amount(from text: String) -> Double? {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return nil }
         let value = input.number(from: trimmed)?.doubleValue ?? Double(trimmed)
-        guard let value, value > 0, value.isFinite else { return nil }
+        guard let value, value > 0, value.isFinite, value <= maxAmount else { return nil }
         return value
+    }
+
+    /// Rounds to a whole number without ever trapping.
+    ///
+    /// `Int(_:)` is a runtime trap on NaN, on an infinity and on anything past
+    /// `Int.max`, and nearly every whole number the UI shows is the result of a
+    /// division — a percentage, a share, a payoff term. Clamping is free and
+    /// takes the whole family of crashes off the table, including for ledgers
+    /// that already hold a bad figure from before `maxAmount` existed.
+    static func whole(_ n: Double) -> Int {
+        guard n.isFinite else { return 0 }
+        return Int(min(max(n.rounded(), -1e15), 1e15))
     }
 
     /// "1 day" / "25 days".

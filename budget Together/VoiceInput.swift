@@ -168,6 +168,32 @@ enum VoiceAmountParser {
         return (nil, strippedOfFillers(cleaned))
     }
 
+    /// Strips digit-group separators — "1,250" becomes "1250" — before the
+    /// amount pattern ever sees them.
+    ///
+    /// This is the difference between logging $1,250 and logging $1.25.
+    /// `SFSpeechRecognizer` hands back numbers already formatted for the
+    /// locale, so "twelve hundred and fifty dollars" arrives as "$1,250". The
+    /// decimal branch of the pattern below then reads that comma as a decimal
+    /// point, takes "25" as the pence, and drops the trailing "0" into the
+    /// place name — a thousandfold error on somebody's money, made silently.
+    /// It is precisely the failure `spelledAmount` refuses to guess its way
+    /// into, arriving through the other door.
+    ///
+    /// A separator only counts as one when it sits between digits and is
+    /// followed by exactly three more, which leaves "12.50" and "12,50" alone:
+    /// two trailing digits is a decimal fraction in every locale that writes
+    /// it that way.
+    private static func withoutGroupingSeparators(_ phrase: String) -> String {
+        let pattern = #"(?<=\d)[.,](?=\d{3}(?!\d))"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return phrase }
+        return regex.stringByReplacingMatches(
+            in: phrase,
+            range: NSRange(phrase.startIndex..., in: phrase),
+            withTemplate: ""
+        )
+    }
+
     /// "12.50", "$12.50", "12 50" (which is how "twelve fifty" often arrives).
     ///
     /// One regex over the whole phrase rather than a second pass for the pence,
@@ -175,23 +201,24 @@ enum VoiceAmountParser {
     /// inside a substring and mapping it back is where this went wrong the
     /// first time, and it left the pence sitting in the leftover text.
     private static func digitAmount(in phrase: String) -> (Double?, String)? {
-        // whole part, then either a written decimal, or a separate two-digit
-        // group spoken as pence. `(?!\d)` stops "12 500" folding into 12.50.
-        let pattern = #"(\d+)(?:[.,](\d{1,2}))?(?:\s+(\d{2})(?!\d))?"#
+        let phrase = withoutGroupingSeparators(phrase)
+
+        // Whole part, then *either* a written decimal *or* a separate two-digit
+        // group spoken as pence — never both, because "12.50 30" is two numbers
+        // rather than twelve-fifty-thirty, and the second one belongs in the
+        // leftover text instead of being quietly eaten. `(?!\d)` on each stops
+        // "12 500" folding into 12.50.
+        let pattern = #"(\d+)(?:[.,](\d{1,2})(?!\d)|\s+(\d{2})(?!\d))?"#
         guard let regex = try? NSRegularExpression(pattern: pattern),
               let match = regex.firstMatch(in: phrase,
                                            range: NSRange(phrase.startIndex..., in: phrase)),
               let whole = group(1, in: match, of: phrase)
         else { return nil }
 
-        let written = group(2, in: match, of: phrase)
-        let spoken = group(3, in: match, of: phrase)
-        // A separately-spoken pence group only counts when no decimal was
-        // written; "12.50 30" is two numbers, not twelve pounds fifty-thirty.
-        let fraction = written ?? (written == nil ? spoken : nil)
+        let fraction = group(2, in: match, of: phrase) ?? group(3, in: match, of: phrase)
 
         let text = fraction.map { "\(whole).\($0)" } ?? whole
-        guard let value = Double(text), value > 0 else { return nil }
+        guard let value = Double(text), value > 0, value <= Fmt.maxAmount else { return nil }
 
         guard let consumed = Range(match.range, in: phrase) else { return nil }
         var leftover = phrase
@@ -269,7 +296,12 @@ enum VoiceAmountParser {
                    )?.doubleValue,
                    pence >= 10, pence <= 99, pence == pence.rounded() {
                     value += pence / 100
-                    rest.removeAll { $0 == words[next] }
+                    // Removing the pence word *by position*, not by value.
+                    // Dropping every copy of it takes words out of the place
+                    // name that were never part of the number — "fifty fifty
+                    // at Fifty" would lose the shop it was spent at. Cutting
+                    // the run out above shifted `next` down to `start`.
+                    if start < rest.count { rest.remove(at: start) }
                 }
 
                 return (value, strippedOfFillers(rest.joined(separator: " ")))

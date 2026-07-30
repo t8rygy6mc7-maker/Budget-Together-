@@ -544,13 +544,13 @@ struct Loan: Identifiable, Hashable {
     var monthsToClear: Int? {
         guard balance > 0, monthlyPayment > 0 else { return nil }
         let monthly = rate / 100 / 12
-        guard monthly > 0 else { return Int(ceil(balance / monthlyPayment)) }
+        guard monthly > 0 else { return Fmt.whole(ceil(balance / monthlyPayment)) }
         let interestOnly = balance * monthly
         guard monthlyPayment > interestOnly else { return nil }
         // Standard amortisation: n = -ln(1 - rB/p) / ln(1 + r)
         let months = -log(1 - monthly * balance / monthlyPayment) / log(1 + monthly)
         guard months.isFinite, months > 0 else { return nil }
-        return Int(ceil(months))
+        return Fmt.whole(ceil(months))
     }
 
     /// Total interest paid if nothing changes.

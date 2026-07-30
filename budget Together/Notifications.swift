@@ -24,6 +24,7 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     private static let mutedPrefix = "limitAlertMuted."
 
     private var authorized = false
+    private var billReminderTask: Task<Void, Never>?
 
     // MARK: Preferences
     //
@@ -114,30 +115,37 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
     /// Reschedules every reminder from scratch — simpler than diffing, and the
     /// list is small.
     func scheduleBillReminders(_ bills: [Recurring], daysBefore: Int = 2) {
-        center.getPendingNotificationRequests { requests in
+        // Reading the pending requests is asynchronous. Keep clearing and
+        // adding in one task so a late clear cannot remove reminders that this
+        // invocation has just added; a newer request supersedes an older one.
+        billReminderTask?.cancel()
+        billReminderTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            let requests = await center.pendingNotificationRequests()
+            guard !Task.isCancelled else { return }
             let stale = requests.map(\.identifier).filter { $0.hasPrefix(Self.billPrefix) }
-            self.center.removePendingNotificationRequests(withIdentifiers: stale)
-        }
-        guard authorized else { return }
+            center.removePendingNotificationRequests(withIdentifiers: stale)
+            guard authorized else { return }
 
-        for bill in bills where bill.isActive && bill.kind == .expense {
-            // Fire `daysBefore` ahead, wrapping into the previous month when
-            // that lands before the 1st.
-            var day = bill.dayOfMonth - daysBefore
-            if day < 1 { day += 28 }
+            for bill in bills where bill.isActive && bill.kind == .expense {
+                // Fire `daysBefore` ahead, wrapping into the previous month when
+                // that lands before the 1st.
+                var day = bill.dayOfMonth - daysBefore
+                if day < 1 { day += 28 }
 
-            var components = DateComponents()
-            components.day = min(day, 28)
-            components.hour = 9
+                var components = DateComponents()
+                components.day = min(day, 28)
+                components.hour = 9
 
-            let content = UNMutableNotificationContent()
-            content.title = "\(bill.place) is due soon"
-            content.body = "\(Fmt.money(bill.amount)) on day \(bill.dayOfMonth) of the month."
-            content.sound = .default
+                let content = UNMutableNotificationContent()
+                content.title = "\(bill.place) is due soon"
+                content.body = "\(Fmt.money(bill.amount)) on day \(bill.dayOfMonth) of the month."
+                content.sound = .default
 
-            let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
-            center.add(UNNotificationRequest(identifier: Self.billPrefix + bill.id,
-                                             content: content, trigger: trigger))
+                let trigger = UNCalendarNotificationTrigger(dateMatching: components, repeats: true)
+                try? await center.add(UNNotificationRequest(identifier: Self.billPrefix + bill.id,
+                                                            content: content, trigger: trigger))
+            }
         }
     }
 

@@ -87,8 +87,15 @@ struct LogSpendIntent: AppIntent {
         guard !snapshot.members.isEmpty else {
             return .result(dialog: "Set your budget up in the app first.")
         }
-        guard amount > 0 else {
-            return .result(dialog: "That needs to be more than nothing.")
+        // The value arrives from outside the app — a Siri transcription, or a
+        // Shortcut wiring in whatever some other action produced — so it gets
+        // the same bounds a typed amount does rather than being trusted. `> 0`
+        // alone lets an infinity through, and an infinity in the ledger poisons
+        // every total, average and chart derived from it.
+        guard amount > 0, amount.isFinite, amount <= Fmt.maxAmount else {
+            return .result(dialog: amount > Fmt.maxAmount
+                ? "That's larger than this app will record."
+                : "That needs to be more than nothing.")
         }
 
         // An unnamed spend takes its category's name, exactly as it does in the

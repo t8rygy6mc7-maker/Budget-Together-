@@ -329,8 +329,12 @@ struct HomeView: View {
             Text(model.isCurrentMonth ? "Spent this month" : "Spent in \(model.monthTitle)")
                 .appFont(13, weight: .medium).foregroundStyle(Palette.sub)
 
+            // 34pt, down from 44. The total is the anchor for the sentence
+            // above it and the breakdown below it, not a headline in its own
+            // right — at 44 it was the loudest thing on a screen whose actual
+            // job is to say how the month is going.
             HStack(alignment: .bottom, spacing: 10) {
-                Text(Fmt.money(model.spent)).mono(44, weight: .semibold)
+                Text(Fmt.money(model.spent)).mono(34, weight: .medium)
                 if let change = model.monthOverMonth {
                     HStack(spacing: 3) {
                         Image(systemName: change.isDown ? "arrow.down.right" : "arrow.up.right")
@@ -339,11 +343,22 @@ struct HomeView: View {
                             .appFont(13, weight: .semibold)
                     }
                     .foregroundStyle(change.isDown ? Palette.teal : Palette.over)
-                    .padding(.bottom, 10)
+                    .padding(.bottom, 6)
                 }
             }
 
-            BubbleCloud()
+            // What the total is made of, in one line. A figure that size says
+            // how much and nothing else; this is the part someone would
+            // actually repeat to the person they share the budget with.
+            if let takeaway = model.spendTakeaway {
+                Text(takeaway)
+                    .appFont(12.5)
+                    .foregroundStyle(Palette.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 5)
+            }
+
+            SpendBreakdown()
 
             if model.isCurrentMonth {
                 // Both of these are derived from limits. With none set they
@@ -488,144 +503,125 @@ struct HomeView: View {
     }
 }
 
-// MARK: - Bubble cloud
+// MARK: - Category breakdown
 
-struct BubbleCloud: View {
+/// Where the month's money went, biggest first, as something you can read at a
+/// glance and open.
+///
+/// This replaced a cloud of floating bubbles. They were the warmest thing on
+/// the screen and the least informative thing on it: diameter encoded amount so
+/// loosely that a smaller category in the first slot could out-draw a bigger one
+/// in the second (DESIGN-NOTES §3), no bubble carried a share, everything past
+/// the fifth category vanished without saying so, and none of it could be
+/// tapped. The colour survives — that's where the warmth actually came from —
+/// and now sits next to a figure that says what it means.
+struct SpendBreakdown: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dynamicTypeSize) private var typeSize
 
-    /// Hand-placed positions from the design comp, largest bucket first.
-    private struct Slot {
-        let base: CGFloat
-        let offset: CGSize
-        let fontSize: CGFloat
-    }
-
-    private static let slots: [Slot] = [
-        Slot(base: 148, offset: CGSize(width: 6,   height: 22),  fontSize: 17),
-        Slot(base: 100, offset: CGSize(width: 158, height: 6),   fontSize: 14),
-        Slot(base: 82,  offset: CGSize(width: 192, height: 122), fontSize: 12),
-        Slot(base: 74,  offset: CGSize(width: 96,  height: 168), fontSize: 12),
-        Slot(base: 60,  offset: CGSize(width: 16,  height: 178), fontSize: 11),
-    ]
+    /// Rows before the tail is folded into one line. Four is a glance; the
+    /// whole list is one tap away.
+    private static let visibleRows = 4
 
     var body: some View {
-        let items = Array(model.month.ranked.prefix(Self.slots.count))
-
+        let items = model.month.ranked
         if items.isEmpty {
             EmptySpendPrompt()
-        } else if typeSize.prefersPlainList {
-            // The circles are fixed-diameter and hand-placed, so text that has
-            // grown this far simply will not fit inside them. The ranked list
-            // says the same thing and says it more precisely.
-            RankedSpendList(items: items)
         } else {
-            cloud(items)
-        }
-    }
+            VStack(alignment: .leading, spacing: 0) {
+                // `spent` and `ranked` are accumulated in the same pass over
+                // the same entries, so this guards the division and nothing
+                // else — the shares always add up to the total above.
+                let spent = max(model.spent, 0.01)
+                let rest = items.dropFirst(Self.visibleRows)
 
-    private func cloud(_ items: [BucketTotal]) -> some View {
-        let largest = items.first?.total ?? 1
-        return ZStack(alignment: .topLeading) {
-            ForEach(Array(items.enumerated()), id: \.element.id) { index, item in
-                let slot = Self.slots[index]
-                let size = (slot.base * (0.74 + 0.26 * (item.total / largest))).rounded()
-                Bubble(item: item, size: size, fontSize: slot.fontSize, index: index)
-                    .frame(width: size, height: size)
-                    .offset(x: slot.offset.width, y: slot.offset.height)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .frame(height: 250)
-        .padding(.top, 10).padding(.bottom, 4)
-    }
-}
-
-/// Where the money went, as a list with proportional bars. Used whenever the
-/// bubbles can't be drawn honestly — at large type, and as the accessible
-/// reading of the same data.
-struct RankedSpendList: View {
-    let items: [BucketTotal]
-
-    var body: some View {
-        let largest = items.first?.total ?? 1
-        VStack(spacing: 10) {
-            ForEach(items) { item in
-                VStack(alignment: .leading, spacing: 5) {
-                    HStack(spacing: 8) {
-                        Image(systemName: item.bucket.symbol)
-                            .appFont(12, weight: .semibold)
-                            .foregroundStyle(item.bucket.color)
-                        Text(item.bucket.label)
-                            .appFont(13, weight: .semibold)
-                        Spacer(minLength: 4)
-                        Text(Fmt.money(item.total)).mono(13)
+                VStack(spacing: 11) {
+                    ForEach(items.prefix(Self.visibleRows)) { item in
+                        row(label: item.bucket.label, symbol: item.bucket.symbol,
+                            color: item.bucket.color, tint: item.bucket.tint,
+                            amount: item.total, share: item.total / spent * 100)
                     }
-                    ProgressBar(pct: item.total / max(largest, 1) * 100,
-                                fill: item.bucket.color, height: 6)
+                    // Four rows above a total they don't add up to is worse
+                    // than a longer list, so the tail gets a line rather than
+                    // silence.
+                    if !rest.isEmpty {
+                        let tail = rest.reduce(0) { $0 + $1.total }
+                        row(label: Fmt.count(rest.count, "more category",
+                                             plural: "more categories"),
+                            symbol: "ellipsis", color: Palette.sub, tint: Palette.chip,
+                            amount: tail, share: tail / spent * 100)
+                    }
                 }
-                .accessibilityElement(children: .combine)
+                .padding(.top, 14)
+
+                seeSpending
             }
         }
-        .padding(.top, 14).padding(.bottom, 6)
     }
-}
 
-struct Bubble: View {
-    let item: BucketTotal
-    let size: CGFloat
-    let fontSize: CGFloat
-    let index: Int
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var floating = false
-
-    var body: some View {
-        let bucket = item.bucket
-        ZStack {
-            Circle()
-                .fill(RadialGradient(colors: [bucket.color.opacity(0.95), bucket.color],
-                                     center: UnitPoint(x: 0.34, y: 0.30),
-                                     startRadius: 0, endRadius: size * 0.7))
-                .shadow(color: bucket.glow, radius: 19)
-
-            // These three sizes are fractions of the circle's diameter, not
-            // Dynamic Type sizes — scaling them independently would push the
-            // label straight out of the bubble. `BubbleCloud` handles large
-            // type by swapping the whole cloud for `RankedSpendList` instead.
-            VStack(spacing: 2) {
-                if size >= 66 {
-                    Image(systemName: bucket.symbol)
-                        .font(.system(size: size * 0.16, weight: .semibold))
+    /// One category: colour, name, amount, share, and a bar for the eye to
+    /// compare without reading any of it.
+    private func row(label: String, symbol: String, color: Color, tint: Color,
+                     amount: Double, share: Double) -> some View {
+        Button {
+            Haptics.selected()
+            model.reveal(.stats)
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 10) {
+                    Image(systemName: symbol)
+                        .appFont(12, weight: .semibold)
+                        .foregroundStyle(color)
+                        .frame(width: 28, height: 28)
+                        .background(tint,
+                                    in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    Text(label).appFont(13, weight: .semibold).lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(Fmt.money(amount)).mono(13)
+                    Text(shareLabel(share))
+                        .appFont(11.5, weight: .medium)
+                        .foregroundStyle(Palette.sub)
+                        .frame(width: 38, alignment: .trailing)
                 }
-                Text(Fmt.compact(item.total))
-                    .font(.system(size: fontSize, weight: .bold, design: .monospaced))
-                if size >= 96 {
-                    Text(bucket.short).font(.system(size: 10)).opacity(0.82)
-                }
-            }
-            .foregroundStyle(.white)
-        }
-        .offset(y: floating ? -6 : 0)
-        // The float has to be started with `withAnimation`, not `.animation(_:value:)`:
-        // a repeatForever curve attached as a modifier becomes the ambient
-        // animation for the whole subtree, so every later amount change
-        // cross-fades forever and the bubble shows a stale figure behind the
-        // new one.
-        .onAppear {
-            // Reduce Motion means this never starts. A perpetual bob is exactly
-            // the kind of idle movement the setting exists to switch off.
-            guard !reduceMotion else { return }
-            withAnimation(
-                .easeInOut(duration: 5 + Double(index) * 0.4)
-                    .repeatForever(autoreverses: true)
-                    .delay(Double(index) * 0.3)
-            ) {
-                floating = true
+                // Floored, like the trend chart's columns: a $5 category next
+                // to a $1,200 one draws about a pixel of bar, and a row with
+                // an amount on it and no mark beside it reads as broken.
+                ProgressBar(pct: max(share, 1.5), fill: color, height: 6)
             }
         }
+        .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(bucket.label): \(Fmt.money(item.total))")
+        .accessibilityLabel("\(label), \(Fmt.money(amount)), "
+                          + "\(shareLabel(share, spoken: true)) of spending")
+        .accessibilityHint("Opens the spending charts")
+    }
+
+    /// A share that rounds to zero still isn't zero, and "0%" beside a real
+    /// amount reads as an arithmetic bug. The spoken form differs only so
+    /// VoiceOver doesn't have to pronounce the chevron.
+    private func shareLabel(_ share: Double, spoken: Bool = false) -> String {
+        let whole = Fmt.whole(share)
+        guard whole > 0 else { return spoken ? "under 1%" : "<1%" }
+        return "\(whole)%"
+    }
+
+    /// The way into the full breakdown. Every row above goes to the same place;
+    /// this exists so the way in is *stated* rather than found by prodding a
+    /// row to see whether it does anything.
+    private var seeSpending: some View {
+        Button {
+            Haptics.selected()
+            model.reveal(.stats)
+        } label: {
+            HStack(spacing: 5) {
+                Text("See spending").appFont(13, weight: .semibold)
+                Image(systemName: "chevron.right").appFont(11, weight: .bold)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Palette.teal)
+            .padding(.vertical, 14)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens the spending charts")
     }
 }
 
