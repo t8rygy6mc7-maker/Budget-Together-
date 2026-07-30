@@ -392,6 +392,16 @@ struct Entry: Identifiable {
     /// question a partner would otherwise have to ask out loud — "this was for
     /// your birthday" costs nothing to write and defuses the whole exchange.
     var note: String = ""
+    /// A one-off that shouldn't be judged against the monthly plan — a laptop,
+    /// a flight, a deposit. It stays in the ledger and in the export, but it's
+    /// kept out of the month's spending, the category breakdown, the streak and
+    /// the forecast.
+    ///
+    /// This is a different axis from `Cadence` and from the month-level unusual
+    /// flag, and it's worth being clear which is which. Cadence asks whether a
+    /// *category* is a standing bill. The month flag says a whole month was
+    /// strange. This says one particular purchase was never part of the plan.
+    var belowTheLine: Bool = false
     /// Kept out of the shared store entirely — never syncs to anyone else's
     /// device. See `BudgetStore.addEntry` for how that's enforced.
     var isPrivate: Bool = false

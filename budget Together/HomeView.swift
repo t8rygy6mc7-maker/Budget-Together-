@@ -101,6 +101,42 @@ struct HomeView: View {
         .foregroundStyle(Palette.teal)
     }
 
+    /// What was spent this month but deliberately set aside from the plan.
+    ///
+    /// Every headline figure on this screen excludes it, which is the point —
+    /// but excluding money from the totals without saying so is how an app
+    /// starts quietly disagreeing with somebody's bank balance. So it gets a
+    /// line of its own, stated as a deliberate choice rather than a warning.
+    @ViewBuilder
+    private var oneOffStrip: some View {
+        if model.month.belowTheLine > 0 {
+            Button { model.tab = .log } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: "minus.diamond.fill")
+                        .appFont(14, weight: .semibold)
+                        .foregroundStyle(Palette.moodJoy)
+                        .frame(width: 32, height: 32)
+                        .background(Palette.moodJoy.opacity(0.16),
+                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("\(Fmt.money(model.month.belowTheLine)) in one-offs")
+                            .appFont(13, weight: .semibold).lineLimit(1)
+                        Text("^[\(model.month.belowTheLineCount) thing](inflect: true) you set aside — not counted above")
+                            .appFont(11.5).foregroundStyle(Palette.sub)
+                            .lineLimit(1)
+                    }
+                    Spacer(minLength: 4)
+                    Image(systemName: "chevron.right")
+                        .appFont(12, weight: .semibold)
+                        .foregroundStyle(Palette.muted)
+                }
+                .padding(.horizontal, 14).padding(.vertical, 12)
+                .card(border: Palette.cardBorderSoft, radius: 15)
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
     /// The way to the Budget tab while it's still hidden from the bar. Without
     /// this, progressive disclosure would be a locked door rather than a tidy
     /// one — someone who arrives knowing exactly what they want to set up has
@@ -266,6 +302,7 @@ struct HomeView: View {
             .padding(.horizontal, 14).padding(.vertical, 12)
             .card(border: Palette.cardBorderSoft, radius: 15)
 
+            oneOffStrip.padding(.top, 9)
             planStrip.padding(.top, 9)
             forecastStrip.padding(.top, 9)
             winsStrip.padding(.top, 9)
@@ -334,7 +371,8 @@ struct HomeView: View {
                 .padding(.top, 8)
             }
 
-            planStrip.padding(.top, 12)
+            oneOffStrip.padding(.top, 12)
+            planStrip.padding(.top, 9)
             forecastStrip.padding(.top, 9)
             winsStrip.padding(.top, 9)
             challengeStrip.padding(.top, 9)

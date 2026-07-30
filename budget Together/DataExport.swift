@@ -27,7 +27,7 @@ enum DataExport {
     /// One row per transaction, newest first, with the category resolved to its
     /// current name so the file is readable without the app to decode ids.
     static func csv(entries: [Entry], memberName: (String) -> String) -> String {
-        var out = "Date,Amount,Direction,Category,Where,Who,Mood,Note,Private\n"
+        var out = "Date,Amount,Direction,Category,Where,Who,Mood,Note,One-off,Private\n"
         for entry in entries {
             let bucket = Bucket.named(entry.bucket)
             let fields = [
@@ -41,6 +41,7 @@ enum DataExport {
                 memberName(entry.memberID),
                 entry.mood?.label ?? "",
                 entry.note,
+                entry.belowTheLine ? "yes" : "no",
                 entry.isPrivate ? "yes" : "no",
             ]
             out += fields.map(escape).joined(separator: ",") + "\n"
@@ -120,6 +121,7 @@ enum DataExport {
                     "memberID": entry.memberID,
                     "mood": entry.mood?.rawValue ?? "",
                     "note": entry.note,
+                    "belowTheLine": entry.belowTheLine,
                     "isPrivate": entry.isPrivate,
                     "createdAt": stamp.string(from: entry.createdAt),
                     "reactions": (reactions[entry.id] ?? []).map { reaction in

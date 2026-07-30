@@ -55,6 +55,7 @@ enum CDModel {
             attr("kind",       .stringAttributeType),   // EntryKind; nil predates income and reads as expense
             secret("mood",     .stringAttributeType),   // Mood; nil means untagged, which is normal
             secret("note",     .stringAttributeType),   // free text; nil and "" are the same thing
+            attr("belowTheLine", .booleanAttributeType), // one-off, kept out of the plan
             attr("isPrivate",  .booleanAttributeType),  // kept out of the shared store
             // Entries are found by this, not by the household relationship: a
             // private entry lives in a different store from the household, and
@@ -473,6 +474,7 @@ final class BudgetStore {
                 kind: EntryKind(rawValue: obj.value(forKey: "kind") as? String ?? "") ?? .expense,
                 mood: (obj.value(forKey: "mood") as? String).flatMap(Mood.init(rawValue:)),
                 note: obj.value(forKey: "note") as? String ?? "",
+                belowTheLine: obj.value(forKey: "belowTheLine") as? Bool ?? false,
                 isPrivate: obj.value(forKey: "isPrivate") as? Bool ?? false,
                 createdAt: obj.value(forKey: "createdAt") as? Date ?? .distantPast
             )
@@ -954,8 +956,8 @@ final class BudgetStore {
     /// jumping to the top of it.
     func addEntry(id: String, date: String, place: String, amount: Double,
                   bucket: String, memberID: String, kind: EntryKind = .expense,
-                  mood: Mood? = nil, note: String = "", isPrivate: Bool = false,
-                  createdAt: Date = Date()) {
+                  mood: Mood? = nil, note: String = "", belowTheLine: Bool = false,
+                  isPrivate: Bool = false, createdAt: Date = Date()) {
         guard let house = currentHousehold() else { return }
         let entry = NSManagedObject(entity: entity(CDModel.entry), insertInto: viewContext)
         entry.setValue(id, forKey: "id")
@@ -967,6 +969,7 @@ final class BudgetStore {
         entry.setValue(kind.rawValue, forKey: "kind")
         entry.setValue(mood?.rawValue, forKey: "mood")
         entry.setValue(note, forKey: "note")
+        entry.setValue(belowTheLine, forKey: "belowTheLine")
         entry.setValue(isPrivate, forKey: "isPrivate")
         entry.setValue(house.value(forKey: "id"), forKey: "householdID")
         entry.setValue(createdAt, forKey: "createdAt")
@@ -1000,7 +1003,7 @@ final class BudgetStore {
     /// so an edit doesn't reshuffle the day's ordering under the user.
     func updateEntry(id: String, date: String, place: String, amount: Double,
                      bucket: String, memberID: String, kind: EntryKind, mood: Mood?,
-                     note: String, isPrivate: Bool) {
+                     note: String, belowTheLine: Bool, isPrivate: Bool) {
         let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.entry)
         request.predicate = NSPredicate(format: "id == %@", id)
         request.fetchLimit = 1
@@ -1015,7 +1018,7 @@ final class BudgetStore {
             save()
             addEntry(id: id, date: date, place: place, amount: amount, bucket: bucket,
                      memberID: memberID, kind: kind, mood: mood, note: note,
-                     isPrivate: isPrivate, createdAt: created)
+                     belowTheLine: belowTheLine, isPrivate: isPrivate, createdAt: created)
             return
         }
 
@@ -1027,6 +1030,7 @@ final class BudgetStore {
         entry.setValue(kind.rawValue, forKey: "kind")
         entry.setValue(mood?.rawValue, forKey: "mood")
         entry.setValue(note, forKey: "note")
+        entry.setValue(belowTheLine, forKey: "belowTheLine")
         save()
     }
 

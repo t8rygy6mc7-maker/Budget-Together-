@@ -15,6 +15,7 @@ struct AddSheet: View {
     @State private var bucket = Bucket.fallback.id
     @State private var mood: Mood?
     @State private var note = ""
+    @State private var belowTheLine = false
     @State private var isPrivate = false
     @State private var showPeople = false
     /// Once the user picks a category themselves, the guesser stops touching it.
@@ -124,6 +125,7 @@ struct AddSheet: View {
             categoryPicker
             if kind == .expense { moodPicker }
             noteField
+            belowTheLineToggle
             privacyToggle
         } else {
             guessSummary
@@ -552,7 +554,30 @@ struct AddSheet: View {
         .padding(.top, 14)
     }
 
-    /// Only meaningful in a household with someone else in it — with one member
+    /// Sets a purchase aside from the plan.
+    ///
+    /// Only offered for spending: income is never measured against a limit, so
+    /// the idea doesn't apply to it.
+    @ViewBuilder
+    private var belowTheLineToggle: some View {
+        if kind == .expense {
+            Toggle(isOn: $belowTheLine) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("A one-off — don't count it").appFont(13.5, weight: .semibold)
+                    Text(belowTheLine
+                         ? "Stays in your log and your export, but out of this month's spending, the streak and the forecast."
+                         : "For things that were never part of the plan — a flight, a laptop, a deposit.")
+                        .appFont(11.5).foregroundStyle(Palette.sub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .fieldBackground(radius: 13)
+            .padding(.top, 14)
+        }
+    }
+
+    /// Only meaningful in a budget with someone else on it — with one member
     /// there's nobody to keep it from.
     @ViewBuilder
     private var privacyToggle: some View {
@@ -726,6 +751,7 @@ struct AddSheet: View {
         kind = editing.kind
         mood = editing.mood
         note = editing.note
+        belowTheLine = editing.belowTheLine
         isPrivate = editing.isPrivate
         memberID = editing.memberID
     }
@@ -738,14 +764,18 @@ struct AddSheet: View {
         if let editing {
             model.updateEntry(editing, place: draft.place, amount: draft.amount,
                               bucket: bucket, memberID: draft.memberID, kind: kind,
-                              mood: tag, note: trimmedNote, isPrivate: isPrivate)
+                              mood: tag, note: trimmedNote,
+                              belowTheLine: kind == .expense && belowTheLine,
+                              isPrivate: isPrivate)
             // An edit is one finished job — there's no "another" to offer.
             dismiss()
             return
         }
         model.addEntry(place: draft.place, amount: draft.amount,
                        bucket: bucket, memberID: draft.memberID, kind: kind,
-                       mood: tag, note: trimmedNote, isPrivate: isPrivate)
+                       mood: tag, note: trimmedNote,
+                       belowTheLine: kind == .expense && belowTheLine,
+                       isPrivate: isPrivate)
         savedCount += 1
         amountFocused = false
         withAnimation(.easeOut(duration: 0.2)) {
@@ -767,6 +797,7 @@ struct AddSheet: View {
         place = ""
         mood = nil
         note = ""
+        belowTheLine = false
         isPrivate = false
         showDetails = false
         bucket = Bucket.fallback(for: kind).id

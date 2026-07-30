@@ -29,6 +29,11 @@ struct MonthDigest {
     var byDay: [Int: Double] = [:]
     /// Same-scope total for the previous month, for the header comparison.
     var previousSpent: Double = 0
+    /// One-off spending the user has set aside from the plan. Deliberately
+    /// *not* folded into `spent` — but tracked, and shown, because money that
+    /// left the account has to appear somewhere.
+    var belowTheLine: Double = 0
+    var belowTheLineCount: Int = 0
 
     /// What the household actually kept this month.
     var net: Double { earned - spent }
@@ -539,21 +544,23 @@ final class AppModel: ObservableObject {
 
     func addEntry(place: String, amount: Double, bucket: String,
                   memberID: String, kind: EntryKind = .expense, mood: Mood? = nil,
-                  note: String = "", isPrivate: Bool = false) {
+                  note: String = "", belowTheLine: Bool = false,
+                  isPrivate: Bool = false) {
         store.addEntry(id: UUID().uuidString, date: today, place: place,
                        amount: amount, bucket: bucket, memberID: memberID,
-                       kind: kind, mood: mood, note: note, isPrivate: isPrivate)
+                       kind: kind, mood: mood, note: note,
+                       belowTheLine: belowTheLine, isPrivate: isPrivate)
         Haptics.saved()
         reload()
     }
 
     func updateEntry(_ entry: Entry, place: String, amount: Double, bucket: String,
                      memberID: String, kind: EntryKind, mood: Mood?, note: String,
-                     isPrivate: Bool) {
+                     belowTheLine: Bool, isPrivate: Bool) {
         offerUndo(.editedEntry(before: entry), message: "Changes to \(entry.place) saved.")
         store.updateEntry(id: entry.id, date: entry.date, place: place, amount: amount,
                           bucket: bucket, memberID: memberID, kind: kind, mood: mood,
-                          note: note, isPrivate: isPrivate)
+                          note: note, belowTheLine: belowTheLine, isPrivate: isPrivate)
         Haptics.saved()
         reload()
     }
@@ -638,6 +645,7 @@ final class AppModel: ObservableObject {
                               amount: before.amount, bucket: before.bucket,
                               memberID: before.memberID, kind: before.kind,
                               mood: before.mood, note: before.note,
+                              belowTheLine: before.belowTheLine,
                               isPrivate: before.isPrivate)
 
         case let .deletedRecurring(item):
@@ -677,8 +685,8 @@ final class AppModel: ObservableObject {
         store.addEntry(id: entry.id, date: entry.date, place: entry.place,
                        amount: entry.amount, bucket: entry.bucket,
                        memberID: entry.memberID, kind: entry.kind, mood: entry.mood,
-                       note: entry.note, isPrivate: entry.isPrivate,
-                       createdAt: entry.createdAt)
+                       note: entry.note, belowTheLine: entry.belowTheLine,
+                       isPrivate: entry.isPrivate, createdAt: entry.createdAt)
     }
 
     // MARK: - Your data
@@ -1255,6 +1263,16 @@ final class AppModel: ObservableObject {
                     incomeTotals[entry.bucket, default: 0] += entry.amount
                     continue
                 }
+                // Below-the-line spending is held apart from everything the
+                // plan is measured with: the month's total, the category
+                // breakdown, the fun-money figure and the per-day numbers the
+                // streak is built from. A laptop bought once shouldn't read as
+                // a blown budget, and it definitely shouldn't end a streak.
+                guard !entry.belowTheLine else {
+                    digest.belowTheLine += entry.amount
+                    digest.belowTheLineCount += 1
+                    continue
+                }
                 digest.spent += entry.amount
                 digest.totals[entry.bucket, default: 0] += entry.amount
                 digest.byMember[entry.memberID, default: 0] += entry.amount
@@ -1269,7 +1287,10 @@ final class AppModel: ObservableObject {
                     let current = moodTotals[mood] ?? (0, 0)
                     moodTotals[mood] = (current.amount + entry.amount, current.count + 1)
                 }
-            } else if entry.date.hasPrefix(previous), entry.kind == .expense {
+            } else if entry.date.hasPrefix(previous), entry.kind == .expense,
+                      !entry.belowTheLine {
+                // Same exclusion as the current month, or the comparison would
+                // be measuring two different things against each other.
                 digest.previousSpent += entry.amount
             }
         }

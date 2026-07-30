@@ -74,9 +74,19 @@ struct BottomBar: View {
 
         ZStack {
             HStack(spacing: 0) {
-                ForEach(tabs.prefix(split), id: \.self) { navButton($0) }
+                // Each side gets equal width regardless of how many tabs it
+                // holds, so the gap — and the floating button pinned to the
+                // bar's true center — stays centered even when a side has an
+                // uneven tab count (e.g. Stats hidden pre-plan gives 2-and-1).
+                HStack(spacing: 0) {
+                    ForEach(tabs.prefix(split), id: \.self) { navButton($0) }
+                }
+                .frame(maxWidth: .infinity)
                 Spacer().frame(width: 56)   // gap for the floating add button
-                ForEach(tabs.dropFirst(split), id: \.self) { navButton($0) }
+                HStack(spacing: 0) {
+                    ForEach(tabs.dropFirst(split), id: \.self) { navButton($0) }
+                }
+                .frame(maxWidth: .infinity)
             }
             .padding(.horizontal, 26)
             .padding(.vertical, 11)
@@ -231,6 +241,12 @@ struct EntryRow: View {
                                 .appFont(9, weight: .semibold)
                                 .foregroundStyle(mood.color)
                                 .accessibilityLabel(mood.label)
+                        }
+                        if entry.belowTheLine {
+                            Image(systemName: "minus.diamond.fill")
+                                .appFont(9, weight: .semibold)
+                                .foregroundStyle(Palette.moodJoy)
+                                .accessibilityLabel("One-off, not counted against the budget")
                         }
                         if entry.hasNote, !showsSocial {
                             Image(systemName: "text.bubble.fill")
