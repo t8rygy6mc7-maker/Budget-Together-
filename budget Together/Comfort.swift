@@ -72,8 +72,8 @@ struct Stat: Identifiable {
     var id: String { title }
 }
 
-/// Two or three figures side by side in a card, separated by hairlines — the
-/// "Budget left / Safe daily / Days left" pattern Home uses in three places.
+/// Two or three figures side by side in a card — the "Budget left / Safe
+/// daily / Days left" pattern Home uses in three places.
 ///
 /// Three columns of text stop fitting long before Dynamic Type runs out, so past
 /// the accessibility sizes the same figures stack into rows. Nothing is dropped
@@ -92,13 +92,7 @@ struct StatRow: View {
                 }
             } else {
                 HStack(spacing: 0) {
-                    ForEach(Array(stats.enumerated()), id: \.element.id) { index, stat in
-                        if index > 0 {
-                            Rectangle().fill(Palette.cardBorder)
-                                .frame(width: 1, height: 34)
-                        }
-                        cell(stat)
-                    }
+                    ForEach(stats) { cell($0) }
                 }
             }
         }
