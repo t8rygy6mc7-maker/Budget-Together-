@@ -207,6 +207,19 @@ final class AppModel: ObservableObject {
     /// This device's member, when it's known which one that is.
     var me: Member? { store.localMemberID.flatMap { membersByID[$0] } }
 
+    /// Whether this device still has to say which member it is.
+    ///
+    /// Worth surfacing rather than leaving to be discovered, because everything
+    /// keyed on "who am I" degrades quietly while it's unanswered: reactions
+    /// can't be attributed and so aren't offered, `othersActiveToday` counts
+    /// the user among the others and greets them for their own spending, and
+    /// both `defaultMemberID` and `LogSpendIntent` file a new entry under
+    /// whoever happens to be first in the household instead of under them.
+    ///
+    /// Only asked once there's more than one person, since with a household of
+    /// one there's nothing to be wrong about.
+    var needsLocalMember: Bool { members.count > 1 && me == nil }
+
     /// The member an entry belongs to, falling back to a grey placeholder so a
     /// row whose member was deleted elsewhere still renders.
     func member(_ id: String) -> Member { membersByID[id] ?? .unknown }

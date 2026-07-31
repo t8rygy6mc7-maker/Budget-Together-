@@ -384,8 +384,19 @@ struct EntryRow: View {
     /// Whether there's anyone to react *to*. Never your own entries — reacting
     /// to yourself isn't a thing anyone wants — and never private ones, which
     /// by definition nobody else can see.
+    ///
+    /// The `model.me` binding is load-bearing rather than incidental: written as
+    /// `model.me?.id != entry.memberID`, a device that doesn't yet know which
+    /// member it is compares `nil` against every id, passes, and grows a react
+    /// button on *every* row — including the user's own entries — which then
+    /// does nothing at all, because `AppModel.react` guards on the same missing
+    /// id and returns. That state isn't hypothetical: `localMemberID` lives in
+    /// UserDefaults and is deliberately never mirrored, so it is empty on any
+    /// device that didn't create the household, and `deleteMember` clears it
+    /// when you remove yourself.
     private var canReact: Bool {
-        model.me?.id != entry.memberID && !entry.isPrivate && model.members.count > 1
+        guard let me = model.me else { return false }
+        return me.id != entry.memberID && !entry.isPrivate && model.members.count > 1
     }
 
     /// Reactions people have already left. Only takes a row when there are some.

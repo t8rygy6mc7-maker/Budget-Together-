@@ -22,6 +22,8 @@ struct PeopleSheet: View {
             VStack(alignment: .leading, spacing: 0) {
                 header
 
+                whoAreYouPrompt
+
                 VStack(spacing: 8) {
                     ForEach(model.members) { PersonRow(member: $0, remove: { pendingRemoval = $0 }) }
                 }
@@ -68,6 +70,61 @@ struct PeopleSheet: View {
     }
 
     // MARK: - Sections
+
+    /// Asks which of these people is holding the phone, when that isn't known.
+    ///
+    /// "This is me" already lives in each row's overflow menu, but nothing ever
+    /// pointed at it, and the state it fixes is silent — the app doesn't look
+    /// broken, it just quietly attributes things to the wrong person and stops
+    /// offering reactions. That's the case for asking plainly and inline rather
+    /// than leaving it to be found.
+    ///
+    /// It's a question, not a warning: the honest framing is that the app
+    /// doesn't know something yet, not that the user did anything wrong.
+    @ViewBuilder
+    private var whoAreYouPrompt: some View {
+        if model.needsLocalMember {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(spacing: 9) {
+                    Image(systemName: "person.crop.circle.badge.questionmark")
+                        .appFont(13, weight: .semibold)
+                        .foregroundStyle(Palette.teal)
+                    Text("Which one of these is you?")
+                        .appFont(13.5, weight: .semibold)
+                    Spacer(minLength: 0)
+                }
+                Text("This phone doesn't know yet, so new entries may be filed under "
+                   + "the wrong person and you can't react to anyone's spending.")
+                    .appFont(11.5)
+                    .foregroundStyle(Palette.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+
+                // Everyone is offered directly. The household is small by
+                // nature, and one tap here beats hunting through a row's
+                // overflow menu for the same command.
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
+                    ForEach(model.members) { member in
+                        Button { model.setMe(member.id) } label: {
+                            HStack(spacing: 6) {
+                                MemberAvatar(member: member, size: 20)
+                                Text(member.name)
+                                    .appFont(12.5, weight: .semibold)
+                                    .lineLimit(1)
+                                Spacer(minLength: 0)
+                            }
+                            .padding(.horizontal, 9).padding(.vertical, 7)
+                            .fieldBackground(AnyShapeStyle(Palette.card),
+                                             border: Palette.cardBorder, radius: 11)
+                        }
+                        .accessibilityLabel("I'm \(member.name)")
+                    }
+                }
+            }
+            .padding(13)
+            .card(border: Palette.teal.opacity(0.45), radius: 16)
+            .padding(.bottom, 12)
+        }
+    }
 
     private var header: some View {
         HStack {
