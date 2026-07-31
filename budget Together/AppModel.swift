@@ -778,9 +778,15 @@ final class AppModel: ObservableObject {
     /// Destroys everything, irreversibly, on this device. Deliberately offers
     /// no undo — `offerUndo` is for slips, and this one is guarded by typing
     /// the word instead.
-    func eraseEverything() {
+    ///
+    /// Returns whether the files behind the data were actually confirmed
+    /// gone. The app is emptied either way — `reload` runs regardless — but
+    /// the caller needs the real answer to tell the user, rather than
+    /// assuming success because nothing threw.
+    @discardableResult
+    func eraseEverything() -> Bool {
         dismissUndo()
-        store.eraseEverything()
+        let destroyed = store.eraseEverything()
         // An export is the most complete copy the app ever makes. Leaving one
         // in the temporary directory would mean the single most revealing file
         // is the one thing that survives being erased.
@@ -790,6 +796,7 @@ final class AppModel: ObservableObject {
         selectedMonth = Date()
         tab = .home
         reload()
+        return destroyed
     }
 
     // MARK: - Categories

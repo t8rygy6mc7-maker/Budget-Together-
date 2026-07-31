@@ -17,6 +17,11 @@ struct DataSheet: View {
     @State private var file: AppModel.ExportFile?
     @State private var confirming = false
     @State private var typed = ""
+    /// Set when `eraseEverything` couldn't confirm the on-disk files were
+    /// actually gone. The rows are cleared either way, but this is the one
+    /// promise on this screen that's worth telling the truth about even when
+    /// the truth is worse than "done".
+    @State private var eraseFailed = false
     @FocusState private var confirmFocused: Bool
 
     /// Typed rather than tapped. A destructive-role button in a dialog is one
@@ -251,10 +256,23 @@ struct DataSheet: View {
                 .fieldBackground(radius: 13)
                 .accessibilityLabel("Type \(Self.phrase) to confirm deletion")
 
+            if eraseFailed {
+                eraseFailureNotice
+            }
+
             Button {
                 Haptics.warned()
-                model.eraseEverything()
-                dismiss()
+                eraseFailed = false
+                if model.eraseEverything() {
+                    dismiss()
+                } else {
+                    // The entries are gone from the app either way — this is
+                    // about the file behind them, which couldn't be confirmed
+                    // removed. Staying open and saying so beats a reassuring
+                    // dismiss over a promise that may not hold.
+                    Haptics.warned()
+                    eraseFailed = true
+                }
             } label: {
                 Text("Delete everything")
                     .appFont(15, weight: .bold)
@@ -281,6 +299,26 @@ struct DataSheet: View {
         }
         .padding(14)
         .card(border: Palette.over.opacity(0.4), radius: 16)
+    }
+
+    /// Shown when the on-disk file couldn't be confirmed gone. Everything is
+    /// already cleared from the app itself — this is only about the bytes
+    /// behind it — so the honest fix is the one place that's guaranteed to
+    /// work regardless of what went wrong here: removing the app.
+    private var eraseFailureNotice: some View {
+        HStack(alignment: .top, spacing: 8) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .appFont(11, weight: .semibold)
+                .foregroundStyle(Palette.over)
+                .padding(.top, 1)
+            Text("Your entries are cleared from the app, but the file on this "
+               + "phone couldn't be confirmed fully removed. Deleting the app "
+               + "itself guarantees it's gone.")
+                .appFont(11.5)
+                .foregroundStyle(Palette.text)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

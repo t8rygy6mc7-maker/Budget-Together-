@@ -581,7 +581,14 @@ final class BudgetStore {
     /// household cascade, because entries and reactions are matched by id and
     /// a private entry has no household relationship at all — a cascade would
     /// leave exactly the most sensitive rows behind.
-    func eraseEverything() {
+    ///
+    /// Returns whether the on-disk files were actually confirmed gone. The
+    /// rows are deleted from the live context either way — the app is empty
+    /// from here regardless — but the caller needs to know if the bytes
+    /// behind them might not be, because "delete everything" that quietly
+    /// isn't is worse than one that says so.
+    @discardableResult
+    func eraseEverything() -> Bool {
         let entities = [CDModel.entry, CDModel.reaction, CDModel.cap, CDModel.member,
                         CDModel.recurring, CDModel.loan, CDModel.challenge,
                         CDModel.monthFlag, CDModel.category, CDModel.household]
@@ -590,7 +597,7 @@ final class BudgetStore {
             for obj in (try? viewContext.fetch(request)) ?? [] { viewContext.delete(obj) }
         }
         save()
-        rebuildStores()
+        let destroyed = rebuildStores()
 
         // Anything the app kept in UserDefaults is data about the user too.
         if let defaults {
@@ -601,6 +608,7 @@ final class BudgetStore {
             }
         }
         localMemberIDInMemory = nil
+        return destroyed
     }
 
     /// Keys this app owns. Listed rather than wildcarded so a wipe can never
@@ -620,31 +628,57 @@ final class BudgetStore {
     /// something happens to overwrite them. "There is no copy on a server to
     /// restore from" is only true if there isn't one on the phone either.
     ///
-    /// Failure here is left recoverable on purpose: the rows are already gone
-    /// by the time this runs, so the worst case is residue in a file the user
-    /// can still remove by deleting the app.
-    private func rebuildStores() {
+    /// Returns whether every on-disk file was actually confirmed gone
+    /// afterward — not whether Core Data reported success, which is a
+    /// different question. `destroyPersistentStore` and `remove` can each
+    /// fail (a locked file, a storage glitch) without leaving the store any
+    /// less present on disk, and reporting "erased" on their say-so alone
+    /// would be trusting the one part of this that's allowed to be wrong.
+    /// So every removal is attempted directly and unconditionally — not only
+    /// as a fallback when the calls above throw — and checked with
+    /// `fileExists` rather than assumed from a lack of a thrown error.
+    ///
+    /// Failure here still leaves the app usable: the rows are already gone
+    /// from the live context by the time this runs, so the worst case is
+    /// residue in a file the caller now knows to tell the user about, rather
+    /// than residue nobody was ever told existed.
+    @discardableResult
+    private func rebuildStores() -> Bool {
         let coordinator = container.persistentStoreCoordinator
         viewContext.reset()
+
+        var allDestroyed = true
 
         // Snapshotted, because removing a store mutates the coordinator's list.
         for store in Array(coordinator.persistentStores) {
             // The in-memory store used by previews has nothing on disk to take.
             guard let url = store.url, url.isFileURL, url.path != "/dev/null" else { continue }
+
             do {
                 try coordinator.remove(store)
+            } catch {
+                assertionFailure("Failed to detach store: \(error)")
+            }
+            do {
                 try coordinator.destroyPersistentStore(at: url, type: .sqlite)
             } catch {
                 assertionFailure("Failed to destroy store: \(error)")
-                continue
             }
+
             // `destroyPersistentStore` is documented as leaving the file in
             // place, truncated. The write-ahead log and shared-memory files
             // beside it are where the most recent transactions live, so those
-            // go as well rather than being left to be recovered from.
+            // go as well rather than being left to be recovered from. This
+            // runs regardless of whether the calls above threw — it's the
+            // actual guarantee, Core Data's cooperation is not — and each
+            // removal is verified rather than trusted.
             for suffix in ["", "-wal", "-shm"] {
-                try? FileManager.default.removeItem(
-                    at: URL(fileURLWithPath: url.path + suffix))
+                let path = url.path + suffix
+                try? FileManager.default.removeItem(at: URL(fileURLWithPath: path))
+                if FileManager.default.fileExists(atPath: path) {
+                    assertionFailure("Store file still present after erase: \(path)")
+                    allDestroyed = false
+                }
             }
         }
 
@@ -657,6 +691,7 @@ final class BudgetStore {
             }
             self?.captureStore(for: desc)
         }
+        return allDestroyed
     }
 
     // MARK: Categories
