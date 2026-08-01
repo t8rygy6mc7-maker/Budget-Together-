@@ -17,6 +17,11 @@ struct AddSheet: View {
     @State private var note = ""
     @State private var belowTheLine = false
     @State private var isPrivate = false
+    /// Whether this also becomes a standing item in Repeating.
+    @State private var repeats = false
+    /// Which day it would post on, defaulting to today's — you're logging it
+    /// today, so today's date is the one the household already associates with it.
+    @State private var repeatDay = Recurring.defaultDay
     @State private var showPeople = false
     /// Once the user picks a category themselves, the guesser stops touching it.
     @State private var pickedCategory = false
@@ -46,6 +51,8 @@ struct AddSheet: View {
         let bucket: Bucket
         let memberName: String
         let isPrivate: Bool
+        /// The day it now repeats on, or `nil` if this was a one-time log.
+        let repeatsOn: Int?
     }
 
     /// Adaptive rather than a fixed four, so the labels still fit when Dynamic
@@ -126,6 +133,7 @@ struct AddSheet: View {
             if kind == .expense { moodPicker }
             noteField
             belowTheLineToggle
+            repeatToggle
             privacyToggle
         } else {
             guessSummary
@@ -311,6 +319,10 @@ struct AddSheet: View {
                     if saved.isPrivate {
                         Image(systemName: "lock.fill").appFont(9, weight: .semibold)
                         Text("Private")
+                    }
+                    if let day = saved.repeatsOn {
+                        Image(systemName: "repeat").appFont(9, weight: .semibold)
+                        Text("Every \(Recurring.ordinal(day))")
                     }
                 }
                 .appFont(12, weight: .medium)
@@ -560,7 +572,7 @@ struct AddSheet: View {
     /// the idea doesn't apply to it.
     @ViewBuilder
     private var belowTheLineToggle: some View {
-        if kind == .expense {
+        if kind == .expense, !repeats {
             Toggle(isOn: $belowTheLine) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("A one-off — don't count it").appFont(13.5, weight: .semibold)
@@ -577,11 +589,57 @@ struct AddSheet: View {
         }
     }
 
+    /// Turns the entry into a standing item as well as a logged one: it lands in
+    /// Repeating and posts itself on the same day every month from then on.
+    ///
+    /// Only on a fresh log. Nothing links an `Entry` to a `Recurring`, so on an
+    /// edit this couldn't tell you whether the thing already repeats, and a
+    /// toggle that can't show its own state is worse than no toggle at all.
+    ///
+    /// It also displaces two settings rather than sitting alongside them, which
+    /// is why they're mutually exclusive in both directions. A `Recurring`
+    /// carries neither `belowTheLine` nor `isPrivate`, so the copies it posts
+    /// would silently start counting — and, worse, start syncing to everyone —
+    /// while the entry that spawned them did neither.
+    @ViewBuilder
+    private var repeatToggle: some View {
+        if editing == nil, !belowTheLine, !isPrivate {
+            Toggle(isOn: $repeats.animation(.easeOut(duration: 0.15))) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("This repeats every month").appFont(13.5, weight: .semibold)
+                    Text(repeats
+                         ? "Logged now, then posts itself on the \(Recurring.ordinal(repeatDay)) of every month from next month on. Change or stop it under Repeating."
+                         : "For rent, a subscription or a payday — anything that lands on the same day each month.")
+                        .appFont(11.5).foregroundStyle(Palette.sub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .fieldBackground(radius: 13)
+            .padding(.top, 14)
+
+            if repeats {
+                // Capped at 28 so the day exists in every month, February included.
+                Stepper(value: $repeatDay, in: 1...Recurring.maxDay) {
+                    HStack {
+                        Text("Posts on the").appFont(13.5, weight: .medium)
+                        Spacer()
+                        Text(Recurring.ordinal(repeatDay)).mono(13.5, weight: .bold)
+                    }
+                }
+                .padding(.horizontal, 14).padding(.vertical, 8)
+                .fieldBackground(radius: 13)
+                .padding(.top, 8)
+                .accessibilityLabel("Day of month")
+            }
+        }
+    }
+
     /// Only meaningful in a budget with someone else on it — with one member
     /// there's nobody to keep it from.
     @ViewBuilder
     private var privacyToggle: some View {
-        if model.members.count > 1 {
+        if model.members.count > 1, !repeats {
             Toggle(isOn: $isPrivate) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Keep this private").appFont(13.5, weight: .semibold)
@@ -776,13 +834,26 @@ struct AddSheet: View {
                        mood: tag, note: trimmedNote,
                        belowTheLine: kind == .expense && belowTheLine,
                        isPrivate: isPrivate)
+        if repeats {
+            model.saveRecurring(Recurring(
+                id: UUID().uuidString,
+                place: draft.place, amount: draft.amount,
+                bucket: bucket, memberID: draft.memberID, kind: kind,
+                dayOfMonth: repeatDay, isActive: true,
+                // This month's copy is the entry that was just logged. Leaving
+                // this blank would have the item post a duplicate of it the
+                // next time the app opens.
+                lastPostedMonth: Fmt.isoMonth(Date())
+            ))
+        }
         savedCount += 1
         amountFocused = false
         withAnimation(.easeOut(duration: 0.2)) {
             saved = Receipt(place: draft.place, amount: draft.amount, kind: kind,
                             bucket: Bucket.named(bucket),
                             memberName: model.member(draft.memberID).name,
-                            isPrivate: isPrivate)
+                            isPrivate: isPrivate,
+                            repeatsOn: repeats ? repeatDay : nil)
         }
     }
 
@@ -790,6 +861,8 @@ struct AddSheet: View {
     /// — a run of entries is usually the same person spending the same way.
     /// Privacy resets deliberately: on a shared budget, an entry should never
     /// inherit being hidden from the one before it, and neither should a note.
+    /// Repeating resets for the same reason, and more sharply — inheriting it
+    /// would quietly set up a standing monthly bill nobody asked for.
     private func addAnother() {
         pickedCategory = false
         guess = nil
@@ -799,6 +872,8 @@ struct AddSheet: View {
         note = ""
         belowTheLine = false
         isPrivate = false
+        repeats = false
+        repeatDay = Recurring.defaultDay
         showDetails = false
         bucket = Bucket.fallback(for: kind).id
         withAnimation(.easeOut(duration: 0.2)) { saved = nil }

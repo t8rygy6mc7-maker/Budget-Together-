@@ -507,21 +507,30 @@ struct Recurring: Identifiable, Hashable {
 
     static let maxDay = 28
 
-    /// "3rd of each month"
-    var scheduleLabel: String {
+    /// "3rd" — a day of the month with its ordinal suffix.
+    static func ordinal(_ day: Int) -> String {
         let suffix: String
-        switch dayOfMonth % 100 {
+        switch day % 100 {
         case 11, 12, 13: suffix = "th"
         default:
-            switch dayOfMonth % 10 {
+            switch day % 10 {
             case 1: suffix = "st"
             case 2: suffix = "nd"
             case 3: suffix = "rd"
             default: suffix = "th"
             }
         }
-        return "\(dayOfMonth)\(suffix) of each month"
+        return "\(day)\(suffix)"
     }
+
+    /// The day of the month this would fall on if it were set up today, capped
+    /// so it exists in February.
+    static var defaultDay: Int {
+        min(Calendar.current.component(.day, from: Date()), maxDay)
+    }
+
+    /// "3rd of each month"
+    var scheduleLabel: String { "\(Self.ordinal(dayOfMonth)) of each month" }
 }
 
 // MARK: - Loans
