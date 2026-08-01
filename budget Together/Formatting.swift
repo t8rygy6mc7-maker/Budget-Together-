@@ -118,6 +118,19 @@ enum Fmt {
         return value
     }
 
+    /// Reads a typed limit, where an empty field is a real answer rather than a
+    /// failure to parse: clearing the box is how someone says "no limit", so it
+    /// reads as 0. Out-of-range figures are clamped instead of rejected, and
+    /// `nil` is kept for text that isn't a number at all — which lets a caller
+    /// leave the stored limit alone rather than wipe it on a fumbled paste.
+    static func limit(from text: String) -> Double? {
+        let trimmed = text.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return 0 }
+        guard let value = input.number(from: trimmed)?.doubleValue ?? Double(trimmed),
+              value.isFinite else { return nil }
+        return min(max(value, 0), maxAmount)
+    }
+
     /// Rounds to a whole number without ever trapping.
     ///
     /// `Int(_:)` is a runtime trap on NaN, on an infinity and on anything past

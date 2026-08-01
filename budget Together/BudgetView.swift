@@ -273,6 +273,14 @@ struct BudgetRow: View {
 
     @State private var moving = false
 
+    /// The limit is edited as text, not as a `Double` bound straight to the
+    /// field. A numeric binding only writes back when what's typed parses, so
+    /// an emptied box wrote nothing at all and then redrew from the limit still
+    /// in the model — clearing it and pressing return put the old number back,
+    /// and "no limit" was a state the row could show but never be given.
+    @State private var limitText = ""
+    @FocusState private var editingLimit: Bool
+
     var body: some View {
         let cap = model.caps[bucket.id] ?? 0
         let isOver = cap > 0 && actual > cap
@@ -296,12 +304,17 @@ struct BudgetRow: View {
 
                 HStack(spacing: 2) {
                     Text(Fmt.currencySymbol).mono(12, weight: .regular).foregroundStyle(Palette.muted)
-                    TextField("", value: model.capBinding(bucket.id), format: .number)
+                    TextField("0", text: $limitText)
                         .keyboardType(.decimalPad)
                         .multilineTextAlignment(.trailing)
                         .appFont(13, weight: .bold, design: .monospaced)
                         .frame(width: 52)
+                        .focused($editingLimit)
                         .accessibilityLabel("\(bucket.label) budget")
+                        .onSubmit(commitLimit)
+                        .onChange(of: editingLimit) { _, isEditing in
+                            if !isEditing { commitLimit() }
+                        }
                 }
                 .padding(.horizontal, 8).padding(.vertical, 7)
                 .fieldBackground(radius: 10)
@@ -348,6 +361,32 @@ struct BudgetRow: View {
         .sheet(isPresented: $moving) {
             MoveMoneySheet(destination: bucket).environmentObject(model)
         }
+        .onAppear { limitText = Self.limitField(cap) }
+        // The row keeps its identity when the limit changes underneath it —
+        // switching months, a move of money, a partner's edit arriving — so the
+        // text has to be re-seeded. Never while it's being typed in, though;
+        // that would overwrite the half-finished number under the cursor.
+        .onChange(of: cap) { _, new in
+            if !editingLimit { limitText = Self.limitField(new) }
+        }
+    }
+
+    /// Writes what's in the box back as the limit.
+    ///
+    /// An empty field is taken at its word — 0, no limit. Text that isn't a
+    /// number at all is not: that's a fumbled paste, and wiping a real limit
+    /// over it would be a worse answer than putting the limit back.
+    private func commitLimit() {
+        let stored = model.caps[bucket.id] ?? 0
+        let value = Fmt.limit(from: limitText) ?? stored
+        if value != stored { model.setCap(bucket.id, to: value) }
+        limitText = Self.limitField(value)
+    }
+
+    /// No limit shows as an empty box against the "0" placeholder, so the row
+    /// reads as "nothing set here yet" rather than "budgeted zero".
+    private static func limitField(_ cap: Double) -> String {
+        cap > 0 ? Fmt.plain(cap) : ""
     }
 }
 

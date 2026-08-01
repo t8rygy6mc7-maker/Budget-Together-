@@ -437,26 +437,18 @@ final class AppModel: ObservableObject {
 
     // MARK: - Bindings & mutations (write through to the store)
 
-    func capBinding(_ id: String) -> Binding<Double> {
-        Binding(
-            get: { self.caps[id] ?? 0 },
-            set: { typed in
-                // The cap field binds a `Double` straight to a `TextField`, so
-                // unlike every other money field in the app it never passes
-                // through `Fmt.amount(from:)`. Without this, a decimal pad with
-                // a minus key — or a paste — writes a negative limit, and a
-                // negative limit propagates into `capTotal`, `left`,
-                // `safeDaily` and the pace maths as a silently nonsensical
-                // plan. Clamp on the way in; the field redraws with what was
-                // actually stored.
-                let newValue = typed.isFinite ? min(max(typed, 0), Fmt.maxAmount) : 0
-                self.caps[id] = newValue            // optimistic UI update
-                self.store.setCap(bucket: id, month: self.monthKey, amount: newValue)
-                // A new limit deserves a fresh judgement — raising a limit should
-                // let the 80% warning fire again against the new headroom.
-                Notifier.shared.resetCapAlerts(bucketID: id, month: self.monthKey)
-            }
-        )
+    /// Sets a category's limit for the month on screen. 0 means no limit.
+    ///
+    /// Clamped rather than trusted: a negative limit propagates into
+    /// `capTotal`, `left`, `safeDaily` and the pace maths as a silently
+    /// nonsensical plan, and a paste or a Shortcut can hand over anything.
+    func setCap(_ id: String, to amount: Double) {
+        let newValue = amount.isFinite ? min(max(amount, 0), Fmt.maxAmount) : 0
+        caps[id] = newValue                 // optimistic UI update
+        store.setCap(bucket: id, month: monthKey, amount: newValue)
+        // A new limit deserves a fresh judgement — raising a limit should
+        // let the 80% warning fire again against the new headroom.
+        Notifier.shared.resetCapAlerts(bucketID: id, month: monthKey)
     }
 
     // MARK: - Forgiveness
