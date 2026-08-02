@@ -1,5 +1,6 @@
 import CoreData
 import CloudKit
+import OSLog
 
 // MARK: - Programmatic Core Data model
 //
@@ -269,6 +270,13 @@ final class BudgetStore {
     /// mirrored on the belief that it is would be a silent data-loss bug.
     private(set) var isCloudSyncActive = false
 
+    /// Why mirroring isn't running, when it was asked for and couldn't start.
+    /// `nil` when there's nothing to report — either it's working or it was
+    /// never switched on.
+    private(set) var cloudLoadFailure: String?
+
+    static let log = Logger(subsystem: "budget.budget-Together", category: "store")
+
     let container: NSPersistentCloudKitContainer
     private(set) var privateStore: NSPersistentStore?
     private(set) var sharedStore: NSPersistentStore?
@@ -348,13 +356,31 @@ final class BudgetStore {
 
         guard let failure else {
             isCloudSyncActive = cloud
+            if cloud {
+                cloudLoadFailure = nil
+                Self.log.notice("Store opened with iCloud mirroring active.")
+            } else {
+                Self.log.notice("Store opened local-only.")
+            }
             return
         }
         guard cloud else {
             // Local failed too. Nothing left to fall back to.
+            Self.log.fault("Local store failed to open: \(failure.localizedDescription, privacy: .public)")
             assertionFailure("Failed to load store: \(failure)")
             return
         }
+
+        // Said out loud, at fault level, because the earlier version of this
+        // fallback was silent — and a silent fallback is indistinguishable from
+        // working sync from anywhere outside this function. Days can be lost to
+        // that: the app looks healthy, the ledger is correct, and nothing ever
+        // reaches iCloud.
+        cloudLoadFailure = failure.localizedDescription
+        Self.log.fault("""
+            iCloud stores failed to open, falling back to a local-only ledger: \
+            \(failure.localizedDescription, privacy: .public)
+            """)
 
         // Clear out whatever did open before retrying, or the coordinator would
         // be left holding a half-built stack alongside the new one.

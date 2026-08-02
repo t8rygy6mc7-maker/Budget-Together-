@@ -33,6 +33,7 @@ struct DataSheet: View {
             VStack(alignment: .leading, spacing: 0) {
                 header
                 promise
+                syncSection
                 exportSection
                 deleteSection
             }
@@ -85,8 +86,15 @@ struct DataSheet: View {
                 Text("\(Fmt.count(footprint.entries, "entry", plural: "entries")) across "
                    + "\(Fmt.count(footprint.months, "month"))")
                     .appFont(13.5, weight: .semibold)
-                Text("No account, no server, no analytics. Nothing here has ever "
-                   + "been sent anywhere.")
+                // This line used to say the data had never been sent anywhere,
+                // full stop. With iCloud mirroring that is simply untrue, and a
+                // false promise on the privacy screen is worse than no promise
+                // at all — so it now describes whichever is actually the case.
+                Text(model.cloudStatus.isLeavingTheDevice
+                     ? "No account to make, no server of ours, no analytics. Your "
+                     + "budget goes to your own iCloud and nowhere else."
+                     : "No account, no server, no analytics. Nothing here has ever "
+                     + "been sent anywhere.")
                     .appFont(11.5).foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -95,6 +103,38 @@ struct DataSheet: View {
         .padding(.horizontal, 14).padding(.vertical, 12)
         .card(border: Palette.cardBorderSoft, radius: 15)
         .padding(.bottom, 22)
+    }
+
+    /// Whether the budget is actually syncing — which is not the same question
+    /// as whether the app was built to sync, and is invisible everywhere else.
+    private var syncSection: some View {
+        let status = model.cloudStatus
+        return VStack(alignment: .leading, spacing: 10) {
+            Text("ICLOUD")
+                .appFont(10, weight: .bold).tracking(0.8)
+                .foregroundStyle(Palette.label9)
+
+            HStack(alignment: .top, spacing: 12) {
+                Image(systemName: status.symbol)
+                    .appFont(15, weight: .semibold)
+                    .foregroundStyle(status.tint)
+                    .frame(width: 34, height: 34)
+                    .background(status.tint.opacity(0.16),
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(status.title).appFont(13.5, weight: .semibold)
+                    Text(status.detail)
+                        .appFont(11.5).foregroundStyle(Palette.sub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .card(border: Palette.cardBorderSoft, radius: 15)
+            .accessibilityElement(children: .combine)
+        }
+        .padding(.bottom, 26)
+        .task { await model.refreshCloudStatus() }
     }
 
     private var exportSection: some View {

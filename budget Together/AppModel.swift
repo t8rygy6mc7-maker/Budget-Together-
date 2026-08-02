@@ -117,6 +117,10 @@ final class AppModel: ObservableObject {
     /// pairing gate in `RootView`.
     @Published private(set) var hasHousehold = false
 
+    /// What iCloud is doing with this household's data. Starts as `.checking`
+    /// because the account question can only be answered by asking iCloud.
+    @Published private(set) var cloudStatus: CloudStatus = .checking
+
     private let store: BudgetStore
     private var membersByID: [String: Member] = [:]
 
@@ -1230,6 +1234,30 @@ final class AppModel: ObservableObject {
         }
         store.deleteLoan(id: id)
         reload()
+    }
+
+    // MARK: - iCloud
+
+    /// Works out what to tell the user about syncing.
+    ///
+    /// The store's own view comes first: if mirroring never started, the reason
+    /// it didn't is more specific and more useful than anything an account
+    /// check could add — and asking iCloud about an account would only invite a
+    /// confident "you're signed in" next to a budget going nowhere.
+    func refreshCloudStatus() async {
+        guard BudgetStore.cloudSyncEnabled else {
+            cloudStatus = .off
+            return
+        }
+        if let failure = store.cloudLoadFailure {
+            cloudStatus = .failed(failure)
+            return
+        }
+        guard store.isCloudSyncActive else {
+            cloudStatus = .off
+            return
+        }
+        cloudStatus = await CloudStatus.account(in: BudgetStore.containerIdentifier)
     }
 
     // MARK: - Recurring
