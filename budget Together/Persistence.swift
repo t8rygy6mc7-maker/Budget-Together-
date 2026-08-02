@@ -257,10 +257,17 @@ final class BudgetStore {
 
     static let containerIdentifier = "iCloud.budget.budget-Together"
 
-    /// Flipped to `true` in Step 3, once the iCloud/CloudKit entitlement and a
-    /// provisioned container exist. Until then the app runs on a purely local
-    /// store so it works in the simulator without a paid developer account.
-    static let cloudSyncEnabled = false
+    /// Whether this build asks for CloudKit mirroring at all.
+    static let cloudSyncEnabled = true
+
+    /// Whether mirroring is actually running, as opposed to merely asked for.
+    ///
+    /// False when `cloudSyncEnabled` is off, and also when it's on but the
+    /// CloudKit-backed stores wouldn't open and the app fell back to a local
+    /// one. Everything that decides *where* an object lives reads this rather
+    /// than the flag above, because putting an entry in a store that isn't
+    /// mirrored on the belief that it is would be a silent data-loss bug.
+    private(set) var isCloudSyncActive = false
 
     let container: NSPersistentCloudKitContainer
     private(set) var privateStore: NSPersistentStore?
@@ -292,19 +299,7 @@ final class BudgetStore {
         defaults = inMemory ? nil : .standard
         let model = CDModel.make()
         container = NSPersistentCloudKitContainer(name: "BudgetTogether", managedObjectModel: model)
-        configureDescriptions(inMemory: inMemory)
-
-        container.loadPersistentStores { [weak self] desc, error in
-            if let error {
-                assertionFailure("Failed to load store: \(error)")
-                return
-            }
-            self?.captureStore(for: desc)
-            // `AppModel` performs its first reload while the persistent store
-            // may still be opening. Tell it to retry once the store is ready so
-            // a returning household is not left at the pairing screen.
-            self?.onChange?()
-        }
+        openStores(inMemory: inMemory, cloud: Self.cloudSyncEnabled && !inMemory)
 
         viewContext.automaticallyMergesChangesFromParent = true
         viewContext.mergePolicy = NSMergeByPropertyObjectTrumpMergePolicy
@@ -323,7 +318,56 @@ final class BudgetStore {
 
     // MARK: Setup
 
-    private func configureDescriptions(inMemory: Bool) {
+    /// Opens the stores, dropping back to a local-only stack if the
+    /// CloudKit-backed ones won't open.
+    ///
+    /// Three things mirroring depends on live outside this code — the
+    /// entitlement, a provisioned container, and who signed the build — and any
+    /// of them can be absent on a given machine. Failing closed would leave the
+    /// app with no store at all: no ledger, nowhere to write, every screen
+    /// blank. A phone that still records spending on its own is a much better
+    /// answer to "iCloud isn't set up here" than a phone that records nothing.
+    private func openStores(inMemory: Bool, cloud: Bool) {
+        configureDescriptions(inMemory: inMemory, cloud: cloud)
+
+        var failure: Error?
+        // Synchronous: `shouldAddStoreAsynchronously` is left at its default of
+        // false, so every description has been attempted by the time this
+        // returns and `failure` can be read straight after.
+        container.loadPersistentStores { [weak self] desc, error in
+            if let error {
+                failure = error
+                return
+            }
+            self?.captureStore(for: desc)
+            // `AppModel` performs its first reload while the persistent store
+            // may still be opening. Tell it to retry once the store is ready so
+            // a returning household is not left at the pairing screen.
+            self?.onChange?()
+        }
+
+        guard let failure else {
+            isCloudSyncActive = cloud
+            return
+        }
+        guard cloud else {
+            // Local failed too. Nothing left to fall back to.
+            assertionFailure("Failed to load store: \(failure)")
+            return
+        }
+
+        // Clear out whatever did open before retrying, or the coordinator would
+        // be left holding a half-built stack alongside the new one.
+        let coordinator = container.persistentStoreCoordinator
+        for store in coordinator.persistentStores {
+            try? coordinator.remove(store)
+        }
+        privateStore = nil
+        sharedStore = nil
+        openStores(inMemory: inMemory, cloud: false)
+    }
+
+    private func configureDescriptions(inMemory: Bool, cloud: Bool) {
         let base = NSPersistentStoreDescription()
         if inMemory {
             base.url = URL(fileURLWithPath: "/dev/null")
@@ -335,13 +379,13 @@ final class BudgetStore {
         base.url = support.appendingPathComponent("BudgetTogether.private.sqlite")
         Self.configureCommonOptions(base)
 
-        guard Self.cloudSyncEnabled else {
-            // Local-only mode (Step 1/2): single on-disk store, no CloudKit.
+        guard cloud else {
+            // Local-only: single on-disk store, no CloudKit.
             container.persistentStoreDescriptions = [base]
             return
         }
 
-        // CloudKit mode (Step 3+): mirror both the private and shared databases.
+        // Mirror both the private and shared databases.
         let privateOptions = NSPersistentCloudKitContainerOptions(containerIdentifier: Self.containerIdentifier)
         privateOptions.databaseScope = .private
         base.cloudKitContainerOptions = privateOptions
@@ -1098,7 +1142,7 @@ final class BudgetStore {
     /// participant's shared entries still sync back to the owner.
     private func assignStore(_ entry: NSManagedObject, isPrivate: Bool,
                              household house: NSManagedObject) {
-        guard Self.cloudSyncEnabled else {
+        guard isCloudSyncActive else {
             // Local-only mode: one store, so the relationship is safe and
             // nothing leaves the device either way.
             entry.setValue(house, forKey: "household")
@@ -1430,14 +1474,14 @@ final class BudgetStore {
     /// New objects created by the owner land in the private store; a participant's
     /// objects must land in the shared store so they sync back to the owner.
     private func assignToOwnerStore(_ object: NSManagedObject) {
-        guard Self.cloudSyncEnabled, let privateStore else { return }
+        guard isCloudSyncActive, let privateStore else { return }
         viewContext.assign(object, to: privateStore)
     }
 
     /// Places a new object in the same store as its household (private for the
     /// owner, shared for a participant). No-op in local mode.
     private func assign(_ object: NSManagedObject, toStoreOf house: NSManagedObject) {
-        guard Self.cloudSyncEnabled,
+        guard isCloudSyncActive,
               let store = house.objectID.persistentStore else { return }
         viewContext.assign(object, to: store)
     }

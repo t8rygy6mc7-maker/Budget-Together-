@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- CloudKit tells the app a sibling device wrote something by sending a
+	     silent push. Without this mode iOS drops those pushes on the floor and
+	     the mirror only catches up when the app next comes forward.
+
+	     This file holds only what the generated Info.plist can't express:
+	     GENERATE_INFOPLIST_FILE is still on, so every INFOPLIST_KEY_ build
+	     setting is merged in on top of what's here. UIBackgroundModes has no
+	     working INFOPLIST_KEY_ equivalent — Xcode accepts the setting and then
+	     silently omits it from the generated plist, which is exactly the sort
+	     of failure that only shows up as a runtime warning in the log. -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+</dict>
+</plist>
