@@ -377,9 +377,13 @@ final class BudgetStore {
         // that: the app looks healthy, the ledger is correct, and nothing ever
         // reaches iCloud.
         cloudLoadFailure = failure.localizedDescription
+        // The full error, not `localizedDescription` — Core Data's localised
+        // string is "A Core Data error occurred", every time, for everything.
+        // What identifies the problem is the userInfo, which is where the
+        // validation messages actually live.
         Self.log.fault("""
             iCloud stores failed to open, falling back to a local-only ledger: \
-            \(failure.localizedDescription, privacy: .public)
+            \(String(describing: failure), privacy: .public)
             """)
 
         // Clear out whatever did open before retrying, or the coordinator would
@@ -412,17 +416,25 @@ final class BudgetStore {
         }
 
         // Mirror both the private and shared databases.
+        //
+        // Neither description names a configuration. Both stores hold the same
+        // entities, so the model's default configuration — the one
+        // `model.entities = […]` fills in — is the right one for each, and it
+        // has no name to give. Asking for "Default" by name looks harmless and
+        // is what a .xcdatamodeld-based project would use, but a model built in
+        // code has no configuration by that name: `loadPersistentStores` fails
+        // with "Unable to find a configuration named 'Default'", both stores
+        // are refused, and the app quietly falls back to a local ledger while
+        // looking entirely healthy.
         let privateOptions = NSPersistentCloudKitContainerOptions(containerIdentifier: Self.containerIdentifier)
         privateOptions.databaseScope = .private
         base.cloudKitContainerOptions = privateOptions
-        base.configuration = "Default"
 
         let shared = NSPersistentStoreDescription(url: support.appendingPathComponent("BudgetTogether.shared.sqlite"))
         Self.configureCommonOptions(shared)
         let sharedOptions = NSPersistentCloudKitContainerOptions(containerIdentifier: Self.containerIdentifier)
         sharedOptions.databaseScope = .shared
         shared.cloudKitContainerOptions = sharedOptions
-        shared.configuration = "Default"
 
         container.persistentStoreDescriptions = [base, shared]
     }

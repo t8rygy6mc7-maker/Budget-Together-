@@ -147,6 +147,40 @@ struct PeopleSheet: View {
         .padding(.top, 6).padding(.bottom, 16)
     }
 
+    /// Whether the budget is syncing, one tap from Home rather than three.
+    ///
+    /// Short on purpose — the full explanation lives on the data screen, and
+    /// tapping this goes there. What it has to carry here is the one bit that
+    /// matters at a glance: whether this household's money is being kept in
+    /// more than one place. Silence would read as "yes", and for a device with
+    /// no iCloud account that would be wrong.
+    private var syncRow: some View {
+        let status = model.cloudStatus
+        return Button { showData = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: status.symbol)
+                    .appFont(15, weight: .semibold)
+                    .foregroundStyle(status.tint)
+                    .frame(width: 34, height: 34)
+                    .background(status.tint.opacity(0.16),
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                Text(status.title)
+                    .appFont(14, weight: .semibold)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .multilineTextAlignment(.leading)
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .appFont(12, weight: .semibold)
+                    .foregroundStyle(Palette.muted)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .card(border: Palette.cardBorderSoft, radius: 15)
+        }
+        .buttonStyle(.plain)
+        .accessibilityHint("Opens your data, including what's synced")
+        .task { await model.refreshCloudStatus() }
+    }
+
     /// Export and erase. Sits at the bottom of the only settings surface the
     /// app has, rather than behind a menu, because a promise about data you
     /// can't find the controls for isn't much of a promise.
@@ -155,6 +189,8 @@ struct PeopleSheet: View {
             Text("YOUR DATA")
                 .appFont(10, weight: .bold).tracking(0.8)
                 .foregroundStyle(Palette.label9)
+
+            syncRow
 
             Button { showData = true } label: {
                 HStack(spacing: 12) {
