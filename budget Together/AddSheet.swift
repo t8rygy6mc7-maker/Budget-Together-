@@ -97,16 +97,16 @@ struct AddSheet: View {
         .onDisappear { voice.stop() }
         // Switching direction invalidates the category, since the two lists
         // share no ids.
-        .onChange(of: kind) { _, new in
+        .onValueChange(of: kind) { new in
             if !Bucket.list(for: new, including: editing?.bucket).contains(where: { $0.id == bucket }) {
                 bucket = Bucket.fallback(for: new).id
             }
             autoCategorize()
         }
-        .onChange(of: place) { _, _ in autoCategorize() }
+        .onValueChange(of: place) { _ in autoCategorize() }
         // Someone added from the people sheet should be selectable right away;
         // if the selected person was removed, fall back rather than lose the draft.
-        .onChange(of: model.members) { _, _ in
+        .onValueChange(of: model.members) { _ in
             if !model.members.contains(where: { $0.id == memberID }) { selectDefaultMember() }
         }
     }
@@ -241,7 +241,7 @@ struct AddSheet: View {
                       prompt: Text(model.members.count > 1
                                    ? "Anything worth saying about it?"
                                    : "Anything worth remembering?")
-                        .foregroundStyle(Palette.muted),
+                        .tinted(Palette.muted),
                       axis: .vertical)
                 .textFieldStyle(.plain)
                 .lineLimit(1...4)
@@ -482,7 +482,7 @@ struct AddSheet: View {
         TextField("", text: $place,
                   prompt: Text(kind == .income ? "Where from? (optional)"
                                                : "Where? (optional)")
-                    .foregroundStyle(Palette.muted))
+                    .tinted(Palette.muted))
             .textFieldStyle(.plain)
             .appFont(15, weight: .medium)
             .padding(.horizontal, 14).padding(.vertical, 13)

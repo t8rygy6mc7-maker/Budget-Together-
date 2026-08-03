@@ -51,7 +51,7 @@ struct RootView: View {
         }
         // Asked as soon as somebody lands in a budget they were invited into,
         // rather than left to be found three taps deep in People.
-        .onChange(of: model.needsSeatClaim) { _, needed in
+        .onValueChange(of: model.needsSeatClaim) { needed in
             if needed { showSeatClaim = true }
         }
         .sheet(isPresented: $showSeatClaim) {

@@ -93,7 +93,17 @@ final class VoiceAmountListener: ObservableObject {
         guard speech == .authorized else { return false }
 
         return await withCheckedContinuation { continuation in
-            AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
+            // iOS 17 moved the microphone prompt off `AVAudioSession` onto
+            // `AVAudioApplication`. Same prompt, same answer, different type —
+            // and the old one is still there on 17+, so this branches rather
+            // than being replaced outright only because the new call doesn't
+            // exist at all on 16.
+            if #available(iOS 17, *) {
+                AVAudioApplication.requestRecordPermission { continuation.resume(returning: $0) }
+            } else {
+                AVAudioSession.sharedInstance()
+                    .requestRecordPermission { continuation.resume(returning: $0) }
+            }
         }
     }
 

@@ -132,7 +132,7 @@ struct UnusualMonthSheet: View {
             }
 
             TextField("", text: $reason,
-                      prompt: Text("Or say it in your own words").foregroundStyle(Palette.muted))
+                      prompt: Text("Or say it in your own words").tinted(Palette.muted))
                 .focused($reasonFocused)
                 .textFieldStyle(.plain)
                 .appFont(14)

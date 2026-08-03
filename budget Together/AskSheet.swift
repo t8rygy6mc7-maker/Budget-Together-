@@ -80,7 +80,7 @@ struct AskSheet: View {
     private var askField: some View {
         HStack(spacing: 9) {
             TextField("", text: $question,
-                      prompt: Text("Ask about your spending").foregroundStyle(Palette.muted))
+                      prompt: Text("Ask about your spending").tinted(Palette.muted))
                 .focused($focused)
                 .textFieldStyle(.plain)
                 .appFont(15, weight: .medium)

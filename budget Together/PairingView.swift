@@ -157,7 +157,7 @@ struct PairingView: View {
                 .foregroundStyle(Palette.sub)
 
             TextField("", text: $name,
-                      prompt: Text("e.g. Together").foregroundStyle(Palette.muted))
+                      prompt: Text("e.g. Together").tinted(Palette.muted))
                 .focused($focusedField, equals: .budget)
                 .textFieldStyle(.plain)
                 .appFont(15, weight: .medium)
@@ -170,7 +170,7 @@ struct PairingView: View {
                 .padding(.top, 2)
 
             TextField("", text: $yourName,
-                      prompt: Text("e.g. Sam").foregroundStyle(Palette.muted))
+                      prompt: Text("e.g. Sam").tinted(Palette.muted))
                 .focused($focusedField, equals: .you)
                 .textFieldStyle(.plain)
                 .appFont(15, weight: .medium)
@@ -190,7 +190,7 @@ struct PairingView: View {
                     Text(Fmt.currencySymbol).mono(14, weight: .regular)
                         .foregroundStyle(Palette.muted)
                     TextField("", text: $monthlyTotal,
-                              prompt: Text("e.g. 800").foregroundStyle(Palette.muted))
+                              prompt: Text("e.g. 800").tinted(Palette.muted))
                         .focused($focusedField, equals: .total)
                         .keyboardType(.decimalPad)
                         .appFont(15, weight: .bold, design: .monospaced)
