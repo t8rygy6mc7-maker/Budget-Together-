@@ -20,6 +20,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         _ application: UIApplication,
         didFinishLaunchingWithOptions options: [UIApplication.LaunchOptionsKey: Any]? = nil
     ) -> Bool {
+#if DEBUG
+        // A maintenance launch, not a real one: build the CloudKit schema from
+        // the model and stop there. Runs before anything else so the app isn't
+        // half set up while it works, and never in a shipping build — see
+        // BudgetStore.initializeCloudKitSchema for what it's for and how to
+        // trigger it.
+        if BudgetStore.wantsSchemaInitialization {
+            BudgetStore.initializeCloudKitSchema()
+            return true
+        }
+#endif
+
         // Nothing to ask for and nothing to show. These pushes are silent, so
         // they need no alert authorisation and raise no permission prompt —
         // which is why this can run unconditionally at launch. Skipped when

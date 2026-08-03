@@ -952,11 +952,18 @@ final class AppModel: ObservableObject {
 
     /// How many entries are marked private, for the export warning.
     ///
-    /// A private entry is the one thing the app promises never leaves the
-    /// device, and an export is the one place that promise passes out of the
-    /// app's hands. The file has to keep them — a backup that quietly drops
-    /// rows isn't a backup — so the export screen says so instead, and only
-    /// when there's actually something to say.
+    /// A private entry is the one thing the app promises nobody else will see,
+    /// and an export is the one place that promise passes out of the app's
+    /// hands. The file has to keep them — a backup that quietly drops rows
+    /// isn't a backup — so the export screen says so instead, and only when
+    /// there's actually something to say.
+    ///
+    /// Note the promise is "nobody else sees it", not "it stays on this phone".
+    /// A private entry is kept out of the *shared* store, so no one you invited
+    /// can reach it — but it still lives in the owner's own private database
+    /// and mirrors to their other devices. Earlier copy on the welcome and
+    /// export screens claimed the stronger thing, which the privacy policy
+    /// then contradicted.
     var privateEntryCount: Int { allEntries.filter(\.isPrivate).count }
 
     /// How much there is to lose, for the confirmation copy. Vague warnings get

@@ -1,0 +1,55 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Nothing is tracked and nothing is collected. The app makes no network
+	     calls of its own — there is no URLSession anywhere in it, no analytics
+	     and no third-party SDK. What leaves the device goes to the user's own
+	     iCloud through CloudKit, which is theirs and unreadable to us.
+
+	     The two entries below are not about collection. Apple keeps a list of
+	     APIs that have been used for fingerprinting, and any app that calls one
+	     has to say why, whatever it uses it for. Leaving them undeclared earns
+	     an ITMS-91053 mail after upload rather than a rejection, which is the
+	     sort of warning that gets ignored until it becomes enforcement. -->
+
+	<key>NSPrivacyTracking</key>
+	<false/>
+
+	<key>NSPrivacyTrackingDomains</key>
+	<array/>
+
+	<key>NSPrivacyCollectedDataTypes</key>
+	<array/>
+
+	<key>NSPrivacyAccessedAPITypes</key>
+	<array>
+		<dict>
+			<!-- The appearance setting, the simplified-view toggle and the
+			     notification bookkeeping. CA92.1 is the reason for reading and
+			     writing defaults that only this app can see — no app group and
+			     no shared suite, so nothing here is readable by anything else
+			     on the device. See AppModel and Notifications. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryUserDefaults</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>CA92.1</string>
+			</array>
+		</dict>
+		<dict>
+			<!-- Sweeping up CSV exports the share sheet has finished with, by
+			     age. C617.1 covers timestamps of files inside the app's own
+			     container, which is where these live — they are written to
+			     FileManager.temporaryDirectory and never anywhere else. See
+			     DataExport.purgeStaleExports. -->
+			<key>NSPrivacyAccessedAPIType</key>
+			<string>NSPrivacyAccessedAPICategoryFileTimestamp</string>
+			<key>NSPrivacyAccessedAPITypeReasons</key>
+			<array>
+				<string>C617.1</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>

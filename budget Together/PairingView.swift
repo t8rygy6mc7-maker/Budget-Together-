@@ -95,7 +95,7 @@ struct PairingView: View {
             promise("iphone", "It lives on your phone",
                     "Entries reach your other devices, and anyone you invite, through iCloud. They don't come to us — there is no us.")
             promise("eye.slash.fill", "Nobody's watching",
-                    "No ads, no tracking, no credit score. Anything you mark private never leaves your device at all.")
+                    "No ads, no tracking, no credit score. Anything you mark private stays yours — nobody else in the budget can see it.")
         }
         .padding(14)
         .card(border: Palette.cardBorderSoft, radius: 16)

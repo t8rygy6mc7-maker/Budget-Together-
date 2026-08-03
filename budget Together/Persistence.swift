@@ -521,6 +521,110 @@ final class BudgetStore {
         }
     }
 
+#if DEBUG
+    /// Whether this launch was asked to build the CloudKit schema rather than
+    /// run the app normally. Set the `-InitializeCloudKitSchema` argument in the
+    /// scheme's Run arguments, launch once, then take it back out.
+    static var wantsSchemaInitialization: Bool {
+        ProcessInfo.processInfo.arguments.contains("-InitializeCloudKitSchema")
+    }
+
+    /// Creates every record type and field the model implies, in the container's
+    /// **Development** environment.
+    ///
+    /// Mirroring builds the schema lazily: a record type appears in CloudKit the
+    /// first time an object of that entity is actually exported. So the schema
+    /// reflects what happened to be created on a developer's device, not what
+    /// the model describes — and an entity nobody exercised is simply absent.
+    /// Promoting to Production copies that gap forward, and the resulting bug is
+    /// the worst shape there is: the app works, syncs, looks healthy, and then
+    /// one feature silently stops reaching the other phone for the subset of
+    /// users who use it. `initializeCloudKitSchema` closes that by walking the
+    /// model instead of the data.
+    ///
+    /// Development only, in both senses: `#if DEBUG` keeps it out of a shipping
+    /// binary, and CloudKit itself refuses to run it against Production. The
+    /// order is always initialise here, then promote in CloudKit Console.
+    ///
+    /// Expect it to take a while and to block the launch it runs on. It writes a
+    /// sample record of every type and deletes them again, which is a lot of
+    /// round trips; that is the method working, not hanging.
+    static func initializeCloudKitSchema() {
+        // A scratch stack rather than the app's own. Two reasons: the live
+        // stack carries a `.shared` description, and schema can't be created in
+        // a database owned by somebody else — CloudKit throws rather than
+        // skipping it. And a throwaway store means a method that writes sample
+        // records can't touch the real ledger even if it goes wrong.
+        let model = CDModel.make()
+        let container = NSPersistentCloudKitContainer(name: "BudgetTogetherSchema",
+                                                      managedObjectModel: model)
+        let scratch = FileManager.default.temporaryDirectory
+            .appendingPathComponent("SchemaInit-\(UUID().uuidString).sqlite")
+        let description = NSPersistentStoreDescription(url: scratch)
+        let options = NSPersistentCloudKitContainerOptions(containerIdentifier: containerIdentifier)
+        // Private scope, but the schema is a property of the *container*, not of
+        // a database within it. Building it here is what gives the shared
+        // database its record types too.
+        options.databaseScope = .private
+        description.cloudKitContainerOptions = options
+        container.persistentStoreDescriptions = [description]
+
+        var loadFailure: Error?
+        container.loadPersistentStores { _, error in loadFailure = error }
+        if let loadFailure {
+            report("Schema init couldn't open its scratch store: \(String(describing: loadFailure))",
+                   isFailure: true)
+            return
+        }
+
+        defer { destroyScratchStore(at: scratch, in: container) }
+
+        report("Building the CloudKit Development schema — this takes a while.")
+        do {
+            try container.initializeCloudKitSchema(options: [])
+            report("""
+                DONE. CloudKit Development schema built from the model. \
+                Promote it to Production in CloudKit Console before shipping.
+                """)
+        } catch {
+            // Almost always one of three things, none of which are the model:
+            // no iCloud account on the device, a build signed by a team that
+            // doesn't own the container, or no network.
+            report("FAILED. Schema init: \(String(describing: error))", isFailure: true)
+        }
+    }
+
+    /// Says the same thing twice, to OSLog and to stdout.
+    ///
+    /// The duplication is the point. On the physical phone this app cannot have
+    /// its OSLog read from this Mac at all — the `log` build here has no
+    /// `--device` option, and `devicectl … process launch --console` pipes only
+    /// stdout, which OSLog notices never reach. A maintenance task whose entire
+    /// output is an OSLog line is therefore silent on the one device where it
+    /// actually has an iCloud account to run against, which is the only place
+    /// worth running it. `print` is what survives the trip.
+    private static func report(_ message: String, isFailure: Bool = false) {
+        if isFailure {
+            log.fault("\(message, privacy: .public)")
+        } else {
+            log.notice("\(message, privacy: .public)")
+        }
+        print("[schema-init] \(message)")
+    }
+
+    /// Takes the scratch store away properly. Deleting the .sqlite by hand
+    /// leaves the -wal and -shm files behind, which is how a "clean" scratch
+    /// directory ends up holding the tail of a previous run.
+    private static func destroyScratchStore(at url: URL,
+                                            in container: NSPersistentCloudKitContainer) {
+        let coordinator = container.persistentStoreCoordinator
+        for store in coordinator.persistentStores {
+            try? coordinator.remove(store)
+        }
+        try? coordinator.destroyPersistentStore(at: url, type: .sqlite, options: nil)
+    }
+#endif
+
     private func observeRemoteChanges() {
         remoteChangeObserver = NotificationCenter.default.addObserver(
             forName: .NSPersistentStoreRemoteChange,

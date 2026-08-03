@@ -183,7 +183,7 @@ struct DataSheet: View {
                     .foregroundStyle(Palette.moodJoy)
                     .padding(.top, 1)
                 Text("\(Fmt.count(count, "private entry", plural: "private entries")) "
-                   + "will be in the file, marked private. Nothing has left this phone "
+                   + "will be in the file, marked private. Nobody else has seen them "
                    + "so far — sharing the file is the moment that changes.")
                     .appFont(11)
                     .foregroundStyle(Palette.sub)
