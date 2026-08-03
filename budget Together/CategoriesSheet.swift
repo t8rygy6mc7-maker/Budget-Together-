@@ -278,7 +278,7 @@ struct CategoryEditor: View {
             TextField("", text: $label,
                       prompt: Text(bucket.kind == .income ? "e.g. Freelance"
                                                           : "e.g. Childcare")
-                        .tinted(Palette.muted))
+                        .foregroundStyle(Palette.muted))
                 .focused($nameFocused)
                 .textFieldStyle(.plain)
                 .appFont(15, weight: .medium)

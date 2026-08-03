@@ -253,7 +253,7 @@ struct PeopleSheet: View {
             }
             .padding(.horizontal, 14).padding(.vertical, 11)
             .card(border: Palette.cardBorderSoft, radius: 15)
-            .onValueChange(of: alertsOn) { wantsOn in
+            .onChange(of: alertsOn) { _, wantsOn in
                 guard wantsOn else {
                     Notifier.shared.limitAlertsEnabled = false
                     return
@@ -367,7 +367,7 @@ struct PeopleSheet: View {
     private var addField: some View {
         HStack(spacing: 9) {
             TextField("", text: $newName,
-                      prompt: Text("Add someone — their name").tinted(Palette.muted))
+                      prompt: Text("Add someone — their name").foregroundStyle(Palette.muted))
                 .focused($newNameFocused)
                 .textFieldStyle(.plain)
                 .appFont(15, weight: .medium)
@@ -421,13 +421,13 @@ private struct PersonRow: View {
             .accessibilityLabel("\(member.name) colour")
             .accessibilityHint("Changes the avatar colour")
 
-            TextField("", text: $draftName, prompt: Text("Name").tinted(Palette.muted))
+            TextField("", text: $draftName, prompt: Text("Name").foregroundStyle(Palette.muted))
                 .focused($editing)
                 .textFieldStyle(.plain)
                 .appFont(14, weight: .semibold)
                 .submitLabel(.done)
                 .onSubmit(commit)
-                .onValueChange(of: editing) { focused in if !focused { commit() } }
+                .onChange(of: editing) { _, focused in if !focused { commit() } }
                 .accessibilityLabel("Name")
 
             if isMe {
@@ -475,7 +475,7 @@ private struct PersonRow: View {
         .padding(.horizontal, 13).padding(.vertical, 10)
         .card(border: Palette.cardBorderSoft, radius: 15)
         .onAppear { draftName = member.name }
-        .onValueChange(of: member.name) { name in if !editing { draftName = name } }
+        .onChange(of: member.name) { _, name in if !editing { draftName = name } }
     }
 
     private func commit() {

@@ -69,9 +69,9 @@ enum CloudStatus: Equatable {
 
     var symbol: String {
         switch self {
-        // Not `arrow.trianglehead.…`, which is SF Symbols 6 and draws nothing
-        // at all on iOS 16 — a missing glyph raises no error and fails only on
-        // the screen of whoever has the oldest phone.
+        // Not `arrow.trianglehead.…`, which is SF Symbols 6 / iOS 18 and draws
+        // nothing at all below that. A missing glyph raises no build error and
+        // fails only on the screen of whoever has the oldest phone.
         case .checking:                    "arrow.triangle.2.circlepath"
         case .off:                         "iphone.gen3"
         case .on:                          "checkmark.icloud.fill"

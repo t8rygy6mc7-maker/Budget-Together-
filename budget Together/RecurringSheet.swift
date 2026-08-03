@@ -183,7 +183,7 @@ struct RecurringForm: View {
 
                 TextField("", text: $place,
                           prompt: Text(kind == .income ? "e.g. Payroll" : "e.g. Rent")
-                            .tinted(Palette.muted))
+                            .foregroundStyle(Palette.muted))
                     .textFieldStyle(.plain)
                     .appFont(15, weight: .medium)
                     .padding(.horizontal, 14).padding(.vertical, 13)
@@ -305,7 +305,7 @@ struct RecurringForm: View {
         .foregroundStyle(Palette.text)
         .tint(Palette.teal)
         .onAppear(perform: load)
-        .onValueChange(of: kind) { new in
+        .onChange(of: kind) { _, new in
             if !Bucket.list(for: new, including: item?.bucket).contains(where: { $0.id == bucket }) {
                 bucket = Bucket.fallback(for: new).id
             }

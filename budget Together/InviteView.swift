@@ -359,7 +359,7 @@ struct SeatClaimSheet: View {
     private var nameField: some View {
         HStack(spacing: 9) {
             TextField("", text: $newName,
-                      prompt: Text("Your name").tinted(Palette.muted))
+                      prompt: Text("Your name").foregroundStyle(Palette.muted))
                 .focused($nameFocused)
                 .textFieldStyle(.plain)
                 .appFont(15, weight: .medium)

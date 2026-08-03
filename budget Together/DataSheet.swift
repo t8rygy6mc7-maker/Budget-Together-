@@ -286,7 +286,7 @@ struct DataSheet: View {
                 .foregroundStyle(Palette.sub)
 
             TextField("", text: $typed,
-                      prompt: Text(Self.phrase).tinted(Palette.muted))
+                      prompt: Text(Self.phrase).foregroundStyle(Palette.muted))
                 .focused($confirmFocused)
                 .textFieldStyle(.plain)
                 .autocorrectionDisabled()

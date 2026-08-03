@@ -239,11 +239,7 @@ struct HomeView: View {
             let over = model.forecast.isOverPlan
             Button { showInsights = true } label: {
                 HStack(spacing: 12) {
-                    // The on-track glyph is `chart.xyaxis.line` rather than
-                    // `chart.line.flattrend.xyaxis`, which reads better but is
-                    // SF Symbols 5 and draws nothing on iOS 16. Same family,
-                    // so the pair still contrasts; only the flatness is lost.
-                    Image(systemName: over ? "chart.line.uptrend.xyaxis" : "chart.xyaxis.line")
+                    Image(systemName: over ? "chart.line.uptrend.xyaxis" : "chart.line.flattrend.xyaxis")
                         .appFont(14, weight: .semibold)
                         .foregroundStyle(over ? Palette.over : Palette.teal)
                         .frame(width: 32, height: 32)

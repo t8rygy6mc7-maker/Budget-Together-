@@ -312,7 +312,7 @@ struct BudgetRow: View {
                         .focused($editingLimit)
                         .accessibilityLabel("\(bucket.label) budget")
                         .onSubmit(commitLimit)
-                        .onValueChange(of: editingLimit) { isEditing in
+                        .onChange(of: editingLimit) { _, isEditing in
                             if !isEditing { commitLimit() }
                         }
                 }
@@ -366,7 +366,7 @@ struct BudgetRow: View {
         // switching months, a move of money, a partner's edit arriving — so the
         // text has to be re-seeded. Never while it's being typed in, though;
         // that would overwrite the half-finished number under the cursor.
-        .onValueChange(of: cap) { new in
+        .onChange(of: cap) { _, new in
             if !editingLimit { limitText = Self.limitField(new) }
         }
     }

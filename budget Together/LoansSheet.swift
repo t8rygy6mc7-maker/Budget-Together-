@@ -242,7 +242,7 @@ struct LoanForm: View {
             Text(title).appFont(12, weight: .semibold).foregroundStyle(Palette.sub)
             HStack(spacing: 6) {
                 TextField("", text: text,
-                          prompt: Text(prompt).tinted(Palette.muted))
+                          prompt: Text(prompt).foregroundStyle(Palette.muted))
                     .textFieldStyle(.plain)
                     .keyboardType(keyboard)
                     .appFont(15, weight: .medium)
