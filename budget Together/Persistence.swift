@@ -301,6 +301,20 @@ final class BudgetStore {
         }
     }
 
+    /// Which household this device is looking at. Per-device for the same
+    /// reason `localMemberID` is: a phone can hold more than one budget, and
+    /// which one is on screen is a fact about the phone rather than the data.
+    private var selectedHouseholdIDInMemory: String?
+    private static let selectedHouseholdKey = "selectedHouseholdID"
+
+    var selectedHouseholdID: String? {
+        get { defaults?.string(forKey: Self.selectedHouseholdKey) ?? selectedHouseholdIDInMemory }
+        set {
+            if let defaults { defaults.set(newValue, forKey: Self.selectedHouseholdKey) }
+            else { selectedHouseholdIDInMemory = newValue }
+        }
+    }
+
     var viewContext: NSManagedObjectContext { container.viewContext }
 
     init(inMemory: Bool = false) {
@@ -491,15 +505,94 @@ final class BudgetStore {
 
     // MARK: Household
 
-    /// The household this device reads/writes. In local mode there is exactly one.
+    /// One budget this device can open, for the switcher.
+    struct HouseholdSummary: Identifiable, Hashable {
+        let id: String
+        let name: String
+        /// Whether this device's account created it, as opposed to being
+        /// invited into it. Everything is owned in local-only mode.
+        let isOwned: Bool
+        let isSample: Bool
+        let createdAt: Date
+    }
+
+    /// The household this device reads and writes.
+    ///
+    /// This used to be "whichever row comes back first, oldest wins", which was
+    /// true enough while a device could only ever hold one. It stops being true
+    /// the moment a phone can hold two — someone who has their own budget and
+    /// is also invited into a partner's — because picking by age would silently
+    /// show them the wrong one, with no clue on screen that another existed and
+    /// every write landing in it.
+    ///
+    /// So the choice is made once, deliberately, and remembered. A stale id — a
+    /// budget since deleted — falls through to a fresh choice rather than
+    /// leaving the app with nothing, and the new choice is written back.
     func currentHousehold() -> NSManagedObject? {
-        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.household)
-        request.fetchLimit = 1
-        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
-        return (try? viewContext.fetch(request))?.first
+        if let id = selectedHouseholdID, let house = householdObject(id: id) { return house }
+        guard let fallback = defaultHousehold() else { return nil }
+        selectedHouseholdID = fallback.value(forKey: "id") as? String
+        return fallback
     }
 
     var hasHousehold: Bool { currentHousehold() != nil }
+
+    /// Which budget to open when nobody has said. Real budgets beat the worked
+    /// example, budgets you own beat ones you were invited into, and the oldest
+    /// breaks the tie — which is the previous behaviour, and the right answer
+    /// for the overwhelmingly common case of exactly one.
+    private func defaultHousehold() -> NSManagedObject? {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.household)
+        let all = (try? viewContext.fetch(request)) ?? []
+        return all.min { a, b in
+            let sampleA = a.value(forKey: "isSample") as? Bool ?? false
+            let sampleB = b.value(forKey: "isSample") as? Bool ?? false
+            if sampleA != sampleB { return !sampleA }
+            let ownedA = isOwned(a), ownedB = isOwned(b)
+            if ownedA != ownedB { return ownedA }
+            let dateA = a.value(forKey: "createdAt") as? Date ?? .distantPast
+            let dateB = b.value(forKey: "createdAt") as? Date ?? .distantPast
+            return dateA < dateB
+        }
+    }
+
+    /// Every budget on this device, in the order the switcher shows them.
+    func households() -> [HouseholdSummary] {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.household)
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
+        return ((try? viewContext.fetch(request)) ?? []).compactMap { house in
+            guard let id = house.value(forKey: "id") as? String else { return nil }
+            return HouseholdSummary(
+                id: id,
+                name: house.value(forKey: "name") as? String ?? "Together",
+                isOwned: isOwned(house),
+                isSample: house.value(forKey: "isSample") as? Bool ?? false,
+                createdAt: house.value(forKey: "createdAt") as? Date ?? .distantPast
+            )
+        }
+    }
+
+    /// Whether this device's account owns the household, rather than having
+    /// been invited into it. A joined household lives in the shared store.
+    private func isOwned(_ house: NSManagedObject) -> Bool {
+        guard isCloudSyncActive, let sharedStore else { return true }
+        return house.objectID.persistentStore !== sharedStore
+    }
+
+    /// Points the device at a different budget. Which member this device is, is
+    /// a fact about *a* household, so it can't survive the move.
+    func switchHousehold(to id: String) {
+        guard id != selectedHouseholdID, householdObject(id: id) != nil else { return }
+        selectedHouseholdID = id
+        localMemberID = nil
+    }
+
+    func householdObject(id: String) -> NSManagedObject? {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.household)
+        request.predicate = NSPredicate(format: "id == %@", id)
+        request.fetchLimit = 1
+        return (try? viewContext.fetch(request))?.first
+    }
 
     /// Ensures a household exists with the default caps seeded. Used in local
     /// mode so the app is immediately usable; the explicit pairing flow (Step 2)
@@ -536,6 +629,10 @@ final class BudgetStore {
         // Whoever creates the household is the first member, and is this device.
         let owner = insertMember(name: ownerName, colorIndex: 0, in: house)
         localMemberID = owner.id
+        // Opened here rather than left to `defaultHousehold` to work out: a
+        // brand-new budget is unambiguously the one the user means, even on a
+        // phone that already holds another.
+        selectedHouseholdID = house.value(forKey: "id") as? String
         save()
         return house
     }
@@ -696,7 +793,8 @@ final class BudgetStore {
     /// Keys this app owns. Listed rather than wildcarded so a wipe can never
     /// reach into another framework's preferences.
     private static let ownedDefaultsKeys: Set<String> = [
-        localMemberKey, "antiBudgetMode", "appearance",
+        localMemberKey, selectedHouseholdKey,
+        "antiBudgetMode", "appearance",
         "notificationsRequested", "limitAlertsEnabled",
     ]
 
@@ -1011,6 +1109,7 @@ final class BudgetStore {
                 for obj in (try? viewContext.fetch(orphans)) ?? [] { viewContext.delete(obj) }
             }
             viewContext.delete(house)
+            if selectedHouseholdID == id { selectedHouseholdID = nil }
         }
         localMemberID = nil
         save()
