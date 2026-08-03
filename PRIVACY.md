@@ -1,7 +1,7 @@
 # Privacy Policy for Budget Together
 
-**Effective date:** [DATE]
-**Last updated:** [DATE]
+**Effective date:** August 3, 2026
+**Last updated:** August 3, 2026
 
 ## The short version
 
@@ -16,8 +16,8 @@ kind in the app.
 ## Who this covers
 
 This policy covers the Budget Together iPhone app published by
-[YOUR NAME OR COMPANY] ("we", "us"). If you have a question about it, write to
-[CONTACT EMAIL].
+Ren ("we", "us"). If you have a question about it, write to
+glib-combos.18@icloud.com.
 
 ## What the app stores
 
@@ -171,7 +171,7 @@ in the app's release notes rather than quietly editing the page.
 
 ## Contact
 
-[CONTACT EMAIL]
+glib-combos.18@icloud.com
 
 ---
 
