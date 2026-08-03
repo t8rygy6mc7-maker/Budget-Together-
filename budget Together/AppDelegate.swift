@@ -11,9 +11,9 @@ import SwiftUI
 // A spend logged on the iPad wouldn't reach the phone until the next launch,
 // which on a shared budget reads as the app having lost it.
 //
-// This is also where accepting a household invite will live when sharing lands
-// (`userDidAcceptCloudKitShareWith`), which is why it's a file of its own
-// rather than a few lines hidden in the app entry point.
+// It's also where the scene delegate gets named, which is how invites to a
+// shared budget reach the app (`userDidAcceptCloudKitShareWith` — see
+// SceneDelegate).
 
 final class AppDelegate: NSObject, UIApplicationDelegate {
     func application(
@@ -28,5 +28,16 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
             application.registerForRemoteNotifications()
         }
         return true
+    }
+
+    /// SwiftUI builds the scene, but only a scene *delegate* is offered the
+    /// CloudKit share metadata when someone opens an invite — and the only way
+    /// to get one into a `WindowGroup` app is to name it here.
+    func application(_ application: UIApplication,
+                     configurationForConnecting session: UISceneSession,
+                     options: UIScene.ConnectionOptions) -> UISceneConfiguration {
+        let configuration = UISceneConfiguration(name: nil, sessionRole: session.role)
+        configuration.delegateClass = SceneDelegate.self
+        return configuration
     }
 }

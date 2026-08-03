@@ -1,3 +1,4 @@
+import Combine
 import SwiftUI
 
 @main
@@ -12,6 +13,10 @@ struct BudgetTogetherApp: App {
 struct RootView: View {
     @StateObject private var model = AppModel()
     @Environment(\.scenePhase) private var scenePhase
+    /// Where an invite lands between iOS handing it over and the app being
+    /// ready for it. See `SceneDelegate`.
+    @ObservedObject private var inbox = ShareInbox.shared
+    @State private var showSeatClaim = false
 
     var body: some View {
         Group {
@@ -28,6 +33,40 @@ struct RootView: View {
         // Drives the whole tree, sheets included: every `Palette` token is a
         // dynamic colour that resolves against the scheme set here.
         .preferredColorScheme(model.appearance.colorScheme)
+        // Asks iCloud who's holding this phone, so a device that already has a
+        // seat on a shared budget recognises it instead of asking again.
+        .task {
+            await model.adoptCloudIdentity()
+            // Checked here as well as in `onChange`: someone who dismissed the
+            // question last time relaunches with it already true, and a change
+            // handler never fires for a value that was true on arrival.
+            if model.needsSeatClaim { showSeatClaim = true }
+        }
+        // A `@Published` publisher replays its current value on subscribe,
+        // which is what covers the cold-launch case: the tap that started the
+        // app delivers the invite long before this view exists.
+        .onReceive(inbox.$pending.compactMap { $0 }) { metadata in
+            ShareInbox.shared.pending = nil
+            Task { await model.accept(metadata) }
+        }
+        // Asked as soon as somebody lands in a budget they were invited into,
+        // rather than left to be found three taps deep in People.
+        .onChange(of: model.needsSeatClaim) { _, needed in
+            if needed { showSeatClaim = true }
+        }
+        .sheet(isPresented: $showSeatClaim) {
+            SeatClaimSheet().environmentObject(model)
+        }
+        .overlay { JoiningOverlay().environmentObject(model) }
+        .animation(.easeInOut(duration: 0.2), value: model.joining)
+        .alert("That's already someone's",
+               isPresented: Binding(get: { model.seatConflict != nil },
+                                    set: { if !$0 { model.dismissSeatConflict() } })) {
+            Button("OK", role: .cancel) { model.dismissSeatConflict() }
+        } message: {
+            Text("\(model.seatConflict ?? "That name") is signed in on another "
+               + "phone. Pick a different one, or add yourself.")
+        }
         // Covers the screen the moment the app stops being frontmost, before
         // iOS takes the picture it shows in the app switcher. See `PrivacyCover`.
         .overlay {

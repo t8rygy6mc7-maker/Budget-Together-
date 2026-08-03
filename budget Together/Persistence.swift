@@ -108,6 +108,12 @@ enum CDModel {
             secret("name",     .stringAttributeType),
             attr("colorIndex", .integer64AttributeType),  // index into MemberStyle.all
             attr("createdAt",  .dateAttributeType),       // also the display order
+            // Which iCloud account sits in this seat, once somebody has said
+            // so. Opaque and container-scoped — it is not an email address and
+            // can't be turned back into one. In the clear rather than
+            // encrypted because the whole point of it is to be matched against
+            // in a predicate. See `BudgetStore.claimMember`.
+            attr("userRecordName", .stringAttributeType),
         ]
         recurring.properties = [
             attr("id",              .stringAttributeType),
@@ -302,8 +308,9 @@ final class BudgetStore {
     }
 
     /// Which household this device is looking at. Per-device for the same
-    /// reason `localMemberID` is: a phone can hold more than one budget, and
-    /// which one is on screen is a fact about the phone rather than the data.
+    /// reason `localMemberID` is: once you can be invited into someone else's
+    /// budget, a phone can hold more than one, and which one is on screen is a
+    /// fact about the phone rather than about the data.
     private var selectedHouseholdIDInMemory: String?
     private static let selectedHouseholdKey = "selectedHouseholdID"
 
@@ -313,6 +320,31 @@ final class BudgetStore {
             if let defaults { defaults.set(newValue, forKey: Self.selectedHouseholdKey) }
             else { selectedHouseholdIDInMemory = newValue }
         }
+    }
+
+    /// Who CloudKit thinks this device is, cached from the last time it
+    /// answered. Used to work out which seat in a shared budget belongs to the
+    /// person holding the phone — see `claimMember`.
+    private var userRecordNameInMemory: String?
+    private static let userRecordKey = "cloudUserRecordName"
+
+    private(set) var cloudUserRecordName: String? {
+        get { defaults?.string(forKey: Self.userRecordKey) ?? userRecordNameInMemory }
+        set {
+            if let defaults { defaults.set(newValue, forKey: Self.userRecordKey) }
+            else { userRecordNameInMemory = newValue }
+        }
+    }
+
+    /// Asks CloudKit who this is. Cheap after the first call — CloudKit caches
+    /// it too — but worth doing at launch rather than once ever, because
+    /// signing out of iCloud and into another account changes the answer, and
+    /// a stale one would hand this phone somebody else's seat.
+    func refreshCloudUserRecordName() async {
+        guard Self.cloudSyncEnabled else { return }
+        let container = CKContainer(identifier: Self.containerIdentifier)
+        guard let id = try? await container.userRecordID() else { return }
+        cloudUserRecordName = id.recordName
     }
 
     var viewContext: NSManagedObjectContext { container.viewContext }
@@ -519,15 +551,16 @@ final class BudgetStore {
     /// The household this device reads and writes.
     ///
     /// This used to be "whichever row comes back first, oldest wins", which was
-    /// true enough while a device could only ever hold one. It stops being true
-    /// the moment a phone can hold two — someone who has their own budget and
-    /// is also invited into a partner's — because picking by age would silently
-    /// show them the wrong one, with no clue on screen that another existed and
-    /// every write landing in it.
+    /// true enough while a device could only ever hold one. Accepting an invite
+    /// breaks that: someone who already has their own budget and then joins a
+    /// partner's has two, in two different stores, and picking by age would
+    /// silently show them the wrong one — with no clue on screen that another
+    /// existed, and every write landing in it.
     ///
-    /// So the choice is made once, deliberately, and remembered. A stale id — a
-    /// budget since deleted — falls through to a fresh choice rather than
-    /// leaving the app with nothing, and the new choice is written back.
+    /// So the choice is made once, deliberately, and remembered. A stale id —
+    /// a budget that was deleted, or a share the owner has since stopped —
+    /// falls through to a fresh choice rather than leaving the app with
+    /// nothing, and the new choice is written back.
     func currentHousehold() -> NSManagedObject? {
         if let id = selectedHouseholdID, let house = householdObject(id: id) { return house }
         guard let fallback = defaultHousehold() else { return nil }
@@ -537,10 +570,10 @@ final class BudgetStore {
 
     var hasHousehold: Bool { currentHousehold() != nil }
 
-    /// Which budget to open when nobody has said. Real budgets beat the worked
-    /// example, budgets you own beat ones you were invited into, and the oldest
-    /// breaks the tie — which is the previous behaviour, and the right answer
-    /// for the overwhelmingly common case of exactly one.
+    /// Which budget to open when nobody has said. Real budgets beat the
+    /// worked example, budgets you own beat ones you were invited into, and
+    /// the oldest breaks the tie — which is the previous behaviour, and the
+    /// right answer for the overwhelmingly common case of exactly one.
     private func defaultHousehold() -> NSManagedObject? {
         let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.household)
         let all = (try? viewContext.fetch(request)) ?? []
@@ -580,11 +613,12 @@ final class BudgetStore {
     }
 
     /// Points the device at a different budget. Which member this device is, is
-    /// a fact about *a* household, so it can't survive the move.
+    /// a fact about *a* household, so it can't survive the move — the joiner
+    /// claims a seat in the new one (see `claimMember`).
     func switchHousehold(to id: String) {
         guard id != selectedHouseholdID, householdObject(id: id) != nil else { return }
         selectedHouseholdID = id
-        localMemberID = nil
+        localMemberID = matchingMemberID(in: id)
     }
 
     func householdObject(id: String) -> NSManagedObject? {
@@ -631,9 +665,12 @@ final class BudgetStore {
         localMemberID = owner.id
         // Opened here rather than left to `defaultHousehold` to work out: a
         // brand-new budget is unambiguously the one the user means, even on a
-        // phone that already holds another.
+        // phone that already holds one they were invited into.
         selectedHouseholdID = house.value(forKey: "id") as? String
         save()
+        if let me = cloudUserRecordName, !me.isEmpty {
+            claimMember(id: owner.id)
+        }
         return house
     }
 
@@ -793,7 +830,7 @@ final class BudgetStore {
     /// Keys this app owns. Listed rather than wildcarded so a wipe can never
     /// reach into another framework's preferences.
     private static let ownedDefaultsKeys: Set<String> = [
-        localMemberKey, selectedHouseholdKey,
+        localMemberKey, selectedHouseholdKey, userRecordKey,
         "antiBudgetMode", "appearance",
         "notificationsRequested", "limitAlertsEnabled",
     ]
@@ -1151,7 +1188,8 @@ final class BudgetStore {
             id: id,
             name: obj.value(forKey: "name") as? String ?? "",
             colorIndex: Int(obj.value(forKey: "colorIndex") as? Int64 ?? 0),
-            createdAt: obj.value(forKey: "createdAt") as? Date ?? .distantPast
+            createdAt: obj.value(forKey: "createdAt") as? Date ?? .distantPast,
+            userRecordName: obj.value(forKey: "userRecordName") as? String
         )
     }
 
@@ -1396,6 +1434,90 @@ final class BudgetStore {
 
     /// How much of the log would go with this member, for the delete warning.
     func entryCount(memberID: String) -> Int { entryObjects(memberID: memberID).count }
+
+    // MARK: Seats
+
+    /// Ties a seat to the iCloud account holding this phone, and makes it the
+    /// member this device logs as.
+    ///
+    /// Two things happen here on purpose. "This is me" has always been a
+    /// per-device preference (`localMemberID`), and stays one. Stamping the
+    /// account onto the row is the shared half, and it buys two things worth
+    /// having on a budget more than one person is in: the same seat can't be
+    /// claimed by two different people, and somebody's second device
+    /// recognises its own seat without being asked again.
+    ///
+    /// Returns false if the seat is already somebody else's, which the UI
+    /// shouldn't offer but shouldn't be the only thing preventing either.
+    @discardableResult
+    func claimMember(id: String) -> Bool {
+        guard let obj = memberObject(id: id) else { return false }
+        let occupant = obj.value(forKey: "userRecordName") as? String ?? ""
+        guard let me = cloudUserRecordName, !me.isEmpty else {
+            // No iCloud identity to stamp — local-only, or iCloud not signed
+            // in. The per-device half still works, which is all this app did
+            // before sharing existed.
+            localMemberID = id
+            return true
+        }
+        guard occupant.isEmpty || occupant == me else { return false }
+
+        // One account, one seat per budget. Leaving the old stamp behind would
+        // make `matchingMemberID` ambiguous the moment someone corrects a
+        // mis-tap.
+        if let house = obj.value(forKey: "household") as? NSManagedObject {
+            for seat in members(in: house, claimedBy: me) where seat != obj {
+                seat.setValue(nil, forKey: "userRecordName")
+            }
+        }
+        obj.setValue(me, forKey: "userRecordName")
+        localMemberID = id
+        save()
+        return true
+    }
+
+    /// Lines this device up with its seat, in whichever direction is missing.
+    ///
+    /// Two halves can each be present without the other, and both happen in
+    /// ordinary use:
+    ///
+    ///   * The person who created the budget picked their seat by typing their
+    ///     name into the pairing screen, long before there was a share or an
+    ///     account to stamp on it. Their row needs the stamp.
+    ///   * Their iPad syncs that row down through the private database and has
+    ///     no idea which seat is its own — `localMemberID` is per-device and
+    ///     deliberately never mirrors. It needs the seat.
+    ///
+    /// Without the second half a second device is left at "which one of these
+    /// is you?" forever, being offered a seat it already owns.
+    func reconcileLocalMember() {
+        guard let me = cloudUserRecordName, !me.isEmpty,
+              let house = currentHousehold() else { return }
+
+        if let id = localMemberID, let obj = memberObject(id: id) {
+            guard (obj.value(forKey: "userRecordName") as? String ?? "").isEmpty else { return }
+            obj.setValue(me, forKey: "userRecordName")
+            save()
+            return
+        }
+        if let id = members(in: house, claimedBy: me).first?.value(forKey: "id") as? String {
+            localMemberID = id
+        }
+    }
+
+    /// The seat in `householdID` this device's account already sits in, if any.
+    func matchingMemberID(in householdID: String) -> String? {
+        guard let me = cloudUserRecordName, !me.isEmpty,
+              let house = householdObject(id: householdID) else { return nil }
+        return members(in: house, claimedBy: me).first?.value(forKey: "id") as? String
+    }
+
+    private func members(in house: NSManagedObject, claimedBy record: String) -> [NSManagedObject] {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.member)
+        request.predicate = NSPredicate(format: "household == %@ AND userRecordName == %@",
+                                        house, record)
+        return (try? viewContext.fetch(request)) ?? []
+    }
 
     // MARK: Recurring
 

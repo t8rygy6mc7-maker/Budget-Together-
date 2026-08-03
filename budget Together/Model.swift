@@ -47,6 +47,13 @@ struct Member: Identifiable, Hashable {
     /// Index into `MemberStyle.all`, wrapped when it runs past the end.
     var colorIndex: Int
     var createdAt: Date
+    /// The iCloud account sitting in this seat, once someone has claimed it.
+    /// `nil` means the seat is a name on a list and nothing more — which is
+    /// every seat in a household nobody has been invited into.
+    var userRecordName: String?
+
+    /// Whether somebody's phone is actually behind this name.
+    var isClaimed: Bool { !(userRecordName ?? "").isEmpty }
 
     private var style: MemberStyle {
         id.isEmpty ? MemberStyle.unknown : MemberStyle.at(colorIndex)

@@ -16,5 +16,13 @@
 	<array>
 		<string>remote-notification</string>
 	</array>
+
+	<!-- Says this app knows what to do with a CloudKit share link. Without it
+	     iOS never offers the app when someone taps an invite: the link opens
+	     in Safari and dead-ends on an iCloud page, which looks exactly like
+	     the invite being broken. There is no INFOPLIST_KEY_ equivalent for
+	     this one either. See SceneDelegate. -->
+	<key>CKSharingSupported</key>
+	<true/>
 </dict>
 </plist>

@@ -36,6 +36,8 @@ struct PeopleSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
                     .padding(.top, 14)
 
+                SharingSection()
+                BudgetSwitcher()
                 alertsSection
                 appearanceSection
                 dataSection
@@ -83,7 +85,11 @@ struct PeopleSheet: View {
     /// doesn't know something yet, not that the user did anything wrong.
     @ViewBuilder
     private var whoAreYouPrompt: some View {
-        if model.needsLocalMember {
+        // Seats with somebody's phone already behind them aren't on offer —
+        // claiming one would be taking a name that belongs to a real person
+        // who is, right now, logging things under it.
+        let free = model.unclaimedSeats
+        if model.needsLocalMember, !free.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 9) {
                     Image(systemName: "person.crop.circle.badge.questionmark")
@@ -103,7 +109,7 @@ struct PeopleSheet: View {
                 // nature, and one tap here beats hunting through a row's
                 // overflow menu for the same command.
                 LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
-                    ForEach(model.members) { member in
+                    ForEach(free) { member in
                         Button { model.setMe(member.id) } label: {
                             HStack(spacing: 6) {
                                 MemberAvatar(member: member, size: 20)
@@ -430,10 +436,20 @@ private struct PersonRow: View {
                     .foregroundStyle(member.color)
                     .padding(.horizontal, 8).padding(.vertical, 4)
                     .background(member.color.opacity(0.16), in: Capsule())
+            } else if member.isClaimed {
+                // Somebody's phone is behind this name. Worth showing, because
+                // it's the only difference between a person on the budget and
+                // a label for one — and the difference decides whether what
+                // they spend arrives on its own.
+                Image(systemName: "iphone.gen3")
+                    .appFont(11.5, weight: .semibold)
+                    .foregroundStyle(Palette.sub)
+                    .accessibilityLabel("\(member.name) is on their own phone")
             }
 
             Menu {
-                if !isMe {
+                // Never offered for a seat someone else's phone already holds.
+                if !isMe, !member.isClaimed {
                     Button { model.setMe(member.id) } label: {
                         Label("This is me", systemImage: "person.crop.circle")
                     }

@@ -3,8 +3,8 @@ import SwiftUI
 // MARK: - Pairing / onboarding
 //
 // Shown when this device hasn't joined a budget yet. The owner creates one
-// here; a partner joins by opening the invite link (handled outside the app by
-// CloudKit — see AppDelegate, Step 3), so there's no code to type in.
+// here; a partner joins by opening the invite link, which iOS delivers straight
+// to the app (see `SceneDelegate`), so there's no code to type in.
 //
 // Three deliberate changes from the first version of this screen, all aimed at
 // the same thing — that a money app's first screen is where most people decide
@@ -93,7 +93,7 @@ struct PairingView: View {
             promise("lock.fill", "No bank login, ever",
                     "You type in what you spend. There's nothing to connect and nothing to leak.")
             promise("iphone", "It lives on your phone",
-                    "Entries sync between your own devices through your iCloud. They don't come to us — there is no us.")
+                    "Entries reach your other devices, and anyone you invite, through iCloud. They don't come to us — there is no us.")
             promise("eye.slash.fill", "Nobody's watching",
                     "No ads, no tracking, no credit score. Anything you mark private never leaves your device at all.")
         }

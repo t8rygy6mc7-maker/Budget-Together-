@@ -1,3 +1,4 @@
+import CloudKit
 import Combine
 import SwiftUI
 
@@ -266,11 +267,23 @@ final class AppModel: ObservableObject {
         reload()
     }
 
-    /// Marks a member as this device's person. Stored locally only.
+    /// Marks a member as this device's person.
+    ///
+    /// On a budget nobody has been invited into this is what it always was: a
+    /// line in this device's preferences and nothing more. Once the budget is
+    /// shared it also stamps the seat with this device's iCloud account, which
+    /// is what stops two people claiming the same name and what lets somebody's
+    /// iPad recognise its own seat without being asked a second time.
     func setMe(_ id: String) {
-        store.localMemberID = id
-        objectWillChange.send()
+        guard store.claimMember(id: id) else {
+            seatConflict = membersByID[id]?.name
+            return
+        }
+        reload()
     }
+
+    /// Clears the "that seat is taken" message.
+    func dismissSeatConflict() { seatConflict = nil }
 
     /// Everything this member logged goes with them — `entryCount(for:)` is what
     /// the confirmation dialog warns with. Reversible for the same reason
@@ -286,6 +299,175 @@ final class AppModel: ObservableObject {
     }
 
     func entryCount(for id: String) -> Int { store.entryCount(memberID: id) }
+
+    // MARK: - Sharing
+
+    /// Every budget this device can open. More than one only happens once
+    /// somebody who already had their own has been invited into another.
+    @Published private(set) var households: [BudgetStore.HouseholdSummary] = []
+    /// Everyone on the current budget's share, owner first. Empty when it
+    /// hasn't been shared, which is the normal state.
+    @Published private(set) var participants: [BudgetStore.ShareParticipant] = []
+    /// Whether the current budget has been shared with anybody.
+    @Published private(set) var isShared = false
+    /// Whether this device may invite people. Only the owner can — a
+    /// participant can't reshare, and a button that always fails is worse than
+    /// no button.
+    @Published private(set) var canInvite = false
+    /// The name on a seat somebody else's iCloud account already sits in.
+    @Published private(set) var seatConflict: String?
+    /// What's become of an invite this device just opened.
+    @Published private(set) var joining: JoinState = .idle
+    /// A live share waiting to go in front of the user. Set by `prepareInvite`,
+    /// consumed by the system share sheet.
+    @Published var pendingShare: PreparedShare?
+    /// Why an invite couldn't be made, in the app's own voice.
+    @Published private(set) var shareError: String?
+
+    enum JoinState: Equatable {
+        case idle
+        case joining
+        case joined(String)
+        case failed(String)
+    }
+
+    /// A minted `CKShare` and what it takes to present one.
+    struct PreparedShare: Identifiable {
+        let share: CKShare
+        let container: CKContainer
+        let title: String
+        var id: String { share.recordID.recordName }
+    }
+
+    var currentHouseholdID: String? { store.selectedHouseholdID }
+    var householdName: String { store.householdName }
+
+    /// Whether this device is in a shared budget without having said which
+    /// person on it is holding the phone. Everything keyed on "who am I"
+    /// degrades quietly while that's unanswered — see `needsLocalMember`.
+    var needsSeatClaim: Bool { isShared && me == nil }
+
+    /// Seats nobody's phone is behind yet. What a joiner picks from.
+    var unclaimedSeats: [Member] { members.filter { !$0.isClaimed } }
+
+    /// Re-reads who's on the budget and whether it's shared. Cheap: the share
+    /// record sits alongside the objects it covers, so this is a local lookup
+    /// rather than a round trip.
+    private func refreshSharing() {
+        households = store.households()
+        guard let id = currentHouseholdID else {
+            participants = []
+            isShared = false
+            canInvite = false
+            return
+        }
+        participants = store.participants(forHouseholdID: id)
+        isShared = !participants.isEmpty
+        canInvite = store.canInvite(toHouseholdID: id)
+    }
+
+    /// Points this device at a different budget it's already in.
+    func switchHousehold(to id: String) {
+        guard id != currentHouseholdID else { return }
+        store.switchHousehold(to: id)
+        selectedMonth = Date()
+        tab = .home
+        dismissUndo()
+        reload()
+    }
+
+    /// Mints the share — or fetches the one this budget already has — and
+    /// hands it to the system sheet.
+    ///
+    /// Deliberately done before the sheet is presented rather than inside its
+    /// preparation handler, so a failure arrives as a sentence the user can act
+    /// on instead of a spinner in a system sheet that dismisses itself.
+    func prepareInvite() async {
+        guard let id = currentHouseholdID else { return }
+        shareError = nil
+        do {
+            let (share, container) = try await store.share(householdID: id)
+            pendingShare = PreparedShare(share: share, container: container,
+                                         title: store.householdName)
+        } catch {
+            shareError = error.localizedDescription
+        }
+    }
+
+    func dismissShareError() { shareError = nil }
+
+    /// Ends the share. Everyone who joined loses the budget; the owner keeps
+    /// every row of it.
+    func stopSharing() async {
+        guard let id = currentHouseholdID else { return }
+        do { try await store.stopSharing(householdID: id) }
+        catch { shareError = error.localizedDescription }
+        reload()
+    }
+
+    /// Leaves a budget somebody else owns. Their copy is untouched — including
+    /// everything this person logged into it, which was always theirs.
+    func leaveSharedBudget() async {
+        guard let id = currentHouseholdID else { return }
+        do { try await store.leaveShare(householdID: id) }
+        catch { shareError = error.localizedDescription }
+        selectedMonth = Date()
+        tab = .home
+        dismissUndo()
+        reload()
+    }
+
+    /// Takes an invite the user has just opened, and opens the budget behind it.
+    func accept(_ metadata: CKShare.Metadata) async {
+        guard store.isCloudSyncActive else {
+            joining = .failed("This phone isn't syncing with iCloud, so it can't "
+                            + "join a shared budget. Sign in to iCloud in Settings "
+                            + "and open the invite again.")
+            return
+        }
+        joining = .joining
+        do {
+            guard let id = try await store.acceptShare(metadata) else {
+                // Accepted, but the rows haven't mirrored down yet. Not an
+                // error — saying so is better than a spinner that never ends.
+                joining = .failed("You've joined, but the budget hasn't arrived "
+                                + "on this phone yet. It'll appear shortly.")
+                reload()
+                return
+            }
+            store.switchHousehold(to: id)
+            selectedMonth = Date()
+            tab = .home
+            reload()
+            joining = .joined(store.householdName)
+        } catch {
+            joining = .failed(error.localizedDescription)
+        }
+    }
+
+    func dismissJoinResult() { joining = .idle }
+
+    /// Joins by adding yourself, for a budget whose owner didn't leave a seat
+    /// with your name on it — which is most of them, since inviting somebody
+    /// doesn't require having typed their name in first.
+    func joinAsNewMember(name: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespaces)
+        guard !trimmed.isEmpty else { return }
+        guard let member = store.addMember(name: trimmed, colorIndex: nextColorIndex) else { return }
+        store.claimMember(id: member.id)
+        reload()
+    }
+
+    /// Asks iCloud who this device is, then lines the answer up with this
+    /// device's seat. Runs at launch: without it the person who created the
+    /// budget has an unclaimed seat, and their own second device sits at "which
+    /// one of these is you?" being offered a seat it already owns.
+    func adoptCloudIdentity() async {
+        await store.refreshCloudUserRecordName()
+        guard hasHousehold else { return }
+        store.reconcileLocalMember()
+        reload()
+    }
 
     // MARK: - Live date context
 
@@ -1063,6 +1245,10 @@ final class AppModel: ObservableObject {
                                            entries: snapshot.entries, today: today)
         members = snapshot.members
         membersByID = Dictionary(uniqueKeysWithValues: snapshot.members.map { ($0.id, $0) })
+        // Who else is on this budget, and whether it's shared at all. Sits with
+        // the members it describes so a partner accepting an invite shows up on
+        // the same pass that brings their first entry down.
+        refreshSharing()
         reactions = snapshot.reactions
         monthFlags = snapshot.monthFlags
         isSampleHousehold = snapshot.isSample
