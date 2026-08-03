@@ -171,33 +171,132 @@ currently looks alarming.
 
 ## 4. Accessibility fixes in the current palette
 
-Measured, not estimated:
+Measured, not estimated. The whole neutral type ladder in the dark scheme,
+darkest rung first:
 
-| Token | Hex | Surface | Ratio | Verdict |
-| --- | --- | --- | --- | --- |
-| `Palette.muted` | `#565C72` | navBar | 2.59 | **fail** |
-| `Palette.muted` | `#565C72` | card | 2.41 | **fail** |
-| `Palette.sub` | `#7C8199` | card | 4.16 | fail for small text |
-| `Palette.sub` | `#7C8199` | screen | 4.68 | pass |
-| `Palette.label9` | `#9AA0B6` | screen | 6.93 | pass |
-| `Palette.chipText` | `#B7BDD0` | chip | 7.82 | pass |
+| Token | Hex | card | screen | navBar | Verdict |
+| --- | --- | --- | --- | --- | --- |
+| `Palette.muted` | `#82889F` | 4.55 | 5.12 | 4.88 | pass |
+| `Palette.sub` | `#8F94AC` | 5.33 | 6.01 | 5.71 | pass |
+| `Palette.label9` | `#9AA0B6` | 6.15 | 6.93 | 6.59 | pass |
+| `Palette.chipText` | `#B7BDD0` | 8.54 | 9.61 | 9.15 | pass |
+| `Palette.text` | `#EDEFF7` | 13.94 | 15.70 | 14.93 | pass |
 
-`Palette.muted` renders the unselected tab labels at 9.5px in `BottomBar`, the
-`/` separator, and the `$` prefix in `BudgetRow`. At 2.4:1 that is not legible
-in daylight. Lifting it to `#777F9D` reaches 4.55 on screen and 4.04 on card.
+`muted` and `sub` are the two that moved; `#565C72` and `#7C8199` are what they
+used to be, at 2.41 and 4.16 on `card`. §4c has the derivation.
 
-`Palette.sub` is the most-used secondary colour in the app and sits just under
-AA on card surfaces. Either lift it or reserve it for screen backgrounds and
-use `label9` on cards.
+Note the ordering: `card` is the strictest surface for every rung, not `screen`.
+Dark-scheme intuition runs the wrong way here — `card` is the *lighter* surface,
+so it is the one that squeezes light text. Anything measured only against
+`screen` is measured against the easy case.
+
+`Palette.muted` renders the unselected tab labels in `BottomBar`, the `/`
+separator, and the `$` prefix in `BudgetRow`. Those are the smallest type in the
+app — a 9.5pt base for the tab labels — and since every size now scales through
+`.appFont()` (see `Comfort.swift`), 9.5pt is the *floor* rather than the fixed
+size. A token that only just works at the default size has to work there.
+
+`Palette.sub` is the most-used secondary colour in the app; it now clears AA on
+`card` outright, so the "reserve it for screen backgrounds and use `label9` on
+cards" workaround is no longer needed.
 
 Beyond contrast: the donut, the bubbles, and the person split bar are all
 colour-only encodings. Every one needs a redundant channel — a value label, an
 icon, or a pattern.
 
-**Status as of the light-scheme pass:** the light counterparts of both failing
-tokens were derived to clear AA (`muted` 5.01 on card / 4.59 on screen, `sub`
-6.23 / 5.72). The dark values above are unchanged and still fail. That is now
-an asymmetry, not just a bug — worth closing next.
+## 4c. Lifting the two failing dark neutrals
+
+`muted` and `sub` were the last tokens failing AA in either scheme — their light
+counterparts were fixed during the light-scheme pass (§4b), so this was an
+asymmetry rather than a plain bug. Both dark halves were lifted; the light
+halves are untouched.
+
+### The rule
+
+Same principle as §4b, but held in **LCh rather than HSL**: keep `C*` and hue
+fixed, move `L*` only. Held in HSL it isn't actually true — above HSL-L 50 a
+constant `S` sheds chroma as `L` rises, so a token quietly greys out as it
+lifts. In LCh the cool blue-grey cast survives the lift:
+
+| Token | Before | After | ΔC* | Δhue |
+| --- | --- | --- | --- | --- |
+| `muted` | `#565C72` | `#82889F` | 13.6 → 13.3 | 282.7° → 282.3° |
+| `sub` | `#7C8199` | `#8F94AC` | 13.9 → 13.6 | 284.3° → 284.1° |
+
+Both deltas are hex-quantisation noise, not drift.
+
+### Why `#777F9D` was not the answer
+
+The value this note previously suggested for `muted` reaches 4.55 on `screen`
+and 4.04 on `card` — it clears the easy surface and fails the one that governs.
+Landing on `card` instead puts the floor at `#82889F`, L\* 56.9.
+
+### The consequence nobody gets to avoid
+
+4.5:1 on `card` requires L\* ≥ 56.6. `label9` sits at L\* 66.1 and already
+passes, so it is the ceiling. That leaves **9.2 L\* of room for two rungs** —
+`muted` on the floor, `sub` somewhere below `label9`:
+
+| Rung | L\* before | L\* after |
+| --- | --- | --- |
+| `muted` | 39.3 | 56.9 |
+| `sub` | 54.3 | 61.7 |
+| `label9` | 66.1 | 66.1 |
+| `chipText` | 76.7 | 76.7 |
+| `text` | 94.5 | 94.5 |
+
+| Gap | Before | After |
+| --- | --- | --- |
+| `muted` → `sub` | 15.0 | 4.7 |
+| `sub` → `label9` | 11.7 | 4.4 |
+| `label9` → `chipText` | 10.6 | 10.6 |
+| `chipText` → `text` | 17.8 | 17.8 |
+
+Placing `sub` at the midpoint is what maximises the smaller of the two gaps, so
+4.4 is the best available, not a rounding choice. The ordering survives and the
+bottom three rungs are still distinguishable side by side — but they are
+distinguishable, not obviously stepped, where they used to span 26.7 L\*.
+
+That is the honest cost of holding `label9`, `chipText` and `text` fixed while
+raising the floor 17.6 points. **If the hierarchy needs to breathe again, the
+move is to lift the upper rungs too and redistribute across the whole legal band
+(L\* 56.6–100, ~43 points for five rungs), or to accept that the ladder has one
+rung too many.** Compressing further is not available.
+
+### Found while measuring: `sub` and `label9` are swapped in light
+
+Not introduced here, and not fixed here — the light values are frozen — but it
+turned up while checking the ladder held in both schemes, and it should be
+written down before someone "fixes" one scheme to match the other.
+
+In light, darker means more prominent, so a mirrored ladder should run
+`muted` → `sub` → `label9` → `chipText` with L\* *decreasing*. It doesn't:
+
+| Token | Light hex | L\* | vs screen |
+| --- | --- | --- | --- |
+| `muted` | `#686F84` | 46.9 | 4.59 |
+| `label9` | `#646B82` | 45.4 | 4.86 |
+| `sub` | `#5A6076` | 41.0 | 5.72 |
+| `chipText` | `#474D61` | 32.9 | 7.70 |
+
+`sub` and `label9` trade places. In dark, `label9` is the more prominent of the
+two; in light, `sub` is. Both schemes clear AA, so nothing is broken — but the
+same two tokens rank differently depending on the scheme, which means any view
+that leans on their relative weight reads differently in light than in dark.
+
+Deciding which order is correct is a design call, not a contrast one, and it
+wants doing in one place for both schemes rather than as a patch to whichever
+scheme is being looked at.
+
+### Residual: `chip`
+
+`muted` measures 4.17 on `chip` (`#232838`), which is lighter than `card` and
+therefore stricter still. Every remaining `muted`-on-`chip` use is an inactive
+control — the disabled save buttons, the month-stepper arrow at 0.4 alpha, the
+locked badge icons in `WinsSheet` — and WCAG 1.4.3 exempts inactive components,
+so this is deliberate rather than outstanding. It stops being exempt the moment
+`muted` is used for live text on a chip. Related to the accent-on-`chip` gap at
+the end of §4b, and with the same fix: lighten `chip`.
 
 ## 4b. Deriving the light scheme
 
@@ -311,9 +410,12 @@ lighten `chip` or darken the accents.
 
 ## Suggested order of work
 
-1. Fix `Palette.muted` and `Palette.sub` contrast **in the dark scheme** — the
-   light counterparts already pass, so this is now the only failing half.
+1. ~~Fix `Palette.muted` and `Palette.sub` contrast in the dark scheme.~~ Done —
+   see §4c. Every neutral now clears AA in both schemes.
 2. Split `Status` from `Bucket` in `Theme.swift`, add the no-shared-hex test.
+   Worth adding a contrast test alongside it: assert the neutral ladder is
+   monotonic in L\* and that every rung clears 4.5:1 on `card` in both schemes.
+   §4c leaves `muted` sitting exactly on that floor, so it can't absorb a nudge.
 3. Add `cadence` to `Bucket` and the `PaceState` computation to `AppModel`.
 4. Rebuild the Budget row with cap marker, overage tail, and status line.
 5. Rebuild Home to lead with pace and safe-to-spend; move bubbles to Stats.
