@@ -251,11 +251,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "budget Together/budget Together.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 7YG4X74SP6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Budget Together";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Used only to hear an amount you speak into the add screen. The audio is transcribed on your device and never leaves it.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Turns an amount you speak on the add screen into text. This app requires on-device recognition, so what you say is transcribed by this iPhone and is never sent away for processing.";
@@ -288,11 +289,12 @@
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
 				CODE_SIGN_ENTITLEMENTS = "budget Together/budget Together.entitlements";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 3;
+				CURRENT_PROJECT_VERSION = 4;
 				DEVELOPMENT_TEAM = 7YG4X74SP6;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Budget Together";
 				INFOPLIST_KEY_ITSAppUsesNonExemptEncryption = NO;
 				INFOPLIST_KEY_NSMicrophoneUsageDescription = "Used only to hear an amount you speak into the add screen. The audio is transcribed on your device and never leaves it.";
 				INFOPLIST_KEY_NSSpeechRecognitionUsageDescription = "Turns an amount you speak on the add screen into text. This app requires on-device recognition, so what you say is transcribed by this iPhone and is never sent away for processing.";

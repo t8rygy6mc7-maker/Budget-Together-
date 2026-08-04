@@ -4,6 +4,7 @@ struct BudgetView: View {
     @EnvironmentObject var model: AppModel
     @State private var showRecurring = false
     @State private var showLoans = false
+    @State private var showGoals = false
     @State private var markingUnusual = false
     @State private var showCategories = false
 
@@ -68,6 +69,9 @@ struct BudgetView: View {
             recurringCard
                 .padding(.bottom, 9)
 
+            goalsCard
+                .padding(.bottom, 9)
+
             loansCard
                 .padding(.bottom, 16)
 
@@ -82,6 +86,7 @@ struct BudgetView: View {
         }
         .sheet(isPresented: $showRecurring) { RecurringSheet().environmentObject(model) }
         .sheet(isPresented: $showLoans) { LoansSheet().environmentObject(model) }
+        .sheet(isPresented: $showGoals) { GoalsSheet().environmentObject(model) }
         .sheet(isPresented: $markingUnusual) { UnusualMonthSheet().environmentObject(model) }
         .sheet(isPresented: $showCategories) { CategoriesSheet().environmentObject(model) }
     }
@@ -203,6 +208,47 @@ struct BudgetView: View {
             .card(border: Palette.cardBorderSoft, radius: 15)
         }
         .buttonStyle(.plain)
+    }
+
+    /// Way into what's being saved for. Sits above `loansCard` on purpose: the
+    /// two are the same shape of thing — a balance moving toward a number — and
+    /// the one that's going the right way should be read first.
+    private var goalsCard: some View {
+        let open = model.openGoals
+        return Button { showGoals = true } label: {
+            HStack(spacing: 12) {
+                Image(systemName: "target")
+                    .appFont(15, weight: .semibold)
+                    .foregroundStyle(Palette.teal)
+                    .frame(width: 34, height: 34)
+                    .background(Palette.teal.opacity(0.16),
+                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Saving for").appFont(14, weight: .semibold)
+                    Text(goalsSubtitle(open: open))
+                        .appFont(11.5).foregroundStyle(Palette.sub)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 4)
+                Image(systemName: "chevron.right")
+                    .appFont(12, weight: .semibold)
+                    .foregroundStyle(Palette.muted)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .card(border: Palette.cardBorderSoft, radius: 15)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// Counts only what's still outstanding, so a household that has reached
+    /// everything it set out to reach isn't told it has three goals running.
+    private func goalsSubtitle(open: [Goal]) -> String {
+        guard !model.goals.isEmpty else { return "An emergency fund, a deposit, a trip" }
+        guard !open.isEmpty else {
+            return "All \(Fmt.count(model.goals.count, "goal")) reached · \(Fmt.money(model.totalSaved)) put by"
+        }
+        let remaining = open.reduce(0) { $0 + $1.remaining }
+        return "\(Fmt.money(model.totalSaved)) put by · \(Fmt.money(remaining)) to go"
     }
 
     private var loansCard: some View {

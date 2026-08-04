@@ -71,6 +71,7 @@ enum DataExport {
                      caps: [BudgetStore.CapRow],
                      recurring: [Recurring],
                      loans: [Loan],
+                     goals: [Goal],
                      challenges: [Challenge],
                      monthFlags: [String: MonthFlag],
                      reactions: [String: [Reaction]],
@@ -149,6 +150,16 @@ enum DataExport {
                     "balance": loan.balance,
                     "annualRate": loan.rate,
                     "monthlyPayment": loan.monthlyPayment,
+                ]
+            },
+            "goals": goals.map { goal in
+                [
+                    "id": goal.id,
+                    "name": goal.name,
+                    "target": goal.target,
+                    "saved": goal.saved,
+                    "monthlyContribution": goal.monthlyContribution,
+                    "deadline": goal.deadline,
                 ]
             },
             "challenges": challenges.map { challenge in

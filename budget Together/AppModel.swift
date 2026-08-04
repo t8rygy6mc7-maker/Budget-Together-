@@ -67,6 +67,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var recurring: [Recurring] = []
     /// Loans and other balances owed, oldest first.
     @Published private(set) var loans: [Loan] = []
+    /// What's being saved toward, oldest first.
+    @Published private(set) var goals: [Goal] = []
     /// Challenges with their live standing, newest window first.
     @Published private(set) var challenges: [ChallengeProgress] = []
     /// Totals for the months leading up to `selectedMonth`, oldest first.
@@ -813,6 +815,7 @@ final class AppModel: ObservableObject {
         case editedEntry(before: Entry)
         case deletedRecurring(Recurring)
         case deletedLoan(Loan)
+        case deletedGoal(Goal)
         case deletedMember(Member, entries: [Entry])
         case capChanged(bucket: String, month: String, previous: Double)
         case capsMoved(from: String, to: String, month: String,
@@ -871,6 +874,9 @@ final class AppModel: ObservableObject {
 
         case let .deletedLoan(loan):
             store.saveLoan(loan)
+
+        case let .deletedGoal(goal):
+            store.saveGoal(goal)
 
         case let .deletedMember(member, entries):
             // The member row has to exist again before its entries can point at
@@ -941,6 +947,7 @@ final class AppModel: ObservableObject {
             caps: store.allCaps(),
             recurring: snapshot.recurring,
             loans: snapshot.loans,
+            goals: snapshot.goals,
             challenges: snapshot.challenges,
             monthFlags: snapshot.monthFlags,
             reactions: snapshot.reactions,
@@ -1248,6 +1255,7 @@ final class AppModel: ObservableObject {
         caps = snapshot.caps
         recurring = snapshot.recurring
         loans = snapshot.loans
+        goals = snapshot.goals
         challenges = ChallengeScorer.score(snapshot.challenges,
                                            entries: snapshot.entries, today: today)
         members = snapshot.members
@@ -1426,6 +1434,91 @@ final class AppModel: ObservableObject {
             offerUndo(.deletedLoan(loan), message: "Removed \(loan.name).")
         }
         store.deleteLoan(id: id)
+        reload()
+    }
+
+    // MARK: - Searching the log
+    //
+    // Text search over the ledger, kept here rather than in the view because
+    // the full history is here — `allEntries` is deliberately not published,
+    // and the Log screen only ever holds the selected month.
+
+    /// Entries matching what was typed, newest first. An empty query returns
+    /// the whole pool, so the caller can run everything through one path.
+    func search(_ query: String, monthOnly: Bool) -> [Entry] {
+        let pool = monthOnly ? month.entries : allEntries
+        let needle = Self.needle(query)
+        guard !needle.isEmpty else { return pool }
+        return pool.filter { matches($0, needle) }
+    }
+
+    /// How many matches sit outside the selected month.
+    ///
+    /// This is what lets the empty state say "12 elsewhere" and offer to widen,
+    /// rather than reporting "nothing found" while the thing being looked for
+    /// sits one month over. Searching for a restaurant you went to in March is
+    /// the normal case, not the exotic one.
+    func matchesOutsideMonth(_ query: String) -> Int {
+        let needle = Self.needle(query)
+        guard !needle.isEmpty else { return 0 }
+        let key = monthKey
+        return allEntries.filter { !$0.date.hasPrefix(key) && matches($0, needle) }.count
+    }
+
+    private static func needle(_ query: String) -> String {
+        query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+    }
+
+    /// What counts as a hit. Everything the row itself shows is searchable —
+    /// including the parts that aren't in the entry's own text, because "who"
+    /// and "which category" are exactly how people describe a purchase they're
+    /// trying to find again.
+    private func matches(_ entry: Entry, _ needle: String) -> Bool {
+        if entry.place.lowercased().contains(needle) { return true }
+        if entry.note.lowercased().contains(needle) { return true }
+        if Bucket.named(entry.bucket).label.lowercased().contains(needle) { return true }
+        if member(entry.memberID).name.lowercased().contains(needle) { return true }
+        if entry.mood?.label.lowercased().contains(needle) == true { return true }
+        // The amount as it would be typed — "26" finds a $26.00 lunch. Bare
+        // digits, since nobody searching types the currency symbol or the
+        // grouping separators the formatted string carries.
+        return Fmt.plain(entry.amount).contains(needle)
+    }
+
+    // MARK: - Goals
+
+    var totalSaved: Double { goals.reduce(0) { $0 + $1.saved } }
+    var totalGoalTarget: Double { goals.reduce(0) { $0 + $1.target } }
+    var monthlyGoalContributions: Double { goals.reduce(0) { $0 + $1.monthlyContribution } }
+
+    /// Goals still being worked toward, which is what the Budget card counts.
+    /// A reached goal stays in the list — deleting it is the user's call, and
+    /// crossing the line is the part worth keeping — but it shouldn't go on
+    /// reading as outstanding work.
+    var openGoals: [Goal] { goals.filter { !$0.isComplete } }
+
+    func saveGoal(_ goal: Goal) {
+        store.saveGoal(goal)
+        reload()
+    }
+
+    /// Adds to what's been put by. Kept apart from `saveGoal` so the common
+    /// action — another transfer went in — is one tap that can't accidentally
+    /// rewrite the target or the deadline along the way.
+    func addToGoal(_ id: String, amount: Double) {
+        guard amount > 0, var goal = goals.first(where: { $0.id == id }) else { return }
+        let wasComplete = goal.isComplete
+        goal.saved = min(Fmt.maxAmount, goal.saved + amount)
+        store.saveGoal(goal)
+        reload()
+        if goal.isComplete, !wasComplete { Haptics.celebrated() } else { Haptics.saved() }
+    }
+
+    func deleteGoal(_ id: String) {
+        if let goal = goals.first(where: { $0.id == id }) {
+            offerUndo(.deletedGoal(goal), message: "Removed \(goal.name).")
+        }
+        store.deleteGoal(id: id)
         reload()
     }
 
@@ -1653,6 +1746,17 @@ extension AppModel {
                             rate: 6.5, monthlyPayment: 260, createdAt: Date()))
         store.saveLoan(Loan(id: "demo-loan-2", name: "Credit card", balance: 1250,
                             rate: 21.9, monthlyPayment: 90, createdAt: Date()))
+
+        // One open-ended, one on a deadline it isn't quite keeping up with, so
+        // the pace line has something to say in both of its shapes.
+        store.saveGoal(Goal(id: "demo-goal-1", name: "Emergency fund", target: 6000,
+                            saved: 2350, monthlyContribution: 300, deadline: "",
+                            createdAt: Date()))
+        store.saveGoal(Goal(id: "demo-goal-2", name: "Japan trip", target: 4000,
+                            saved: 900, monthlyContribution: 250,
+                            deadline: Fmt.isoDay(calendar.date(byAdding: .month,
+                                                               value: 9, to: Date()) ?? Date()),
+                            createdAt: Date()))
         return AppModel(store: store)
     }
 
@@ -1685,16 +1789,21 @@ extension AppModel {
 
         // Most entries untagged, which is the honest case — tagging is optional
         // and people do it when something felt worth noting.
+        //
+        // Both dictionaries below are keyed by *position in `sample`*, which is
+        // brittle in exactly one way: inserting a row silently re-points every
+        // note and tag after it at the wrong purchase. That is how "Prescription
+        // refill" ended up on the gym membership.
         let tags: [Int: Mood] = [
             3: .routine, 5: .stress, 6: .boredom, 7: .joy,
-            10: .routine, 13: .social, 14: .stress, 12: .boredom,
+            10: .routine, 12: .social, 13: .boredom, 14: .stress,
         ]
         // A few notes, because the feature is invisible until someone has seen
         // one — and the "why" is the whole reason the field exists.
         let notes: [Int: String] = [
             7:  "Birthday present for Alex — don't look 🙈",
-            13: "Anniversary. Worth every penny.",
-            9:  "Prescription refill",
+            8:  "Prescription refill",
+            12: "Anniversary. Worth every penny.",
         ]
         var entries = sample.enumerated().map { index, row in
             Entry(id: "demo-\(index)", date: day(row.day, of: now), place: row.place,
@@ -1753,13 +1862,40 @@ extension AppModel {
         return entries
     }()
 
+    /// The widest day-of-month the current-month sample above reaches. Every
+    /// nominal day is laid out against this span before being fitted to the
+    /// real month.
+    private static let sampleSpan = 16
+
     /// Clamps `day` into the month containing `reference` and renders a storage
     /// date key for it.
     private static func day(_ day: Int, of reference: Date) -> String {
         let cal = Calendar.current
         let span = cal.range(of: .day, in: .month, for: reference)?.count ?? 28
         var parts = cal.dateComponents([.year, .month], from: reference)
-        parts.day = min(day, span)
+        parts.day = min(fitted(day, into: reference, cal), span)
         return Fmt.isoDay(cal.date(from: parts) ?? reference)
+    }
+
+    /// Squeezes a nominal sample day into the part of the month that has
+    /// actually happened.
+    ///
+    /// The sample is written against a fixed 1st-to-16th shape, which reads
+    /// correctly in the back half of a month and is nonsense in the front half:
+    /// on the 3rd it dates two weeks of spending into the future, and none of
+    /// the screens treat that as impossible — the month's total counts it, the
+    /// pace maths measures against it, and "look around first" opens on a
+    /// household that has apparently already bought next Sunday's groceries.
+    ///
+    /// Proportional rather than clamped, so the spread survives instead of
+    /// every entry piling onto today. Months that have already elapsed are
+    /// returned untouched: there is no future in them to land in.
+    private static func fitted(_ day: Int, into reference: Date, _ cal: Calendar) -> Int {
+        let now = Date()
+        guard cal.isDate(reference, equalTo: now, toGranularity: .month) else { return day }
+        let today = cal.component(.day, from: now)
+        guard today < sampleSpan else { return day }
+        let scaled = Double(day - 1) / Double(sampleSpan - 1) * Double(today - 1)
+        return 1 + Int(scaled.rounded())
     }
 }

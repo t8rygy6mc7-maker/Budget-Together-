@@ -54,6 +54,15 @@ enum Fmt {
     private static let isoMonthFormatter = fixed("yyyy-MM")
 
     private static let weekdayFormatter = display("EEEE, MMM d")
+    /// Localised medium date — "12 Mar 2027". Built from a style rather than a
+    /// pattern because a date this far out is read, not scanned, and the order
+    /// of its parts should be the reader's own.
+    private static let dayTitleFormatter: DateFormatter = {
+        let f = DateFormatter()
+        f.dateStyle = .medium
+        f.timeStyle = .none
+        return f
+    }()
     private static let monthYearFormatter = display("LLLL yyyy")
     private static let monthNameFormatter = display("LLLL")
     private static let shortMonthFormatter = display("LLL")
@@ -173,6 +182,13 @@ enum Fmt {
 
     /// "Jul" — axis labels on the trend chart.
     static func shortMonth(_ d: Date) -> String { shortMonthFormatter.string(from: d) }
+
+    /// "12 Mar 2027" for a stored day key — a date far enough off that a
+    /// weekday tells the reader nothing.
+    static func dayTitle(_ iso: String) -> String {
+        guard let day = isoDayFormatter.date(from: iso) else { return iso }
+        return dayTitleFormatter.string(from: day)
+    }
 
     /// "Today" / "Yesterday" / "Monday, Jul 20" for a stored day key.
     static func dateLabel(_ iso: String, today: String) -> String {

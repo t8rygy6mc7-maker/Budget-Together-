@@ -587,6 +587,105 @@ struct Loan: Identifiable, Hashable {
     }
 }
 
+// MARK: - Goals
+
+/// Money being saved toward something — an emergency fund, a deposit, a
+/// holiday. The balance is typed in by hand for the same reason a loan's is:
+/// there's no bank connection, so the app holds the number it was given, does
+/// the arithmetic honestly, and never claims to know what's actually in an
+/// account.
+///
+/// This is deliberately not derived from entries filed under Savings. With more
+/// than one goal running there's no way to tell which transfer belonged to
+/// which, and a progress bar that guessed would be worse than one that asked.
+struct Goal: Identifiable, Hashable {
+    let id: String
+    var name: String
+    var target: Double
+    var saved: Double
+    /// Put aside each month, if they said. 0 means they haven't.
+    var monthlyContribution: Double
+    /// "yyyy-MM-dd" — when they want it by. Empty means no date, which is the
+    /// normal case: most saving doesn't have a deadline attached.
+    var deadline: String
+    var createdAt: Date
+
+    var remaining: Double { max(0, target - saved) }
+
+    var isComplete: Bool { target > 0 && saved >= target }
+
+    /// 0–1, for the progress bar. A goal with no target set reads as empty
+    /// rather than full — dividing by nothing shouldn't look like success.
+    var fraction: Double {
+        guard target > 0 else { return 0 }
+        return min(1, max(0, saved / target))
+    }
+
+    var hasDeadline: Bool { !deadline.isEmpty }
+
+    /// Months to reach the target at the current monthly contribution, or `nil`
+    /// when nothing is going in. "Never" is technically the answer there, but
+    /// it's a scolding rather than information — the UI asks for a figure
+    /// instead.
+    var monthsToTarget: Int? {
+        guard remaining > 0, monthlyContribution > 0 else { return nil }
+        return max(1, Fmt.whole((remaining / monthlyContribution).rounded(.up)))
+    }
+
+    /// Whole months between today and the deadline, rounding a part-month up —
+    /// a fortnight of runway still has to be saved for. `nil` when there's no
+    /// deadline or it's already here.
+    func monthsLeft(from today: Date) -> Int? {
+        guard let due = Fmt.day(from: deadline) else { return nil }
+        let calendar = Calendar.current
+        let start = calendar.startOfDay(for: today)
+        let end = calendar.startOfDay(for: due)
+        guard end > start else { return nil }
+        let parts = calendar.dateComponents([.month, .day], from: start, to: end)
+        return max(1, (parts.month ?? 0) + ((parts.day ?? 0) > 0 ? 1 : 0))
+    }
+
+    /// What has to go in each month to land on the deadline.
+    func requiredMonthly(from today: Date) -> Double? {
+        guard remaining > 0, let months = monthsLeft(from: today) else { return nil }
+        return remaining / Double(months)
+    }
+
+    /// The deadline has come and gone with money still to find.
+    func isOverdue(on today: Date) -> Bool {
+        guard hasDeadline, !isComplete, let due = Fmt.day(from: deadline) else { return false }
+        return Calendar.current.startOfDay(for: due) < Calendar.current.startOfDay(for: today)
+    }
+
+    /// Whether the monthly contribution is short of what the deadline needs.
+    /// Only meaningful once both have been set — an unanswered question isn't
+    /// a problem to flag.
+    func isBehind(on today: Date) -> Bool {
+        guard monthlyContribution > 0, let needed = requiredMonthly(from: today) else { return false }
+        return monthlyContribution < needed
+    }
+
+    /// The one line under the name. Says the most useful true thing available,
+    /// which depends on how much the user has actually told us.
+    func paceLabel(on today: Date) -> String {
+        if isComplete { return "Reached" }
+        if target <= 0 { return "No target set" }
+        if isOverdue(on: today) {
+            return "\(Fmt.money(remaining)) short, past \(Fmt.dayTitle(deadline))"
+        }
+        if let needed = requiredMonthly(from: today), let months = monthsLeft(from: today) {
+            return "\(Fmt.money(needed)) a month for \(Fmt.count(months, "month"))"
+        }
+        if let months = monthsToTarget {
+            if months < 12 { return Fmt.count(months, "month") + " to go" }
+            let years = months / 12
+            let rest = months % 12
+            return rest == 0 ? Fmt.count(years, "year") + " to go" : "\(years)y \(rest)m to go"
+        }
+        return "\(Fmt.money(remaining)) to go"
+    }
+}
+
 // MARK: - Navigation
 
 enum Tab: CaseIterable {

@@ -27,7 +27,8 @@ Budget Together keeps whatever you choose to put into it:
   is a spend or income
 - Optional notes and a mood tag on a transaction
 - The names and colours you give the people in your budget
-- Spending limits, recurring items, loans, and challenges you set up
+- Spending limits, recurring items, loans, savings goals, and challenges you set
+  up
 - Your app settings, such as appearance and whether the simplified view is on
 
 You never have to give us a name, an email address, a phone number, or a date

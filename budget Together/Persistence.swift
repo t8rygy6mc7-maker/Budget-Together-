@@ -16,6 +16,7 @@ enum CDModel {
     static let member    = "CDMember"
     static let recurring = "CDRecurring"
     static let loan      = "CDLoan"
+    static let goal      = "CDGoal"
     static let challenge = "CDChallenge"
     static let reaction  = "CDReaction"
     static let monthFlag = "CDMonthFlag"
@@ -30,6 +31,7 @@ enum CDModel {
         let member    = entity(named: CDModel.member)
         let recurring = entity(named: CDModel.recurring)
         let loan      = entity(named: CDModel.loan)
+        let goal      = entity(named: CDModel.goal)
         let challenge = entity(named: CDModel.challenge)
         let reaction  = entity(named: CDModel.reaction)
         let monthFlag = entity(named: CDModel.monthFlag)
@@ -135,6 +137,17 @@ enum CDModel {
             secret("monthlyPayment", .doubleAttributeType),
             attr("createdAt",      .dateAttributeType),
         ]
+        // What's being saved for. The mirror image of a loan, and stored the
+        // same way — by hand, because nothing here can see an account.
+        goal.properties = [
+            attr("id",                   .stringAttributeType),
+            secret("name",               .stringAttributeType),
+            secret("target",             .doubleAttributeType),
+            secret("saved",              .doubleAttributeType),
+            secret("monthlyContribution", .doubleAttributeType),
+            attr("deadline",             .stringAttributeType),  // "yyyy-MM-dd"; "" means none
+            attr("createdAt",            .dateAttributeType),
+        ]
         challenge.properties = [
             attr("id",        .stringAttributeType),
             secret("title",   .stringAttributeType),
@@ -161,6 +174,9 @@ enum CDModel {
         // household <->> loans
         let (hToL, lToH) = relationship(name: "loans", inverseName: "household",
                                         from: household, to: loan, toMany: true)
+        // household <->> goals
+        let (hToG, gToH) = relationship(name: "goals", inverseName: "household",
+                                        from: household, to: goal, toMany: true)
         // household <->> challenges
         let (hToCh, chToH) = relationship(name: "challenges", inverseName: "household",
                                           from: household, to: challenge, toMany: true)
@@ -174,19 +190,21 @@ enum CDModel {
         let (hToCat, catToH) = relationship(name: "categories", inverseName: "household",
                                             from: household, to: category, toMany: true)
 
-        household.properties += [hToE, hToC, hToM, hToR, hToL, hToCh, hToRe, hToF, hToCat]
+        household.properties += [hToE, hToC, hToM, hToR, hToL, hToG, hToCh,
+                                 hToRe, hToF, hToCat]
         entry.properties     += [eToH]
         cap.properties       += [cToH]
         member.properties    += [mToH]
         recurring.properties += [rToH]
         loan.properties      += [lToH]
+        goal.properties      += [gToH]
         challenge.properties += [chToH]
         reaction.properties  += [reToH]
         monthFlag.properties += [fToH]
         category.properties  += [catToH]
 
         model.entities = [household, entry, cap, member, recurring,
-                          loan, challenge, reaction, monthFlag, category]
+                          loan, goal, challenge, reaction, monthFlag, category]
         return model
     }
 
@@ -787,6 +805,7 @@ final class BudgetStore {
         var members: [Member] = []
         var recurring: [Recurring] = []
         var loans: [Loan] = []
+        var goals: [Goal] = []
         var challenges: [Challenge] = []
         /// Every category including hidden ones, spending first, in user order.
         var categories: [Bucket] = []
@@ -832,6 +851,7 @@ final class BudgetStore {
                         members: loadMembers(for: house),
                         recurring: loadRecurring(for: house),
                         loans: loadLoans(for: house),
+                        goals: loadGoals(for: house),
                         challenges: loadChallenges(for: house),
                         categories: loadCategories(for: house),
                         reactions: loadReactions(for: house),
@@ -910,7 +930,7 @@ final class BudgetStore {
     @discardableResult
     func eraseEverything() -> Bool {
         let entities = [CDModel.entry, CDModel.reaction, CDModel.cap, CDModel.member,
-                        CDModel.recurring, CDModel.loan, CDModel.challenge,
+                        CDModel.recurring, CDModel.loan, CDModel.goal, CDModel.challenge,
                         CDModel.monthFlag, CDModel.category, CDModel.household]
         for name in entities {
             let request = NSFetchRequest<NSManagedObject>(entityName: name)
@@ -1770,6 +1790,54 @@ final class BudgetStore {
 
     func deleteLoan(id: String) {
         let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.loan)
+        request.predicate = NSPredicate(format: "id == %@", id)
+        for obj in (try? viewContext.fetch(request)) ?? [] { viewContext.delete(obj) }
+        save()
+    }
+
+    // MARK: Goals
+
+    func loadGoals(for house: NSManagedObject) -> [Goal] {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.goal)
+        request.predicate = NSPredicate(format: "household == %@", house)
+        request.sortDescriptors = [NSSortDescriptor(key: "createdAt", ascending: true)]
+        return ((try? viewContext.fetch(request)) ?? []).compactMap { obj in
+            guard let id = obj.value(forKey: "id") as? String else { return nil }
+            return Goal(
+                id: id,
+                name: obj.value(forKey: "name") as? String ?? "",
+                target: obj.value(forKey: "target") as? Double ?? 0,
+                saved: obj.value(forKey: "saved") as? Double ?? 0,
+                monthlyContribution: obj.value(forKey: "monthlyContribution") as? Double ?? 0,
+                deadline: obj.value(forKey: "deadline") as? String ?? "",
+                createdAt: obj.value(forKey: "createdAt") as? Date ?? .distantPast
+            )
+        }
+    }
+
+    func saveGoal(_ goal: Goal) {
+        guard let house = currentHousehold() else { return }
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.goal)
+        request.predicate = NSPredicate(format: "id == %@", goal.id)
+        request.fetchLimit = 1
+        let obj = (try? viewContext.fetch(request))?.first ?? {
+            let new = NSManagedObject(entity: entity(CDModel.goal), insertInto: viewContext)
+            new.setValue(goal.id, forKey: "id")
+            new.setValue(goal.createdAt, forKey: "createdAt")
+            new.setValue(house, forKey: "household")
+            assign(new, toStoreOf: house)
+            return new
+        }()
+        obj.setValue(goal.name, forKey: "name")
+        obj.setValue(goal.target, forKey: "target")
+        obj.setValue(goal.saved, forKey: "saved")
+        obj.setValue(goal.monthlyContribution, forKey: "monthlyContribution")
+        obj.setValue(goal.deadline, forKey: "deadline")
+        save()
+    }
+
+    func deleteGoal(id: String) {
+        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.goal)
         request.predicate = NSPredicate(format: "id == %@", id)
         for obj in (try? viewContext.fetch(request)) ?? [] { viewContext.delete(obj) }
         save()
