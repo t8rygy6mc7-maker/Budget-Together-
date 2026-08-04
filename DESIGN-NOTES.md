@@ -473,6 +473,35 @@ an ambient presence line — overlapping avatars plus "Alex added something toda
 — which reports that somebody is keeping up their end without naming a figure.
 That distinction is the whole design: company, not surveillance.
 
+*Added 4 August 2026 — savings goals.* `Goal` is deliberately the mirror image of
+`Loan`: both are a balance moving toward a number, which is why the "Saving for"
+card sits directly above "Owed" on Budget, and why a goal is typed in by hand the
+way a loan is. There is no bank connection, so the app holds the figure it was
+given and never claims to know a balance it wasn't told.
+
+The tempting alternative was to derive progress from entries filed under Savings,
+and it doesn't survive contact with a second goal: nothing in a transfer says
+which goal it belonged to. Attributing it would be a guess, and a progress bar
+built on a guess is worse than one that asks — so contributions are recorded
+explicitly, via a top-up sheet of their own. That separation is the point. Adding
+to a goal is the frequent action and rewriting its target is the rare one, and
+they shouldn't share a screen where a slip does the wrong one.
+
+Both the deadline and the monthly contribution are optional, and `paceLabel(on:)`
+says the most useful true thing the user has given it the means to say — months
+to go at the current contribution, or what has to go in monthly to make a date,
+or just what's left. A form that demands a deadline gets an invented deadline,
+which then drives every "you need $N a month" line underneath it. The picker
+opens six months out rather than today for a related reason: a deadline of today
+contains no months, so the pace line falls back to the open-ended answer and
+switching the toggle on appears to do nothing.
+
+`CDGoal` marks name, target, saved and contribution as `secret()`, so they ride
+in CloudKit's `encryptedValues` alongside the loan figures rather than sitting in
+the record's plain fields. The reasoning is on `CDModel.secret(_:_:)` in
+`Persistence.swift`: identifiers and flags stay in the clear because predicates
+need them, and what a thing costs does not.
+
 ### Mechanics that shipped undocumented
 
 Most of these are one idea: **a budget you've broken should offer you a move, not
@@ -572,6 +601,15 @@ Two further changes landed immediately after the pass and belong here too:
   looks. Folding Budget into Stats still gets to three tabs.
 - ~~**No search in the log.** As above — the filters don't reach it.~~ Done
   4 August 2026 — see the update under "Settled" above.
+- **Goals don't reach the plan arithmetic.** A goal's monthly contribution is
+  displayed on its own sheet and nowhere else — it isn't in `committed`, so it
+  doesn't reduce `funMoney`, and it isn't in `plannedTotal` or the forecast.
+  Somebody putting $300 a month toward an emergency fund has $300 less to spend
+  and the safe-to-spend figure doesn't know it. The honest fix is probably not to
+  fold it in silently, since a contribution is an intention rather than a booked
+  expense, and quietly shrinking someone's spending money on the strength of an
+  intention is its own kind of lie. But the two numbers currently sit on adjacent
+  screens disagreeing, and that has to resolve one way or the other.
 - **No shared-vs-personal split, and no settle-up.** Notes, reactions and
   presence made the log feel shared; none of them answer "we each put in $X, so
   who owes whom". `SplitBar` still reports proportions of spending, not balance.
