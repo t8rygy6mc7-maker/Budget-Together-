@@ -17,7 +17,7 @@ kind in the app.
 
 This policy covers the Budget Together iPhone app published by
 Ren ("we", "us"). If you have a question about it, write to
-glib-combos.18@icloud.com.
+budgetog@icloud.com
 
 ## What the app stores
 
@@ -171,7 +171,7 @@ in the app's release notes rather than quietly editing the page.
 
 ## Contact
 
-glib-combos.18@icloud.com
+budgetog@icloud.com
 
 ---
 
