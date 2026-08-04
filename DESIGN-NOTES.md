@@ -444,6 +444,24 @@ filters answer *who* and *which direction*; they don't answer "what did we pay
 that plumber". That question gets more common the more history there is — which
 is precisely when scrolling stops being an answer.
 
+*Update, 4 August 2026 — search landed.* A field above the filters matches place,
+note, category label, person, mood, and the amount as typed: "26" finds a $26.00
+lunch, because bare digits are what somebody actually types. Category and person
+are searchable even though neither is in the entry's own text, since "which
+category" and "who" are exactly how people describe a purchase they're trying to
+find again. The matching lives in `AppModel.search(_:monthOnly:)` rather than in
+the view, because the full ledger is `AppModel.allEntries` and is deliberately
+unpublished — the Log screen only ever holds the selected month.
+
+Scope turned out to be the actual design decision. Searching only the month on
+screen answers the plumber question by luck of which month happens to be
+showing; silently widening to every month would file March's dinners under a
+July heading with nothing to explain why. So it stays inside the selected month,
+and when nothing matches there the empty state says how many matches sit
+elsewhere and offers to widen — an offer taken by the user, not for them. Once
+widened, day headings switch from "Yesterday" to the full date, because across
+months a weekday names nothing.
+
 **The "together" half.** Entries carry a free-text `note` in the spender's own
 words, and anyone can react to one: `ReactionKind` is four options (`heart`,
 `thumbsUp`, `flame`, `smile`), one per person per entry, tap-again to clear.
@@ -552,7 +570,8 @@ Two further changes landed immediately after the pass and belong here too:
   money go" material Stats covers retrospectively. Moving it (§3) is what
   actually separates the two questions; until then the split is softer than it
   looks. Folding Budget into Stats still gets to three tabs.
-- **No search in the log.** As above — the filters don't reach it.
+- ~~**No search in the log.** As above — the filters don't reach it.~~ Done
+  4 August 2026 — see the update under "Settled" above.
 - **No shared-vs-personal split, and no settle-up.** Notes, reactions and
   presence made the log feel shared; none of them answer "we each put in $X, so
   who owes whom". `SplitBar` still reports proportions of spending, not balance.
