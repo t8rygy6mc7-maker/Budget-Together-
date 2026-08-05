@@ -848,6 +848,11 @@ final class AppModel: ObservableObject {
         undoExpiry?.cancel()
         undoExpiry = nil
         pendingUndo = nil
+        // Deliberately not `withAppAnimation`: this drives the toast's removal,
+        // and the toast is the one view that still wants animating under Reduce
+        // Motion — it swaps its slide for a cross-fade rather than dropping to
+        // nothing (see `UndoToast`). Suppressing the animation here would take
+        // the fade away too and make it vanish mid-read.
         withAnimation(.easeOut(duration: 0.2)) { undoPrompt = nil }
     }
 

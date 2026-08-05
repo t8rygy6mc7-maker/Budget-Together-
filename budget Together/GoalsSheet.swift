@@ -421,7 +421,7 @@ struct GoalForm: View {
     /// $N a month" line underneath it.
     private var deadlineSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Toggle(isOn: $hasDeadline.animation(.easeOut(duration: 0.18))) {
+            Toggle(isOn: $hasDeadline.appAnimation(.easeOut(duration: 0.18))) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Want it by a date").appFont(13.5, weight: .semibold)
                     Text(hasDeadline

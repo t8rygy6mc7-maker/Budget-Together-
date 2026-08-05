@@ -166,7 +166,7 @@ struct LogView: View {
 
             if searchesEverything {
                 Button {
-                    withAnimation(.easeOut(duration: 0.18)) { allMonths = false }
+                    withAppAnimation(.easeOut(duration: 0.18)) { allMonths = false }
                 } label: {
                     HStack(spacing: 6) {
                         Image(systemName: "calendar.badge.minus")
@@ -212,7 +212,7 @@ struct LogView: View {
                 title: "Nothing here for \"\(query)\"",
                 message: "\(Fmt.count(elsewhere, "match", plural: "matches")) in other months, though.",
                 actionTitle: "Search every month",
-                action: { withAnimation(.easeOut(duration: 0.18)) { allMonths = true } }
+                action: { withAppAnimation(.easeOut(duration: 0.18)) { allMonths = true } }
             )
         } else if isSearching {
             EmptyState(

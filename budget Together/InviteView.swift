@@ -342,7 +342,7 @@ struct SeatClaimSheet: View {
 
     private var addMyselfButton: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) { addingMyself = true }
+            withAppAnimation(.easeInOut(duration: 0.2)) { addingMyself = true }
             nameFocused = true
         } label: {
             HStack(spacing: 7) {

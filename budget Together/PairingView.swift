@@ -204,7 +204,7 @@ struct PairingView: View {
                     .fixedSize(horizontal: false, vertical: true)
             } else {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { showBudgetField = true }
+                    withAppAnimation(.easeInOut(duration: 0.2)) { showBudgetField = true }
                     focusedField = .total
                 } label: {
                     HStack(spacing: 6) {

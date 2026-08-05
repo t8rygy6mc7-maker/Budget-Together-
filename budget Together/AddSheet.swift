@@ -146,7 +146,7 @@ struct AddSheet: View {
     /// form is never a black box. Tapping it opens the details.
     private var guessSummary: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) { showDetails = true }
+            withAppAnimation(.easeInOut(duration: 0.2)) { showDetails = true }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: Bucket.named(bucket).symbol)
@@ -212,7 +212,7 @@ struct AddSheet: View {
     private var detailsDisclosure: some View {
         Button {
             Haptics.selected()
-            withAnimation(.easeInOut(duration: 0.2)) { showDetails.toggle() }
+            withAppAnimation(.easeInOut(duration: 0.2)) { showDetails.toggle() }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: showDetails ? "chevron.up" : "chevron.down")
@@ -452,7 +452,9 @@ struct AddSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .animation(.easeInOut(duration: 0.2), value: voice.isListening)
+            // The transcript appearing pushes what's under it down, so this is
+            // a reflow rather than a fade and yields to Reduce Motion.
+            .appAnimation(.easeInOut(duration: 0.2), value: voice.isListening)
         }
     }
 
@@ -604,7 +606,7 @@ struct AddSheet: View {
     @ViewBuilder
     private var repeatToggle: some View {
         if editing == nil, !belowTheLine, !isPrivate {
-            Toggle(isOn: $repeats.animation(.easeOut(duration: 0.15))) {
+            Toggle(isOn: $repeats.appAnimation(.easeOut(duration: 0.15))) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("This repeats every month").appFont(13.5, weight: .semibold)
                     Text(repeats
@@ -777,7 +779,7 @@ struct AddSheet: View {
     /// point, not a claim about what was actually spent.
     private func apply(_ shortcut: AppModel.PlaceShortcut) {
         Haptics.selected()
-        withAnimation(.easeOut(duration: 0.15)) {
+        withAppAnimation(.easeOut(duration: 0.15)) {
             place = shortcut.place
             bucket = shortcut.bucket.id
             pickedCategory = true
@@ -848,7 +850,7 @@ struct AddSheet: View {
         }
         savedCount += 1
         amountFocused = false
-        withAnimation(.easeOut(duration: 0.2)) {
+        withAppAnimation(.easeOut(duration: 0.2)) {
             saved = Receipt(place: draft.place, amount: draft.amount, kind: kind,
                             bucket: Bucket.named(bucket),
                             memberName: model.member(draft.memberID).name,
@@ -876,7 +878,7 @@ struct AddSheet: View {
         repeatDay = Recurring.defaultDay
         showDetails = false
         bucket = Bucket.fallback(for: kind).id
-        withAnimation(.easeOut(duration: 0.2)) { saved = nil }
+        withAppAnimation(.easeOut(duration: 0.2)) { saved = nil }
         amountFocused = true
     }
 }

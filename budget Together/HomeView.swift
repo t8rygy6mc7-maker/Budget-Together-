@@ -462,7 +462,7 @@ struct HomeView: View {
     private var modeToggleButton: some View {
         Button {
             Haptics.selected()
-            withAnimation(.easeInOut(duration: 0.2)) { model.isSimplified.toggle() }
+            withAppAnimation(.easeInOut(duration: 0.2)) { model.isSimplified.toggle() }
         } label: {
             HStack(spacing: 6) {
                 Image(systemName: model.isSimplified ? "list.bullet" : "wand.and.stars")

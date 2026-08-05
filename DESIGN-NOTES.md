@@ -574,6 +574,25 @@ just a verdict.**
   `prefersPlainList` swaps the bubble cloud for the honest ranked list §3 asks
   for.
 
+- **Reduce Motion, honoured.** `Comfort.swift`'s header had claimed the app gave
+  "motion that stops when they've asked for less of it" since the comfort pass;
+  nothing in the target read the setting, so for a year that sentence was just
+  aspiration. `withAppAnimation`, `.appAnimation(_:value:)` and
+  `Binding.appAnimation` are the drop-in replacements, in the same shape as
+  `appFont`. The rule they encode is that **Reduce Motion objects to movement,
+  not to animation** — Apple names the cross-dissolve as the safe substitute for
+  a slide, so an animation that moves, resizes or reflows is suppressed outright
+  and one that only cross-fades is left alone. Hence `JoiningOverlay`,
+  `PrivacyCover` and the appearance picker keep their plain `.animation`: fading
+  is already the accommodation. `UndoToast` is the interesting case and doesn't
+  fit either branch — it expires on a timer, so it has to be *noticed* to be
+  taken, and suppressing its animation entirely would have it blink into
+  existence mid-scroll. It swaps the slide for a cross-fade and the spring for a
+  plain ease, since overshoot is precisely the motion being objected to. That
+  also means `AppModel.dismissUndo` must keep animating, and it carries a comment
+  saying so — routing it through `withAppAnimation` would take the fade away
+  from the one view that still wants one.
+
 Two further changes landed immediately after the pass and belong here too:
 
 - **Categories are user-defined.** `CategoryRegistry` replaces the fixed eight,

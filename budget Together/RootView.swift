@@ -185,7 +185,10 @@ struct BottomBar: View {
             .overlay(alignment: .top) {
                 Rectangle().fill(Palette.navBorder).frame(height: 1)
             }
-            .animation(.easeInOut(duration: 0.25), value: tabs)
+            // Revealing a tab shifts every button in the row along, so this one
+            // yields to Reduce Motion — unlike the two overlay fades above,
+            // which are already the accommodation. See `Comfort.swift`.
+            .appAnimation(.easeInOut(duration: 0.25), value: tabs)
             // Navigational chrome, not content: four labels have to share one
             // row whatever the text size, and letting "Budget" wrap to "Budg/et"
             // helps nobody. The icons carry the meaning past this point.

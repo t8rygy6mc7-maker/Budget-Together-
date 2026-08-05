@@ -341,6 +341,8 @@ struct PeopleSheet: View {
     private func appearanceOption(_ option: Appearance) -> some View {
         let isSelected = model.appearance == option
         return Button {
+            // Not `withAppAnimation`: switching the scheme cross-fades colour
+            // and moves nothing, which is the case Reduce Motion leaves alone.
             withAnimation(.easeInOut(duration: 0.2)) { model.appearance = option }
         } label: {
             VStack(spacing: 5) {

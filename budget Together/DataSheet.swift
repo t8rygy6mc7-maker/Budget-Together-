@@ -235,7 +235,7 @@ struct DataSheet: View {
                 confirmation
             } else {
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { confirming = true }
+                    withAppAnimation(.easeInOut(duration: 0.2)) { confirming = true }
                     confirmFocused = true
                 } label: {
                     HStack(spacing: 12) {
@@ -325,7 +325,7 @@ struct DataSheet: View {
             .disabled(!matches)
 
             Button {
-                withAnimation(.easeInOut(duration: 0.2)) {
+                withAppAnimation(.easeInOut(duration: 0.2)) {
                     confirming = false
                     typed = ""
                 }

@@ -10,6 +10,7 @@ import SwiftUI
 /// taken back makes people cautious with every other control too.
 struct UndoToast: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if let prompt = model.undoPrompt {
@@ -51,8 +52,19 @@ struct UndoToast: View {
             .padding(.bottom, 10)
             .frame(maxWidth: .infinity)
             .background(Palette.screen)
-            .transition(.move(edge: .bottom).combined(with: .opacity))
-            .animation(.spring(response: 0.34, dampingFraction: 0.86), value: prompt.id)
+            // The one place Reduce Motion can't just remove the animation. This
+            // offer expires on its own, so it has to be noticed to be taken —
+            // appearing from nowhere with no change to catch the eye is worse
+            // for the person the setting exists for, not better. So the slide
+            // becomes a cross-fade, and the spring — which overshoots, and
+            // overshoot is the motion being objected to — becomes a plain ease.
+            .transition(reduceMotion
+                        ? .opacity
+                        : .move(edge: .bottom).combined(with: .opacity))
+            .animation(reduceMotion
+                       ? .easeInOut(duration: 0.2)
+                       : .spring(response: 0.34, dampingFraction: 0.86),
+                       value: prompt.id)
             .gesture(
                 DragGesture(minimumDistance: 20)
                     .onEnded { if $0.translation.height > 0 { model.dismissUndo() } }

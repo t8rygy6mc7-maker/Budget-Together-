@@ -227,7 +227,7 @@ struct SuggestedPlanCard: View {
                                     in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
                 Button {
-                    withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                    withAppAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
                 } label: {
                     Text(expanded ? "Hide" : "Show me")
                         .appFont(13.5, weight: .semibold)
