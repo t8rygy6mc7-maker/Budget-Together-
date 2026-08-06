@@ -1,11 +1,11 @@
-# Accessibility Statement for Budget Together
+# Accessibility Statement for Even Keel
 
 **Effective date:** August 5, 2026
 **Last updated:** August 5, 2026
 
 ## The short version
 
-Budget Together is built to work with the accessibility settings you already
+Even Keel is built to work with the accessibility settings you already
 have switched on. Text obeys the size you chose. Movement stops when you have
 asked for less of it. Every colour in the app has been measured for contrast
 rather than eyeballed. Nothing important is said with colour alone.
@@ -15,7 +15,7 @@ There are things it does not do yet, and they are listed further down under
 
 ## Who this covers
 
-This statement covers the Budget Together iPhone app, version 1.0, published by
+This statement covers the Even Keel iPhone app, version 1.0, published by
 Ren. It describes the app as it actually behaves today, not as we intend it to
 behave later. If something here is wrong, or something is hard to use and isn't
 mentioned, write to budgetog@icloud.com
@@ -238,6 +238,6 @@ change the date at the top.
 
 ---
 
-*This document describes the behaviour of Budget Together version 1.0. It is a
+*This document describes the behaviour of Even Keel version 1.0. It is a
 self-assessment, has not been externally audited, and is not a legal
 conformance claim.*

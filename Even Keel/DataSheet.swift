@@ -13,6 +13,7 @@ import SwiftUI
 struct DataSheet: View {
     @EnvironmentObject var model: AppModel
     @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var lock = AppLock.shared
 
     @State private var file: AppModel.ExportFile?
     @State private var confirming = false
@@ -34,6 +35,7 @@ struct DataSheet: View {
                 header
                 promise
                 syncSection
+                lockSection
                 exportSection
                 deleteSection
             }
@@ -135,6 +137,59 @@ struct DataSheet: View {
         }
         .padding(.bottom, 26)
         .task { await model.refreshCloudStatus() }
+    }
+
+    /// The gate in front of the app. Off by default — see `AppLock` for why,
+    /// and for the limits of what it covers.
+    private var lockSection: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text("LOCK")
+                .appFont(10, weight: .bold).tracking(0.8)
+                .foregroundStyle(Palette.label9)
+
+            Toggle(isOn: Binding(get: { lock.isEnabled },
+                                 set: { wantsOn in
+                Task {
+                    if wantsOn { await lock.enable() } else { lock.disable() }
+                }
+            })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Open this budget with \(AppLock.biometryName)")
+                        .appFont(13.5, weight: .semibold)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(lock.isEnabled
+                         ? "On. Asked at launch, and again after the app has "
+                         + "been away for a minute."
+                         : "Off. Anyone holding this phone unlocked can open "
+                         + "the app and read everything in it.")
+                        .appFont(11.5).foregroundStyle(Palette.sub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .disabled(lock.isAuthenticating)
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .card(border: Palette.cardBorderSoft, radius: 15)
+
+            if let failure = lock.failure {
+                Text(failure)
+                    .appFont(11.5)
+                    .foregroundStyle(Palette.over)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+
+            // The same instinct as the export note above: say what the thing
+            // doesn't do, while it's being switched on, rather than let someone
+            // infer a stronger promise from a lock icon.
+            Text("This is a door on the app, not a second lock on the data. It "
+               + "stops someone who picks up your unlocked phone. The file "
+               + "underneath is encrypted with your device passcode either way.")
+                .appFont(11)
+                .foregroundStyle(Palette.muted)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.bottom, 26)
+        // A message from a previous visit is about an attempt that's long over.
+        .onDisappear { lock.clearFailure() }
     }
 
     private var exportSection: some View {

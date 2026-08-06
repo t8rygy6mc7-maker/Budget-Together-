@@ -31,7 +31,7 @@ import OSLog
 
 extension BudgetStore {
 
-    static let sharingLog = Logger(subsystem: "budget.budget-Together", category: "sharing")
+    static let sharingLog = Logger(subsystem: "com.evenkeel.app", category: "sharing")
 
     /// One person on a shared budget, as CloudKit sees them.
     ///

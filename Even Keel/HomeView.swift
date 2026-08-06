@@ -15,7 +15,7 @@ struct HomeView: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text("Together")
+                    Text("Even Keel")
                         .appFont(22, weight: .bold)
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)

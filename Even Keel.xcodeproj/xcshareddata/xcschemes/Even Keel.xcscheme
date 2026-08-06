@@ -16,9 +16,9 @@
             <BuildableReference
                BuildableIdentifier = "primary"
                BlueprintIdentifier = "D9DEA3373011160B00391FAC"
-               BuildableName = "budget Together.app"
-               BlueprintName = "budget Together"
-               ReferencedContainer = "container:budget Together.xcodeproj">
+               BuildableName = "Even Keel.app"
+               BlueprintName = "Even Keel"
+               ReferencedContainer = "container:Even Keel.xcodeproj">
             </BuildableReference>
          </BuildActionEntry>
       </BuildActionEntries>
@@ -46,11 +46,17 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "D9DEA3373011160B00391FAC"
-            BuildableName = "budget Together.app"
-            BlueprintName = "budget Together"
-            ReferencedContainer = "container:budget Together.xcodeproj">
+            BuildableName = "Even Keel.app"
+            BlueprintName = "Even Keel"
+            ReferencedContainer = "container:Even Keel.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
+      <CommandLineArguments>
+         <CommandLineArgument
+            argument = "-InitializeCloudKitSchema"
+            isEnabled = "YES">
+         </CommandLineArgument>
+      </CommandLineArguments>
    </LaunchAction>
    <ProfileAction
       buildConfiguration = "Release"
@@ -63,9 +69,9 @@
          <BuildableReference
             BuildableIdentifier = "primary"
             BlueprintIdentifier = "D9DEA3373011160B00391FAC"
-            BuildableName = "budget Together.app"
-            BlueprintName = "budget Together"
-            ReferencedContainer = "container:budget Together.xcodeproj">
+            BuildableName = "Even Keel.app"
+            BlueprintName = "Even Keel"
+            ReferencedContainer = "container:Even Keel.xcodeproj">
          </BuildableReference>
       </BuildableProductRunnable>
    </ProfileAction>

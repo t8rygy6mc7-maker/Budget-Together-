@@ -280,7 +280,7 @@ enum CDModel {
 final class BudgetStore {
     static let shared = BudgetStore()
 
-    static let containerIdentifier = "iCloud.budget.budget-Together"
+    static let containerIdentifier = "iCloud.com.evenkeel.app"
 
     /// Whether this build asks for CloudKit mirroring at all.
     static let cloudSyncEnabled = true
@@ -299,7 +299,7 @@ final class BudgetStore {
     /// never switched on.
     private(set) var cloudLoadFailure: String?
 
-    static let log = Logger(subsystem: "budget.budget-Together", category: "store")
+    static let log = Logger(subsystem: "com.evenkeel.app", category: "store")
 
     let container: NSPersistentCloudKitContainer
     private(set) var privateStore: NSPersistentStore?
@@ -370,7 +370,7 @@ final class BudgetStore {
     init(inMemory: Bool = false) {
         defaults = inMemory ? nil : .standard
         let model = CDModel.make()
-        container = NSPersistentCloudKitContainer(name: "BudgetTogether", managedObjectModel: model)
+        container = NSPersistentCloudKitContainer(name: "EvenKeel", managedObjectModel: model)
         openStores(inMemory: inMemory, cloud: Self.cloudSyncEnabled && !inMemory)
 
         viewContext.automaticallyMergesChangesFromParent = true
@@ -470,7 +470,7 @@ final class BudgetStore {
         }
 
         let support = NSPersistentContainer.defaultDirectoryURL()
-        base.url = support.appendingPathComponent("BudgetTogether.private.sqlite")
+        base.url = support.appendingPathComponent("EvenKeel.private.sqlite")
         Self.configureCommonOptions(base)
 
         guard cloud else {
@@ -494,7 +494,7 @@ final class BudgetStore {
         privateOptions.databaseScope = .private
         base.cloudKitContainerOptions = privateOptions
 
-        let shared = NSPersistentStoreDescription(url: support.appendingPathComponent("BudgetTogether.shared.sqlite"))
+        let shared = NSPersistentStoreDescription(url: support.appendingPathComponent("EvenKeel.shared.sqlite"))
         Self.configureCommonOptions(shared)
         let sharedOptions = NSPersistentCloudKitContainerOptions(containerIdentifier: Self.containerIdentifier)
         sharedOptions.databaseScope = .shared
@@ -574,7 +574,7 @@ final class BudgetStore {
         // skipping it. And a throwaway store means a method that writes sample
         // records can't touch the real ledger even if it goes wrong.
         let model = CDModel.make()
-        let container = NSPersistentCloudKitContainer(name: "BudgetTogetherSchema",
+        let container = NSPersistentCloudKitContainer(name: "EvenKeelSchema",
                                                       managedObjectModel: model)
         let scratch = FileManager.default.temporaryDirectory
             .appendingPathComponent("SchemaInit-\(UUID().uuidString).sqlite")
@@ -953,6 +953,15 @@ final class BudgetStore {
 
     /// Keys this app owns. Listed rather than wildcarded so a wipe can never
     /// reach into another framework's preferences.
+    ///
+    /// `appLockEnabled` is deliberately not among them, and it's the one
+    /// exception to "everything the app stored". Erasing your data is not a
+    /// request to unlock your app, and a wipe that silently switched the Face
+    /// ID gate back off would weaken the device's protection at the exact
+    /// moment somebody was reaching for privacy — most likely without them ever
+    /// noticing, since the next launch would simply open. The setting is about
+    /// this phone rather than about the data on it, so it outlives the data.
+    /// See `AppLock`.
     private static let ownedDefaultsKeys: Set<String> = [
         localMemberKey, selectedHouseholdKey, userRecordKey,
         "antiBudgetMode", "appearance",

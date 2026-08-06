@@ -2,7 +2,7 @@ import Combine
 import SwiftUI
 
 @main
-struct BudgetTogetherApp: App {
+struct EvenKeelApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
@@ -16,14 +16,16 @@ struct RootView: View {
     /// Where an invite lands between iOS handing it over and the app being
     /// ready for it. See `SceneDelegate`.
     @ObservedObject private var inbox = ShareInbox.shared
+    /// The optional Face ID gate. See `AppLock`.
+    @ObservedObject private var lock = AppLock.shared
     @State private var showSeatClaim = false
 
     var body: some View {
         Group {
-            if model.hasHousehold {
-                main
+            if lock.isLocked {
+                LockScreen()
             } else {
-                PairingView()
+                unlocked
             }
         }
         .background(Palette.screen.ignoresSafeArea())
@@ -35,6 +37,11 @@ struct RootView: View {
         .preferredColorScheme(model.appearance.colorScheme)
         // Asks iCloud who's holding this phone, so a device that already has a
         // seat on a shared budget recognises it instead of asking again.
+        //
+        // Outside the gate on purpose. Sync, invites and the seat question all
+        // keep working while the app is locked — they write to the store, not
+        // to the screen — so unlocking lands on a budget that's already caught
+        // up rather than one that starts catching up at that moment.
         .task {
             await model.adoptCloudIdentity()
             // Checked here as well as in `onChange`: someone who dismissed the
@@ -48,6 +55,43 @@ struct RootView: View {
         .onReceive(inbox.$pending.compactMap { $0 }) { metadata in
             ShareInbox.shared.pending = nil
             Task { await model.accept(metadata) }
+        }
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .background: lock.didEnterBackground()
+            case .active:     lock.didBecomeActive()
+            default:          break
+            }
+        }
+        // A cross-fade, so it keeps a plain animation rather than an
+        // `appAnimation` — fading is already what Reduce Motion asks for here.
+        // See the rule at the top of `Comfort.swift`.
+        .animation(.easeInOut(duration: 0.2), value: lock.isLocked)
+        // Covers the screen the moment the app stops being frontmost, before
+        // iOS takes the picture it shows in the app switcher. See `PrivacyCover`.
+        .overlay {
+            if scenePhase != .active { PrivacyCover() }
+        }
+        .animation(.easeInOut(duration: 0.15), value: scenePhase)
+    }
+
+    /// Everything the gate stands in front of.
+    ///
+    /// The sheet, the overlay and the alert live on this branch rather than on
+    /// the tree above it, and that placement is the safeguard rather than
+    /// tidiness: a `sheet` presents above *everything*, `LockScreen` included,
+    /// so a seat-claim question arriving while the app is locked would put a
+    /// household's member list on top of the very screen hiding it. Attached
+    /// here, there is no presenter until the gate is open. The state behind
+    /// them still updates meanwhile — `showSeatClaim` set while locked simply
+    /// presents at the moment of unlocking.
+    private var unlocked: some View {
+        Group {
+            if model.hasHousehold {
+                main
+            } else {
+                PairingView()
+            }
         }
         // Asked as soon as somebody lands in a budget they were invited into,
         // rather than left to be found three taps deep in People.
@@ -67,12 +111,6 @@ struct RootView: View {
             Text("\(model.seatConflict ?? "That name") is signed in on another "
                + "phone. Pick a different one, or add yourself.")
         }
-        // Covers the screen the moment the app stops being frontmost, before
-        // iOS takes the picture it shows in the app switcher. See `PrivacyCover`.
-        .overlay {
-            if scenePhase != .active { PrivacyCover() }
-        }
-        .animation(.easeInOut(duration: 0.15), value: scenePhase)
     }
 
     private var main: some View {

@@ -1,11 +1,11 @@
-# Privacy Policy for Budget Together
+# Privacy Policy for Even Keel
 
 **Effective date:** August 3, 2026
 **Last updated:** August 3, 2026
 
 ## The short version
 
-Budget Together has no servers. There is no account to create, nothing to sign
+Even Keel has no servers. There is no account to create, nothing to sign
 up for, and no way for us to see what you spend. Everything you type stays on
 your iPhone and, if you have iCloud switched on, in your own iCloud account.
 
@@ -15,13 +15,13 @@ kind in the app.
 
 ## Who this covers
 
-This policy covers the Budget Together iPhone app published by
+This policy covers the Even Keel iPhone app published by
 Ren ("we", "us"). If you have a question about it, write to
 budgetog@icloud.com
 
 ## What the app stores
 
-Budget Together keeps whatever you choose to put into it:
+Even Keel keeps whatever you choose to put into it:
 
 - Transactions — amount, date, place or description, category, and whether it
   is a spend or income
@@ -41,6 +41,14 @@ storage on your iPhone. That file is protected by iOS file encryption and
 cannot be read until the phone has been unlocked at least once since it was
 switched on.
 
+Two limits on that worth knowing, because they are the difference between what
+file encryption does and what people often assume it does. It protects the file
+against someone who has your powered-off phone; it does not protect it against
+someone using your phone while it is unlocked — for that, turn on the app lock
+described under **Your controls**. And if you back your iPhone up to a computer
+without ticking "Encrypt local backup", the backup copy is not encrypted, so
+the safest thing is to leave that option on. Backups to iCloud are encrypted.
+
 **In your iCloud.** If you are signed into iCloud and have iCloud Drive turned
 on, the app mirrors your budget into your own private iCloud database using
 Apple's CloudKit. This is what keeps your budget in step across your own
@@ -51,7 +59,7 @@ infrastructure under Apple's terms and privacy policy, not ours. **We have no
 access to it.** We cannot read it, export it, or recover it for you. Notes and
 mood tags are additionally stored in CloudKit's encrypted fields.
 
-If you are not signed into iCloud, or you turn iCloud off for Budget Together
+If you are not signed into iCloud, or you turn iCloud off for Even Keel
 in iOS Settings, the app keeps working and your budget simply stays on that one
 device.
 
@@ -120,7 +128,7 @@ the file.
 
 ## What we do not do
 
-To be specific about it, Budget Together does not:
+To be specific about it, Even Keel does not:
 
 - Connect to your bank or any financial institution
 - Ask for or handle card numbers, account numbers, or credentials
@@ -136,19 +144,25 @@ there is no scenario in which we hand your data to anyone.
 
 ## Children
 
-Budget Together does not knowingly collect personal information from anyone,
+Even Keel does not knowingly collect personal information from anyone,
 children included, because it does not collect personal information at all. It
 is not directed at children, and it has no chat, no social features, and no
 external links to unmoderated content.
 
 ## Your controls
 
+- **Lock the app** — the Data screen can require Face ID, Touch ID, or your
+  passcode before the app will open, at launch and again whenever it has been
+  closed for more than a minute. It is off unless you turn it on. This is a
+  door on the app rather than a second lock on the data: it stops someone who
+  picks up your unlocked phone, and the file underneath is encrypted with your
+  device passcode either way
 - **See everything the app holds** — export it from the Data screen
 - **Delete one entry** — swipe it away in the Log
 - **Delete everything** — the Data screen has an erase option that destroys the
   budget on that device and in your iCloud, guarded by typing a confirmation.
   It cannot be undone
-- **Stop syncing** — turn Budget Together off under iCloud in iOS Settings
+- **Stop syncing** — turn Even Keel off under iCloud in iOS Settings
 - **Withdraw microphone or speech permission** — iOS Settings, at any time
 - **Remove the app** — deleting it removes its local storage. Data already in
   your iCloud is managed through your Apple Account settings
@@ -176,5 +190,5 @@ budgetog@icloud.com
 
 ---
 
-*This document describes the behaviour of Budget Together version 1.0. It is
+*This document describes the behaviour of Even Keel version 1.0. It is
 not legal advice and has not been reviewed by a lawyer.*
