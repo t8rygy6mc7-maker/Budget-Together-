@@ -634,6 +634,82 @@ Two further changes landed immediately after the pass and belong here too:
   who owes whom". `SplitBar` still reports proportions of spending, not balance.
   This is the last structurally missing piece of the differentiator.
 
+## 6. The app icon
+
+Redrawn 13 August 2026, alongside the rename to Even Keel. Three 1024×1024
+masters — default, dark, tinted — each generated from an SVG kept beside it in
+`AppIcon.appiconset`. `actool` ignores the stray `.svg` files without warning,
+and keeping master and output in the same directory is the only thing that
+reliably stops the two drifting apart.
+
+### The two decisions worth recording
+
+**The `$` is gone.** The old mark led with a US currency glyph. Nothing else in
+the app is currency-specific — amounts format from the device locale — so the
+icon was the one place that told a non-US user this app wasn't meant for them.
+The replacement is two overlapping cards of ledger rows sharing a single total:
+the same "two people, one budget" claim, made without picking a currency.
+
+**The light icon deliberately does not use `Palette.teal`'s dark value.** §4b
+records why: `#5EEAD4` lands at 1.3:1 on white and is unusable as an icon. The
+light master runs its gradients down to `#107F6E` and `#2B7E5A` — the *derived
+light* values of `teal` and `green` from the §4b table — and the dark master
+runs down to `#5EEAD4` and `#3FB984`, the dark ones. Backgrounds are
+`Palette.screen` in each scheme. So the icon obeys the same derivation rule as
+the UI, and nobody should "correct" the light variant back to brand teal.
+
+| | Left card | Right card | Background |
+| --- | --- | --- | --- |
+| Light | `#159785` → `#107F6E` | `#4BBE92` → `#2B7E5A` | `#F4F5F9` |
+| Dark | `#5EEAD4` → `#23BFA8` | `#67DFA8` → `#3FB984` | `#141620` |
+
+Each gradient terminates on a documented palette value; only the bright end of
+each is new.
+
+### Known gap: the light variant is much weaker than the dark one
+
+Sampled from the rendered PNGs — ink against the card immediately beside it,
+which is what the eye actually resolves:
+
+| Element | Light | Dark | Tinted |
+| --- | --- | --- | --- |
+| Ledger rows | 2.80–3.80 | 7.46–9.04 | 14.19 |
+| Centre seam | 2.52 | 8.75 | 14.19 |
+| Shared total | 3.58–3.98 | 7.31–7.80 | 14.19 |
+| Right card vs screen | 2.67 | 9.64 | 14.19 |
+
+WCAG's 3:1 bar for non-text graphics doesn't formally bind an app icon, but it
+is the only objective yardstick available, and in light the seam, the top-right
+ledger row and the right card's own silhouette all sit under it. Dark clears it
+roughly three times over. The cause is step 2 of §4b working against us here:
+the bright end of each light gradient is chosen for prominence rather than for
+contrast with the ink drawn on top of it, and the ledger rows sit in the
+brightest corner of the canvas. Darkening the two bright stops — or shortening
+the gradients so the rows fall on the darker half — would close it. Not done,
+because it changes the mark's appearance and that is a taste call, not a
+measurement.
+
+### Two smaller things, both left alone
+
+**A 6 px notch at the seam.** Both cards use `rx=136`, so the union silhouette
+dips about 6 px where they meet, top and bottom — 0.6% of the canvas, invisible
+at any size iOS actually draws, most noticeable in the tinted variant where the
+two cards share one flat fill.
+
+**The tinted plate isn't strictly greyscale.** `#202431` carries 17 points of
+RGB spread where Apple's guidance says grey. iOS maps the variant by luminance,
+so the rendered result is identical; it's a spec nit with no visible effect.
+
+### The cost
+
+Full-canvas diagonal gradients don't compress. Compiling the catalog with
+identical flags before and after: 799,096 → 2,081,208 bytes, a 2.6× increase and
+now the dominant asset in the app. (The absolute figure moves with the thinning
+flags Xcode passes; the ratio is the durable part.) Flattening the two
+backgrounds to solid colours would reclaim most of it and cost little — the
+gradients read as texture, not as information. Worth doing if binary size ever
+becomes a question; not worth doing on its own.
+
 ## Suggested order of work
 
 1. ~~Fix `Palette.muted` and `Palette.sub` contrast in the dark scheme.~~ Done —
