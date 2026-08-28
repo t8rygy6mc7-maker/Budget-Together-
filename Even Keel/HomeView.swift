@@ -310,6 +310,15 @@ struct HomeView: View {
             .padding(.horizontal, 14).padding(.vertical, 12)
             .card(border: Palette.cardBorderSoft, radius: 15)
 
+            // `hasPlan` as well as the promise: the strip exists to relate the
+            // promise to what's free to spend, and with no limits set there is
+            // no such figure — `funMoney` computes to zero, and "more than the
+            // $0 free to spend" reads as a verdict on someone who has simply
+            // not filled anything in yet.
+            if model.hasPlan, model.hasGoalPromise {
+                goalPromiseStrip.padding(.top, 9)
+            }
+
             oneOffStrip.padding(.top, 9)
             planStrip.padding(.top, 9)
             forecastStrip.padding(.top, 9)
@@ -319,6 +328,55 @@ struct HomeView: View {
 
             modeToggle
         }
+    }
+
+    /// What the goals are asking of this month, stated beside the spending
+    /// figure instead of taken out of it.
+    ///
+    /// The last clause is the important one: it says plainly that the app has
+    /// not moved the money, which is what earns it the right not to subtract
+    /// it. See `AppModel.funLeftAfterGoals` for the reasoning.
+    private var goalPromiseStrip: some View {
+        let short = model.funLeftAfterGoals < 0
+        return HStack(spacing: 12) {
+            Image(systemName: "target")
+                .appFont(15, weight: .semibold)
+                .foregroundStyle(short ? Palette.over : Palette.teal)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("\(Fmt.money(model.promisedToGoals)) a month is promised to goals")
+                    .appFont(13, weight: .semibold)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(short
+                     ? "That's more than the \(Fmt.money(max(0, model.funLeft))) free to spend. Nothing moves until you move it."
+                     : "Setting it aside would leave \(Fmt.money(model.funLeftAfterGoals)). Nothing moves until you move it.")
+                    .appFont(11.5)
+                    .foregroundStyle(short ? Palette.overText : Palette.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .card(border: Palette.cardBorderSoft, radius: 15)
+        .accessibilityElement(children: .combine)
+    }
+
+    /// The compact form of `goalPromiseStrip`, for the full view, where the
+    /// figure follows a stat row instead of standing alone on a card. Same
+    /// claim, one line, and the same refusal to subtract anything.
+    private var goalPromiseLine: some View {
+        let short = model.leftAfterGoals < 0
+        return HStack(spacing: 5) {
+            Image(systemName: "target")
+                .appFont(9.5, weight: .bold)
+            Text(short
+                 ? "\(Fmt.money(model.promisedToGoals)) a month is promised to goals — more than is left"
+                 : "\(Fmt.money(model.promisedToGoals)) of this is promised to goals, leaving \(Fmt.money(model.leftAfterGoals))")
+                .appFont(11)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .foregroundStyle(short ? Palette.over : Palette.teal)
+        .accessibilityElement(children: .combine)
     }
 
     // MARK: - Full view
@@ -372,6 +430,9 @@ struct HomeView: View {
                         Stat(title: "A day from here", value: Fmt.money(model.safeDaily)),
                         Stat(title: "Days left", value: "\(model.daysLeft)"),
                     ])
+                    if model.hasGoalPromise {
+                        goalPromiseLine.padding(.top, 8)
+                    }
                 }
             } else {
                 // Safe-daily and days-left are meaningless once the month is

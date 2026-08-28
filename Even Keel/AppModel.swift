@@ -548,6 +548,34 @@ final class AppModel: ObservableObject {
     var left: Double { max(0, plannedTotal - spent) }
     var safeDaily: Double { left / Double(daysLeft) }
 
+    // MARK: Goals against the plan
+    //
+    // A goal's monthly contribution used to live on its own sheet and reach
+    // nothing else: it wasn't in `committed`, so it didn't reduce `funMoney`,
+    // and it wasn't in `plannedTotal`. Somebody putting $300 a month toward an
+    // emergency fund had $300 less to spend and safe-to-spend didn't know it.
+    //
+    // The fix is deliberately *not* to fold the contribution into `committed`.
+    // A contribution is an intention, not a booked expense — no money has left
+    // the account — and quietly shrinking someone's spending money on the
+    // strength of a figure they typed once would be the app inventing a debit
+    // it never saw. That is the same class of lie as a progress bar that
+    // guesses, which `Goal` already refuses to draw.
+    //
+    // So the promise is stated beside the spending figure rather than silently
+    // subtracted from it. Both numbers now appear together, in the right
+    // relationship, and the reader does the reconciling the app declines to do
+    // on their behalf. `funLeft` and `left` are untouched: every streak, badge
+    // and forecast that reads them keeps measuring what was actually spent.
+
+    /// What would be left if this month's goal contributions were honoured in
+    /// full. May go negative — that's the useful case, and the one worth
+    /// showing, so it isn't clamped.
+    var funLeftAfterGoals: Double { funLeft - promisedToGoals }
+
+    /// The same subtraction against the whole plan rather than the fun money.
+    var leftAfterGoals: Double { left - promisedToGoals }
+
     // MARK: Weekly framing
     //
     // A month is a long, abstract unit — "$840 left" over 19 days is hard to
@@ -1501,6 +1529,22 @@ final class AppModel: ObservableObject {
     /// crossing the line is the part worth keeping — but it shouldn't go on
     /// reading as outstanding work.
     var openGoals: [Goal] { goals.filter { !$0.isComplete } }
+
+    /// Put aside each month across the goals still being worked toward — what
+    /// this month is actually promised.
+    ///
+    /// Open goals only, which is the difference between this and
+    /// `monthlyGoalContributions`. A goal that has reached its target has
+    /// stopped asking for money, and letting its old contribution go on
+    /// claiming a share would overstate the promise every month thereafter.
+    /// The Goals sheet keeps using the unfiltered sum, because there it is
+    /// reporting what was set up rather than what this month owes.
+    var promisedToGoals: Double { openGoals.reduce(0) { $0 + $1.monthlyContribution } }
+
+    /// Whether the promise is worth mentioning beside a spending figure. Zero
+    /// is the ordinary case — a monthly contribution is optional and most goals
+    /// never get one typed in — and a line reading "$0 promised" is noise.
+    var hasGoalPromise: Bool { promisedToGoals > 0 }
 
     func saveGoal(_ goal: Goal) {
         store.saveGoal(goal)

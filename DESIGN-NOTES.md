@@ -502,6 +502,37 @@ the record's plain fields. The reasoning is on `CDModel.secret(_:_:)` in
 `Persistence.swift`: identifiers and flags stay in the clear because predicates
 need them, and what a thing costs does not.
 
+*Updated 28 August 2026 — goals now reach the plan arithmetic, by being named
+in it rather than subtracted from it.* The gap recorded below under "Still open"
+was that a monthly contribution reached nothing outside its own sheet: Home said
+one thing, Goals said another, and both were on screen.
+
+Folding the contribution into `committed` was the obvious fix and is the wrong
+one. Nothing has left the account — a contribution is an intention, and the app
+never saw a debit — so deducting it would have the app inventing a transaction
+to make its own arithmetic tidy. That is the same move `Goal` already refuses
+when it declines to derive progress from entries filed under Savings, and it
+fails in the direction that matters: it shrinks someone's spending money on the
+strength of a number they typed once and may never have acted on.
+
+So `promisedToGoals` is stated beside the spending figure and never inside it.
+Home carries it under safe-to-spend (a card in anti-budget mode, one line in the
+full view), Budget carries it under the planned total in the same position as
+the rollover note, and the Goals sheet says from its own side that a monthly
+figure is a plan rather than a transfer. `funLeft`, `left` and `plannedTotal`
+are untouched, so every streak, badge and forecast reading them still measures
+what was actually spent.
+
+Two details worth keeping. `promisedToGoals` counts **open goals only** —
+`monthlyGoalContributions`, which the Goals sheet still uses to report what was
+set up, sums all of them, and a reached goal that went on claiming its old
+contribution would overstate the promise every month afterwards. And every
+placement is guarded on `hasPlan` as well as on the promise: the whole point is
+to relate the promise to what's free to spend, and with no limits set there is
+no such figure — "more than the $0 free to spend" is a verdict on somebody who
+has simply not filled anything in yet. The Goals sheet's own line is ungated,
+because what a monthly figure *means* is true with or without a plan.
+
 ### Mechanics that shipped undocumented
 
 Most of these are one idea: **a budget you've broken should offer you a move, not
@@ -620,15 +651,12 @@ Two further changes landed immediately after the pass and belong here too:
   looks. Folding Budget into Stats still gets to three tabs.
 - ~~**No search in the log.** As above — the filters don't reach it.~~ Done
   4 August 2026 — see the update under "Settled" above.
-- **Goals don't reach the plan arithmetic.** A goal's monthly contribution is
+- ~~**Goals don't reach the plan arithmetic.** A goal's monthly contribution is
   displayed on its own sheet and nowhere else — it isn't in `committed`, so it
-  doesn't reduce `funMoney`, and it isn't in `plannedTotal` or the forecast.
-  Somebody putting $300 a month toward an emergency fund has $300 less to spend
-  and the safe-to-spend figure doesn't know it. The honest fix is probably not to
-  fold it in silently, since a contribution is an intention rather than a booked
-  expense, and quietly shrinking someone's spending money on the strength of an
-  intention is its own kind of lie. But the two numbers currently sit on adjacent
-  screens disagreeing, and that has to resolve one way or the other.
+  doesn't reduce `funMoney`, and it isn't in `plannedTotal` or the forecast.~~
+  Done 28 August 2026 — resolved in the direction this bullet suspected was
+  right: named beside the spending figure, not folded into it. See the update
+  under "Settled" above.
 - **No shared-vs-personal split, and no settle-up.** Notes, reactions and
   presence made the log feel shared; none of them answer "we each put in $X, so
   who owes whom". `SplitBar` still reports proportions of spending, not balance.

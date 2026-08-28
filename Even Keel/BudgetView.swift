@@ -58,6 +58,22 @@ struct BudgetView: View {
                     .foregroundStyle(Palette.green)
                     .padding(.top, 9)
                 }
+                // Stated here for the same reason the rollover is: the planned
+                // total is the figure people read as "what I have", and a
+                // standing promise against it belongs in the same breath. It is
+                // named, not deducted — see `AppModel.leftAfterGoals`.
+                if model.hasPlan, model.hasGoalPromise {
+                    HStack(spacing: 5) {
+                        Image(systemName: "target")
+                            .appFont(9.5, weight: .bold)
+                        Text("\(Fmt.money(model.promisedToGoals)) a month is promised to goals, and isn't taken out of this")
+                            .appFont(11)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 0)
+                    }
+                    .foregroundStyle(Palette.teal)
+                    .padding(.top, 9)
+                }
             }
             .padding(.horizontal, 17).padding(.vertical, 16)
             .card()

@@ -114,6 +114,15 @@ struct GoalsSheet: View {
                     .appFont(12).foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
             }
+            // The other half of the reconciliation. Home now names this figure
+            // beside what's left to spend; this says what it is over here, so
+            // the two screens agree instead of quietly contradicting each other.
+            if model.hasGoalPromise {
+                Text("A monthly figure is a plan, not a transfer. Nothing moves until you add it, so it isn't taken out of what Home says is left to spend.")
+                    .appFont(11.5).foregroundStyle(Palette.sub)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 3)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 17).padding(.vertical, 16)
