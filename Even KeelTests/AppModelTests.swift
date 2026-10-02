@@ -1,0 +1,208 @@
+import Foundation
+import Testing
+@testable import Even_Keel
+
+// MARK: - The model, against a real store
+//
+// Everything above this file tests a function. These test the arithmetic the
+// screens actually read, with an in-memory Core Data stack underneath — the
+// same one the previews use, so nothing here touches the real ledger or
+// iCloud.
+//
+// `AppModel` asks the clock for "now" rather than being handed it, so each
+// test builds its ledger relative to today and asserts things that hold on
+// any date. Serialised because the category registry is shared state.
+
+@Suite("AppModel", .serialized)
+struct AppModelTests {
+
+    private let store: BudgetStore
+    private let model: AppModel
+
+    init() {
+        store = BudgetStore(inMemory: true)
+        model = AppModel(store: store)
+        model.createHousehold(name: "Test", ownerName: "Me")
+    }
+
+    private var me: String { model.members[0].id }
+
+    private func spend(_ amount: Double, _ place: String = "Shop", bucket: String = "food",
+                       oneOff: Bool = false, on day: Date = Date()) {
+        model.addEntry(place: place, amount: amount, bucket: bucket, memberID: me,
+                       belowTheLine: oneOff, on: day)
+    }
+
+    // MARK: Plan
+
+    @Test("A new budget has no limits, and that isn't a broken state")
+    func startsWithNoPlan() {
+        #expect(model.hasHousehold)
+        #expect(model.hasPlan == false)
+        #expect(model.capTotal == 0)
+        #expect(model.wins.streak == 0)
+    }
+
+    @Test("A monthly figure is split into limits that add back up to it")
+    func scaledPlan() {
+        let scaled = AppModel.caps(forMonthlyTotal: AppModel.defaultTotal * 2)
+        #expect(scaled.values.reduce(0, +) == AppModel.defaultTotal * 2)
+        #expect(scaled["housing"] == 2600)
+    }
+
+    @Test("A limit can't be negative or not-a-number")
+    func limitsAreClamped() {
+        model.setCap("food", to: -40)
+        #expect(model.caps["food"] == 0)
+        model.setCap("food", to: .nan)
+        #expect(model.caps["food"] == 0)
+        model.setCap("food", to: 300)
+        #expect(model.caps["food"] == 300)
+        #expect(model.hasPlan)
+    }
+
+    @Test("Moving money between categories leaves the plan total alone")
+    func movingMoney() {
+        model.setCap("food", to: 500)
+        model.setCap("fun", to: 200)
+        model.moveBudget(from: "food", to: "fun", amount: 50)
+        #expect(model.caps["food"] == 450)
+        #expect(model.caps["fun"] == 250)
+        #expect(model.capTotal == 700)
+        // You can't lend out more than the category holds.
+        model.moveBudget(from: "fun", to: "food", amount: 9000)
+        #expect(model.caps["fun"] == 250)
+    }
+
+    // MARK: Spending figures
+
+    @Test("One-offs and income stay out of what's been spent")
+    func whatCountsAsSpent() {
+        spend(50)
+        spend(900, "Laptop", bucket: "shopping", oneOff: true)
+        model.addEntry(place: "Payday", amount: 2000, bucket: "salary",
+                       memberID: me, kind: .income)
+
+        #expect(model.spent == 50)
+        #expect(model.earned == 2000)
+        #expect(model.month.belowTheLine == 900)
+        #expect(model.month.totals["shopping"] == nil)
+        #expect(model.totalEntryCount == 3)
+    }
+
+    @Test("What's left never goes below zero")
+    func leftIsClamped() {
+        model.setCap("food", to: 100)
+        spend(130)
+        #expect(model.left == 0)
+        #expect(model.safeDaily == 0)
+    }
+
+    @Test("Today is a day that's left")
+    func daysLeft() {
+        let calendar = Calendar.current
+        let length = calendar.range(of: .day, in: .month, for: Date())?.count ?? 30
+        let today = calendar.component(.day, from: Date())
+        #expect(model.daysLeft == length - today + 1)
+        #expect(model.daysLeft >= 1)
+        #expect(model.daysLeftInWeek >= 1 && model.daysLeftInWeek <= 7)
+    }
+
+    // MARK: Dates
+
+    @Test("An entry is filed under the day it's given")
+    func backdated() {
+        let yesterday = Day.fromToday(-1)
+        spend(12, on: yesterday)
+        #expect(store.loadSnapshot().entries.first?.date == Fmt.isoDay(yesterday))
+    }
+
+    @Test("An entry can't be dated in the future")
+    func futureIsClamped() {
+        spend(12, on: Day.fromToday(3))
+        #expect(store.loadSnapshot().entries.first?.date == Fmt.isoDay(Date()))
+    }
+
+    // MARK: Suggested limits
+
+    @Test("A suggestion waits for a fortnight of spending")
+    func suggestionNeedsHistory() {
+        for _ in 0..<10 { spend(14) }
+        #expect(model.canSuggestPlan == false)      // ten entries, one day
+
+        spend(14, on: Day.fromToday(-13))
+        #expect(model.canSuggestPlan)
+
+        model.setCap("food", to: 100)
+        #expect(model.canSuggestPlan == false)      // nothing to suggest once there's a plan
+    }
+
+    @Test("Day-to-day spending is scaled by the days it covers")
+    func suggestionScalesVariableSpending() {
+        // $140 on food, all of it today. Read as a whole month that's a $175
+        // limit; it's really a fortnight at most, so the limit is about double.
+        for _ in 0..<10 { spend(14) }
+        let plan = model.suggestedPlan()
+        // 140 / (14 / 30.44) * 1.1 = 334.84, rounded up to the next 25.
+        #expect(plan["food"] == 350)
+    }
+
+    @Test("A fixed bill isn't stretched the same way")
+    func suggestionLeavesFixedBillsAlone() {
+        spend(1200, "Rent", bucket: "housing")
+        // Once a month whatever day logging began: 1,200 plus headroom, not 2,600.
+        #expect(model.suggestedPlan()["housing"] == 1350)
+    }
+
+    @Test("One-offs never become a limit")
+    func suggestionIgnoresOneOffs() {
+        spend(20)
+        spend(900, "Laptop", bucket: "shopping", oneOff: true)
+        #expect(model.suggestedPlan()["shopping"] == nil)
+    }
+
+    // MARK: Recurring
+
+    @Test("A recurring bill posts once a month, however often the app reloads")
+    func recurringPostsOnce() {
+        model.saveRecurring(.make("Rent", 1200, day: 1))
+        model.reload()
+        model.reload()
+
+        let rent = store.loadSnapshot().entries.filter { $0.place == "Rent" }
+        #expect(rent.count == 1)
+        #expect(rent.first?.date == Fmt.isoMonth(Date()) + "-01")
+        #expect(model.recurring.first?.lastPostedMonth == Fmt.isoMonth(Date()))
+    }
+
+    // MARK: Browsing months
+
+    @Test("Looking at another month doesn't re-judge this one")
+    func streakSurvivesBrowsing() {
+        model.setCap("food", to: 3000)
+        spend(10)
+        let before = model.wins
+        let allowance = model.dailyAllowance
+
+        model.stepMonth(-1)
+        #expect(model.isCurrentMonth == false)
+        #expect(model.wins.streak == before.streak)
+        #expect(model.wins.earned.map(\.id) == before.earned.map(\.id))
+        #expect(model.dailyAllowance == allowance)
+
+        model.goToCurrentMonth()
+        #expect(model.isCurrentMonth)
+    }
+
+    @Test("Limits belong to the month they were set in, and carry forward")
+    func capsAreMonthly() {
+        model.stepMonth(-1)
+        model.setCap("food", to: 200)
+        model.goToCurrentMonth()
+        // Last month's limit is still in force until this month sets its own.
+        #expect(model.caps["food"] == 200)
+        model.setCap("food", to: 350)
+        model.stepMonth(-1)
+        #expect(model.caps["food"] == 200)
+    }
+}

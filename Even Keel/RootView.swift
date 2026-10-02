@@ -6,8 +6,17 @@ struct EvenKeelApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var delegate
 
     var body: some Scene {
-        WindowGroup { RootView() }
+        WindowGroup {
+            // The unit tests are hosted in the app, so the app launches to run
+            // them. Without this it would also build its own `AppModel` on the
+            // real store, and the two would take turns rewriting the shared
+            // category registry underneath the tests.
+            if !Self.isHostingTests { RootView() }
+        }
     }
+
+    private static let isHostingTests =
+        ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil
 }
 
 struct RootView: View {

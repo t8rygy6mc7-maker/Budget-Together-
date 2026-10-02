@@ -6,8 +6,19 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXContainerItemProxy section */
+		D9DEA4663011160C00391FAC /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = D9DEA3303011160B00391FAC /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = D9DEA3373011160B00391FAC;
+			remoteInfo = "Even Keel";
+		};
+/* End PBXContainerItemProxy section */
+
 /* Begin PBXFileReference section */
 		D9DEA3383011160B00391FAC /* Even Keel.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = "Even Keel.app"; sourceTree = BUILT_PRODUCTS_DIR; };
+		D9DEA4603011160C00391FAC /* Even KeelTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = "Even KeelTests.xctest"; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -16,10 +27,22 @@
 			path = "Even Keel";
 			sourceTree = "<group>";
 		};
+		D9DEA4613011160C00391FAC /* Even KeelTests */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = "Even KeelTests";
+			sourceTree = "<group>";
+		};
 /* End PBXFileSystemSynchronizedRootGroup section */
 
 /* Begin PBXFrameworksBuildPhase section */
 		D9DEA3353011160B00391FAC /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D9DEA4623011160C00391FAC /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -33,6 +56,7 @@
 			isa = PBXGroup;
 			children = (
 				D9DEA33A3011160B00391FAC /* Even Keel */,
+				D9DEA4613011160C00391FAC /* Even KeelTests */,
 				D9DEA3393011160B00391FAC /* Products */,
 			);
 			sourceTree = "<group>";
@@ -41,6 +65,7 @@
 			isa = PBXGroup;
 			children = (
 				D9DEA3383011160B00391FAC /* Even Keel.app */,
+				D9DEA4603011160C00391FAC /* Even KeelTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -70,6 +95,29 @@
 			productReference = D9DEA3383011160B00391FAC /* Even Keel.app */;
 			productType = "com.apple.product-type.application";
 		};
+		D9DEA4653011160C00391FAC /* Even KeelTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D9DEA46A3011160C00391FAC /* Build configuration list for PBXNativeTarget "Even KeelTests" */;
+			buildPhases = (
+				D9DEA4633011160C00391FAC /* Sources */,
+				D9DEA4623011160C00391FAC /* Frameworks */,
+				D9DEA4643011160C00391FAC /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				D9DEA4673011160C00391FAC /* PBXTargetDependency */,
+			);
+			fileSystemSynchronizedGroups = (
+				D9DEA4613011160C00391FAC /* Even KeelTests */,
+			);
+			name = "Even KeelTests";
+			packageProductDependencies = (
+			);
+			productName = "Even KeelTests";
+			productReference = D9DEA4603011160C00391FAC /* Even KeelTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -82,6 +130,10 @@
 				TargetAttributes = {
 					D9DEA3373011160B00391FAC = {
 						CreatedOnToolsVersion = 26.6;
+					};
+					D9DEA4653011160C00391FAC = {
+						CreatedOnToolsVersion = 27.0;
+						TestTargetID = D9DEA3373011160B00391FAC;
 					};
 				};
 			};
@@ -100,12 +152,20 @@
 			projectRoot = "";
 			targets = (
 				D9DEA3373011160B00391FAC /* Even Keel */,
+				D9DEA4653011160C00391FAC /* Even KeelTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXResourcesBuildPhase section */
 		D9DEA3363011160B00391FAC /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		D9DEA4643011160C00391FAC /* Resources */ = {
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
@@ -122,7 +182,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		D9DEA4633011160C00391FAC /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		D9DEA4673011160C00391FAC /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = D9DEA3373011160B00391FAC /* Even Keel */;
+			targetProxy = D9DEA4663011160C00391FAC /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		D9DEA3413011160C00391FAC /* Debug */ = {
@@ -324,6 +399,50 @@
 			};
 			name = Release;
 		};
+		D9DEA4683011160C00391FAC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.evenkeel.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Even Keel.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Even Keel";
+			};
+			name = Debug;
+		};
+		D9DEA4693011160C00391FAC /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				CURRENT_PROJECT_VERSION = 1;
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.6;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.evenkeel.app.tests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				STRING_CATALOG_GENERATE_SYMBOLS = NO;
+				SWIFT_APPROACHABLE_CONCURRENCY = YES;
+				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
+				SWIFT_EMIT_LOC_STRINGS = NO;
+				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
+				SWIFT_VERSION = 5.0;
+				TARGETED_DEVICE_FAMILY = 1;
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/Even Keel.app/$(BUNDLE_EXECUTABLE_FOLDER_PATH)/Even Keel";
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -341,6 +460,15 @@
 			buildConfigurations = (
 				D9DEA3443011160C00391FAC /* Debug */,
 				D9DEA3453011160C00391FAC /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		D9DEA46A3011160C00391FAC /* Build configuration list for PBXNativeTarget "Even KeelTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				D9DEA4683011160C00391FAC /* Debug */,
+				D9DEA4693011160C00391FAC /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
