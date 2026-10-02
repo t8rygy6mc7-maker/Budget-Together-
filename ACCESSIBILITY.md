@@ -1,7 +1,7 @@
 # Accessibility Statement for Even Keel
 
 **Effective date:** August 5, 2026
-**Last updated:** September 22, 2026
+**Last updated:** October 2, 2026
 
 ## The short version
 
@@ -74,6 +74,12 @@ the end of the range, a locked badge icon. WCAG exempts inactive components from
 the contrast requirement, so this is a deliberate exemption rather than an
 outstanding fault. It stops being exempt the moment that grey is used for live
 text on a chip, and we treat it that way.
+
+The exemption covers the locked badge's *icon* and nothing else. Until October
+2026 a locked badge was dimmed as a whole, which took the line saying how to
+earn it down to 2.8:1 (2.65:1 in the light scheme) — live text, under the
+threshold, and not exempt. Only the icon is muted now; the words measure 5.33:1
+and 6.23:1.
 
 ## Colour is never the only signal
 

@@ -340,6 +340,30 @@ final class BudgetStore {
         }
     }
 
+    /// Which badges this device has already shown somebody, per budget — so a
+    /// newly earned one can be pointed out once and then left alone. `nil`
+    /// means the question has never been asked for that budget.
+    ///
+    /// Per-device, and only this: what's been *earned* is still derived from
+    /// the ledger every time (see `Wins`). Mirroring it would announce a badge
+    /// to one person because the other had already looked at it.
+    private var seenBadgesInMemory: [String: [String]] = [:]
+    private static let seenBadgesPrefix = "badgesSeen."
+
+    func seenBadges(household: String) -> [String]? {
+        guard let defaults else { return seenBadgesInMemory[household] }
+        return defaults.stringArray(forKey: Self.seenBadgesPrefix + household)
+    }
+
+    func setSeenBadges(_ ids: [String]?, household: String) {
+        guard let defaults else {
+            seenBadgesInMemory[household] = ids
+            return
+        }
+        if let ids { defaults.set(ids, forKey: Self.seenBadgesPrefix + household) }
+        else { defaults.removeObject(forKey: Self.seenBadgesPrefix + household) }
+    }
+
     /// Who CloudKit thinks this device is, cached from the last time it
     /// answered. Used to work out which seat in a shared budget belongs to the
     /// person holding the phone — see `claimMember`.
@@ -692,6 +716,8 @@ final class BudgetStore {
 
     var hasHousehold: Bool { currentHousehold() != nil }
 
+    var currentHouseholdID: String? { currentHousehold()?.value(forKey: "id") as? String }
+
     /// Which budget to open when nobody has said. Real budgets beat the
     /// worked example, budgets you own beat ones you were invited into, and
     /// the oldest breaks the tie — which is the previous behaviour, and the
@@ -943,11 +969,13 @@ final class BudgetStore {
         if let defaults {
             for key in defaults.dictionaryRepresentation().keys
             where Self.ownedDefaultsKeys.contains(key)
-                || key.hasPrefix("capAlert.") || key.hasPrefix("limitAlertMuted.") {
+                || key.hasPrefix("capAlert.") || key.hasPrefix("limitAlertMuted.")
+                || key.hasPrefix(Self.seenBadgesPrefix) {
                 defaults.removeObject(forKey: key)
             }
         }
         localMemberIDInMemory = nil
+        seenBadgesInMemory = [:]
         return destroyed
     }
 
@@ -1280,6 +1308,7 @@ final class BudgetStore {
             }
             viewContext.delete(house)
             if selectedHouseholdID == id { selectedHouseholdID = nil }
+            setSeenBadges(nil, household: id)
         }
         localMemberID = nil
         save()

@@ -79,6 +79,8 @@ final class AppModel: ObservableObject {
     @Published private(set) var history: [MonthPoint] = []
     /// Streaks and badges, derived fresh on every reload.
     @Published private(set) var wins = Wins()
+    /// Badges earned since the wins sheet was last opened on this device.
+    @Published private(set) var newBadgeIDs: Set<String> = []
     /// Where this month lands if nothing changes.
     @Published private(set) var forecast = Forecast()
     /// What to do about it. Rule-based today; the engine is swappable.
@@ -1472,6 +1474,7 @@ final class AppModel: ObservableObject {
         history = Self.history(snapshot.entries, endingAt: selectedMonth,
                                length: Self.historyLength)
         wins = buildWins(snapshot.entries)
+        refreshNewBadges()
         allEntries = snapshot.entries
         categorizer = HistoryCategorizer(entries: snapshot.entries)
         buildInsights(snapshot.entries)
@@ -1562,36 +1565,84 @@ final class AppModel: ObservableObject {
     /// Streaks and badges always describe the live month, whichever month is
     /// being browsed — a win isn't something you scroll back to.
     private func buildWins(_ entries: [Entry]) -> Wins {
-        let currentKey = Fmt.isoMonth(Date())
+        let now = Date()
+        let currentKey = Fmt.isoMonth(now)
+        let today = Calendar.current.component(.day, from: now)
         let current = isCurrentMonth
             ? month
             : Self.digest(entries, month: currentKey, previous: "")
 
-        // Each closed month judged against the caps that were in force then,
-        // oldest first. The live month is excluded: it hasn't finished. Months
-        // the household flagged as strange are excluded too — a run of good
-        // months shouldn't be ended by the one they moved house in.
-        //
-        // The months leading up to *now*, not up to whichever month is on
-        // screen: `history` ends at the selected month, so browsing back to
-        // March used to judge the run of months ending in March, and "Three in
-        // a row" came and went with the month stepper.
-        let recent = isCurrentMonth
-            ? history
-            : Self.history(entries, endingAt: Date(), length: Self.historyLength)
-        let closed: [(spent: Double, cap: Double)] = recent
-            .filter { $0.key < currentKey && !isUnusual($0.key) }
-            .map { ($0.spent, store.caps(for: $0.key).values.reduce(0, +)) }
+        // Every earlier month with entries in it, each judged against the
+        // limits that were in force then. All of them, not the six the trend
+        // chart shows: a badge is asked of the whole ledger, and one read from
+        // a six-month window would be taken back in the seventh.
+        let limits = store.allCaps()
+        let closed = ClosedMonth.all(
+            from: entries, before: currentKey,
+            planTotal: { Self.planTotal(in: $0, from: limits) },
+            isUnusual: isUnusual
+        )
 
-        let expenses = entries.filter { $0.kind == .expense }
-        return Wins.make(
+        // The streak doesn't reach back past the ledger's own first day. With
+        // earlier months behind it, the whole of this one counts; in a first
+        // month, only from the first entry; with nothing logged, nothing does.
+        let firstLoggedDay = current.entries.compactMap { Int($0.date.suffix(2)) }.min()
+        let startsOn = closed.isEmpty ? (firstLoggedDay ?? today + 1) : 1
+
+        let loggers = Set(entries.map(\.memberID))
+        return Wins.make(WinsInput(
             byDay: current.byDay,
             dailyAllowance: dailyAllowance,
-            today: Calendar.current.component(.day, from: Date()),
+            today: today,
+            streakStartsOn: startsOn,
             entryCount: entries.count,
-            taggedCount: expenses.filter { $0.mood != nil }.count,
-            closedMonths: closed
-        )
+            taggedCount: entries.filter { $0.kind == .expense && $0.mood != nil }.count,
+            loggingRun: Wins.longestLoggingRun(entries),
+            closedMonths: closed,
+            hasPlan: dailyAllowance > 0,
+            recurringCount: recurring.count,
+            goals: goals,
+            challengesWon: challenges.filter(\.isWon).count,
+            memberCount: members.count,
+            membersLogged: members.filter { loggers.contains($0.id) }.count
+        ))
+    }
+
+    /// The plan total in force in `month`: each category's most recent limit
+    /// set on or before it. `rows` arrive oldest first, so a later row simply
+    /// replaces an earlier one.
+    private static func planTotal(in month: String, from rows: [BudgetStore.CapRow]) -> Double {
+        var limits: [String: Double] = [:]
+        for row in rows where row.month <= month { limits[row.bucket] = row.amount }
+        return limits.values.reduce(0, +)
+    }
+
+    /// Works out which earned badges this device hasn't shown anyone yet.
+    ///
+    /// The first time a budget is seen, whatever is already earned is taken as
+    /// read rather than announced: someone who has used the app for a year
+    /// shouldn't open an update to six "new" badges they earned months ago.
+    private func refreshNewBadges() {
+        guard let household = store.currentHouseholdID else {
+            newBadgeIDs = []
+            return
+        }
+        let earned = wins.earned.map(\.id)
+        guard let seen = store.seenBadges(household: household) else {
+            store.setSeenBadges(earned, household: household)
+            newBadgeIDs = []
+            return
+        }
+        newBadgeIDs = Set(earned).subtracting(seen)
+    }
+
+    /// Called when the wins sheet opens: everything earned has now been shown.
+    func markBadgesSeen() {
+        guard let household = store.currentHouseholdID else { return }
+        let seen = Set(store.seenBadges(household: household) ?? [])
+            .union(wins.earned.map(\.id))
+        store.setSeenBadges(seen.sorted(), household: household)
+        newBadgeIDs = []
     }
 
     // MARK: - Challenges

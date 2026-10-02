@@ -633,6 +633,43 @@ changes from here on are expected to arrive with tests.
   probably right, and is the same fixed-versus-variable decision as the streak
   (see "Still open").
 
+- **More badges, and badges that stay earned.** Six became sixteen (seventeen
+  on a shared budget), in four groups: getting going, inside the plan, saving,
+  together. The additions lean toward what the roadmap asked the feature to
+  encourage — a first limit, a repeating bill, a savings goal, a goal half
+  reached, a goal reached, a month that kept more than it spent, a challenge
+  seen through, six months running. The rules changed with them:
+  - *A badge is asked of the whole ledger.* "Clean week" meant "the current
+    streak is seven or more", so it was handed back on the 1st of every month
+    when the streak restarts, and "Under budget" lapsed the month after a bad
+    one. Both are now the best there has ever been (`Wins.bestStreak`, the
+    longest run of months), computed over every month with entries rather than
+    the six the trend chart keeps. The live streak is unchanged.
+  - *An empty stretch earns nothing.* A day without spending still counts, but
+    only between days the ledger was in use. Before this a budget created with
+    limits held "Under budget" and "Three in a row" before its first entry
+    (five empty months behind it, each "inside the plan"), and a limit set on
+    the 20th of a first month started the streak at twenty.
+  - *Locked badges say how far along they are*, where that's a count: "6 of 10",
+    with a bar. The six that are yes-or-no say nothing.
+  - *A newly earned badge is pointed out once.* Home's wins line turns teal and
+    names it; the sheet tags it "New"; opening the sheet clears it. No
+    notification — the roadmap rules those out, and this is news, not a nag.
+    The only state behind it is which badges this device has already shown
+    (`BudgetStore.seenBadges`, per budget, in UserDefaults like the other
+    per-device facts). What's *earned* is still derived, every time. Whatever
+    is already earned when a budget is first seen is taken as read, so an
+    update doesn't announce a year of old badges at once.
+  - Home's line used to read "Latest badge: …" and named the last badge in the
+    list, not the last one earned. Nothing knows when a badge was earned, so it
+    now says "8 of 17 badges earned".
+
+  Two limits worth knowing. A badge derived from something deletable goes with
+  it: delete the finished goal and "Goal reached" locks again. And the streak
+  itself still can't run past the end of a month, because the allowance it's
+  measured against is a month's — best-run is how that stops costing badges,
+  but "23 days in a row" on the 3rd isn't a thing this can say.
+
 ### Mechanics that shipped undocumented
 
 Most of these are one idea: **a budget you've broken should offer you a move, not

@@ -204,6 +204,28 @@ enum Copy {
         }
     }
 
+    // MARK: Badges
+
+    /// The line under the streak on Home. A badge nobody has seen yet is the
+    /// news; otherwise it's the tally.
+    ///
+    /// This used to read "Latest badge: …", and named whichever earned badge
+    /// came last in the list — which was the last one *listed*, not the last
+    /// one earned. Nothing here knows when a badge was earned, so it no longer
+    /// claims to.
+    static func badgeLine(wins: Wins, new: Set<String>) -> String {
+        let fresh = wins.earned.filter { new.contains($0.id) }
+        if let first = fresh.first {
+            return fresh.count == 1
+                ? "New badge: \(first.title)"
+                : "\(fresh.count) new badges, \(first.title) among them"
+        }
+        let earned = wins.earned.count
+        return earned == 0
+            ? "\(Fmt.count(wins.badges.count, "badge")) to earn"
+            : "\(earned) of \(Fmt.count(wins.badges.count, "badge")) earned"
+    }
+
     // MARK: Notifications
 
     /// Cap alerts, rewritten. The old copy ("Food is over budget") named a

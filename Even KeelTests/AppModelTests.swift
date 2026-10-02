@@ -207,6 +207,83 @@ struct AppModelTests {
     }
 }
 
+// MARK: - Badges, against the store
+
+@Suite("Badges in the app", .serialized)
+struct BadgeModelTests {
+
+    private let store: BudgetStore
+    private let model: AppModel
+
+    init() {
+        store = BudgetStore(inMemory: true)
+        model = AppModel(store: store)
+    }
+
+    private var me: String { model.members[0].id }
+    private var earned: Set<String> { Set(model.wins.earned.map(\.id)) }
+
+    /// A budget created with a monthly figure has limits from before its first
+    /// entry, and every empty month behind it used to count as one finished
+    /// inside the plan.
+    @Test("A brand-new budget with limits hasn't earned months it never had")
+    func newBudgetWithLimits() {
+        model.createHousehold(name: "Test", ownerName: "Me", monthlyTotal: 3000)
+        #expect(model.hasPlan)
+        #expect(model.wins.monthsUnderBudget == 0)
+        #expect(model.wins.streak == 0)
+        #expect(earned == ["planned"])
+    }
+
+    @Test("A month only counts once it has entries, judged by the limits it had")
+    func closedMonthFromTheStore() {
+        model.createHousehold(name: "Test", ownerName: "Me", monthlyTotal: 3000)
+        let lastMonth = Calendar.current.date(byAdding: .month, value: -1, to: Date())!
+        model.addEntry(place: "Shop", amount: 40, bucket: "food", memberID: me, on: lastMonth)
+
+        #expect(model.wins.monthsUnderBudget == 1)
+        #expect(earned.contains("month"))
+        // With a month behind it, the whole of this month counts for the streak.
+        #expect(model.wins.streak == Calendar.current.component(.day, from: Date()))
+    }
+
+    @Test("A newly earned badge is new until the sheet has been opened")
+    func newBadges() {
+        model.createHousehold(name: "Test", ownerName: "Me")
+        #expect(model.newBadgeIDs.isEmpty)
+
+        model.setCap("food", to: 300)
+        model.reload()
+        #expect(model.newBadgeIDs == ["planned"])
+
+        model.markBadgesSeen()
+        #expect(model.newBadgeIDs.isEmpty)
+        model.reload()
+        #expect(model.newBadgeIDs.isEmpty)
+    }
+
+    @Test("What's already earned when a budget is first seen isn't announced")
+    func existingBadgesAreTakenAsRead() {
+        model.createHousehold(name: "Test", ownerName: "Me", monthlyTotal: 3000)
+        // A second model on the same store stands in for the app after an
+        // update: the ledger has earned badges, and nothing is on record yet.
+        store.setSeenBadges(nil, household: store.currentHouseholdID ?? "")
+        let relaunched = AppModel(store: store)
+        #expect(relaunched.wins.earned.isEmpty == false)
+        #expect(relaunched.newBadgeIDs.isEmpty)
+    }
+
+    @Test("Setting things up earns the setting-up badges")
+    func settingUp() {
+        model.createHousehold(name: "Test", ownerName: "Me")
+        model.saveRecurring(.make("Payday", 2000, day: 1, bucket: "salary", kind: .income))
+        model.saveGoal(Goal(id: UUID().uuidString, name: "Trip", target: 1000, saved: 600,
+                            monthlyContribution: 0, deadline: "", createdAt: Date()))
+        #expect(earned.isSuperset(of: ["autopilot", "goal", "halfway"]))
+        #expect(!earned.contains("reached"))
+    }
+}
+
 // MARK: - Bills still to come
 
 /// The daily figure, with a bill that hasn't landed yet.

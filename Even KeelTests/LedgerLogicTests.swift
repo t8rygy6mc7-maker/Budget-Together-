@@ -12,23 +12,34 @@ import Testing
 @Suite("Streak and badges")
 struct WinsTests {
 
-    private func wins(byDay: [Int: Double] = [:], allowance: Double = 100,
-                      today: Int = 10, entries: Int = 0, tagged: Int = 0,
-                      closed: [(spent: Double, cap: Double)] = []) -> Wins {
-        Wins.make(byDay: byDay, dailyAllowance: allowance, today: today,
-                  entryCount: entries, taggedCount: tagged, closedMonths: closed)
+    /// A finished 30-day month with a $3,000 plan, so $100 a day.
+    private func month(_ key: String = "2026-03", spent: Double = 0, earned: Double = 0,
+                       cap: Double = 3000, byDay: [Int: Double] = [:],
+                       first: Int = 1, last: Int = 30, unusual: Bool = false) -> ClosedMonth {
+        ClosedMonth(key: key, days: 30, spent: spent, earned: earned, cap: cap,
+                    byDay: byDay, firstDay: first, lastDay: last, isUnusual: unusual)
     }
+
+    private func wins(_ change: (inout WinsInput) -> Void = { _ in }) -> Wins {
+        var input = WinsInput(dailyAllowance: 100, today: 10)
+        change(&input)
+        return Wins.make(input)
+    }
+
+    private func earned(_ wins: Wins) -> Set<String> { Set(wins.earned.map(\.id)) }
+
+    // MARK: The live streak
 
     @Test("A day with no spending counts")
     func quietDaysCount() {
-        let result = wins(byDay: [3: 40, 7: 99])
+        let result = wins { $0.byDay = [3: 40, 7: 99] }
         #expect(result.streak == 10)
         #expect(result.graceUsed == false)
     }
 
     @Test("One day over is carried, not credited")
     func oneSlipIsForgiven() {
-        let result = wins(byDay: [5: 250])
+        let result = wins { $0.byDay = [5: 250] }
         #expect(result.streak == 9)
         #expect(result.graceUsed == true)
     }
@@ -37,32 +48,205 @@ struct WinsTests {
     func secondSlipEndsIt() {
         // Counting back from the 10th: 10, 9, 8, 7, 6 count; the 5th is
         // forgiven; the 4th counts; the 3rd ends it.
-        let result = wins(byDay: [5: 250, 3: 250])
-        #expect(result.streak == 6)
+        #expect(wins { $0.byDay = [5: 250, 3: 250] }.streak == 6)
     }
 
     @Test("No allowance, no streak")
     func needsAnAllowance() {
-        #expect(wins(allowance: 0).streak == 0)
+        #expect(wins { $0.dailyAllowance = 0 }.streak == 0)
     }
 
-    @Test("Closed months count back from the newest")
+    /// Setting a limit on the 8th of someone's first month used to make the
+    /// seven empty days before it a seven-day streak.
+    @Test("The streak doesn't reach back before the ledger began")
+    func streakStartsWithTheLedger() {
+        #expect(wins { $0.streakStartsOn = 8 }.streak == 3)
+        #expect(wins { $0.streakStartsOn = 11 }.streak == 0)     // nothing logged yet
+    }
+
+    // MARK: Best run
+
+    @Test("A badge is earned by the best run there has been, not the current one")
+    func bestRunOutlivesTheMonth() {
+        // The 2nd of a new month: the live streak can't be more than two days.
+        let result = wins {
+            $0.today = 2
+            $0.closedMonths = [month()]
+        }
+        #expect(result.streak == 2)
+        #expect(result.bestStreak == 30)
+        #expect(earned(result).isSuperset(of: ["week", "fortnight"]))
+    }
+
+    @Test("A past month's run follows the same one-slip rule")
+    func bestRunInAMonth() {
+        // Over on the 10th and the 20th. The best stretch forgives one of
+        // them: the 1st to the 19th (18 days that count) or the 11th to the
+        // 30th (19 that count).
+        #expect(Wins.bestRun(in: month(byDay: [10: 500, 20: 500])) == 19)
+        #expect(Wins.bestRun(in: month(byDay: [:])) == 30)
+        #expect(Wins.bestRun(in: month(cap: 0)) == 0)
+    }
+
+    @Test("Only the days the ledger was in use can count")
+    func bestRunStaysInsideTheLoggedDays() {
+        #expect(Wins.bestRun(in: month(first: 12, last: 16)) == 5)
+        #expect(Wins.bestRun(in: month(first: 0, last: 0)) == 0)
+    }
+
+    // MARK: Months
+
+    @Test("Months inside the plan count back from the newest")
     func monthsUnderBudget() {
-        let result = wins(closed: [(90, 100), (110, 100), (80, 100), (70, 100)])
+        let result = wins {
+            $0.closedMonths = [
+                month("2026-01", spent: 2900), month("2026-02", spent: 3100),
+                month("2026-03", spent: 2800), month("2026-04", spent: 2700),
+            ]
+        }
         #expect(result.monthsUnderBudget == 2)
-        // A month with no plan can't have been inside one.
-        #expect(wins(closed: [(90, 100), (10, 0)]).monthsUnderBudget == 0)
+        #expect(earned(result).contains("month"))
+        #expect(!earned(result).contains("threepeat"))
     }
 
-    @Test("Badges are earned by the numbers and nothing else")
-    func badges() {
-        let none = wins()
-        #expect(none.badges.first { $0.id == "logging" }?.isEarned == false)
+    @Test("A badge for months in a row isn't taken back by a later bad month")
+    func monthRunIsKept() {
+        let result = wins {
+            $0.closedMonths = [
+                month("2026-01", spent: 100), month("2026-02", spent: 100),
+                month("2026-03", spent: 100), month("2026-04", spent: 9000),
+            ]
+        }
+        #expect(result.monthsUnderBudget == 0)
+        #expect(earned(result).isSuperset(of: ["month", "threepeat"]))
+        #expect(!earned(result).contains("halfyear"))
+    }
 
-        let some = wins(entries: 10, tagged: 10, closed: [(1, 2), (1, 2), (1, 2)])
-        let earned = Set(some.earned.map(\.id))
-        #expect(earned.isSuperset(of: ["logging", "aware", "week", "month", "threepeat"]))
-        #expect(!earned.contains("fortnight"))
+    @Test("An unusual month is stepped over; a month with no plan isn't inside one")
+    func unusualAndUnplannedMonths() {
+        let stepped = wins {
+            $0.closedMonths = [
+                month("2026-01", spent: 100),
+                month("2026-02", spent: 9000, unusual: true),
+                month("2026-03", spent: 100),
+            ]
+        }
+        #expect(stepped.monthsUnderBudget == 2)
+
+        let unplanned = wins { $0.closedMonths = [month(spent: 10, cap: 0)] }
+        #expect(unplanned.monthsUnderBudget == 0)
+        #expect(!earned(unplanned).contains("month"))
+    }
+
+    // MARK: Badges
+
+    @Test("A new budget has earned nothing")
+    func nothingToStart() {
+        let result = Wins.make(WinsInput())
+        #expect(result.earned.isEmpty)
+        #expect(result.badges.count == 16)
+    }
+
+    @Test("Getting going")
+    func starting() {
+        let result = wins {
+            $0.entryCount = 100
+            $0.taggedCount = 10
+            $0.loggingRun = 7
+            $0.hasPlan = true
+            $0.recurringCount = 1
+        }
+        #expect(earned(result).isSuperset(of:
+            ["logging", "habit", "aware", "everyday", "planned", "autopilot"]))
+    }
+
+    @Test("Saving")
+    func saving() {
+        let half = Goal(id: "a", name: "Trip", target: 1000, saved: 500,
+                        monthlyContribution: 0, deadline: "", createdAt: Date())
+        let some = wins { $0.goals = [half] }
+        #expect(earned(some).isSuperset(of: ["goal", "halfway"]))
+        #expect(!earned(some).contains("reached"))
+
+        var done = half
+        done.saved = 1000
+        #expect(earned(wins { $0.goals = [done] }).contains("reached"))
+
+        let kept = wins { $0.closedMonths = [month(spent: 2000, earned: 2600)] }
+        #expect(earned(kept).contains("kept"))
+        // Without income logged there's no knowing what was kept.
+        #expect(!earned(wins { $0.closedMonths = [month(spent: 2000)] }).contains("kept"))
+    }
+
+    @Test("The shared badge is only offered where it can be earned")
+    func together() {
+        #expect(wins().badges.contains { $0.id == "together" } == false)
+
+        let waiting = wins { $0.memberCount = 2; $0.membersLogged = 1 }
+        #expect(waiting.badges.count == 17)
+        #expect(!earned(waiting).contains("together"))
+        #expect(earned(wins { $0.memberCount = 2; $0.membersLogged = 2 }).contains("together"))
+    }
+
+    @Test("A locked badge says how far along it is")
+    func progress() {
+        let result = wins { $0.entryCount = 6 }
+        let logging = result.badges.first { $0.id == "logging" }
+        #expect(logging?.progress?.label == "6 of 10")
+        #expect(logging?.progress?.fraction == 0.6)
+        // Past the target it stops at the target.
+        #expect(Badge.Progress(14, of: 10).label == "10 of 10")
+    }
+
+    @Test("The line on Home leads with what's new")
+    func badgeLine() {
+        let result = wins { $0.entryCount = 10; $0.hasPlan = true }
+        #expect(Copy.badgeLine(wins: result, new: []) == "3 of 16 badges earned")
+        #expect(Copy.badgeLine(wins: result, new: ["planned"]) == "New badge: Made a plan")
+        #expect(Copy.badgeLine(wins: result, new: ["planned", "logging"])
+                == "2 new badges, Getting it down among them")
+        #expect(Copy.badgeLine(wins: Wins.make(WinsInput()), new: []) == "16 badges to earn")
+    }
+
+    // MARK: Reading the ledger
+
+    @Test("Closed months are built from the entries, and only where there are some")
+    func closedMonthsFromEntries() {
+        let months = ClosedMonth.all(
+            from: [
+                .make("2026-01-05", "Shop", 40),
+                .make("2026-01-20", "Shop", 60),
+                .make("2026-01-12", "Laptop", 900, bucket: "shopping", oneOff: true),
+                .make("2026-01-01", "Payday", 2000, bucket: "salary", kind: .income),
+                .make("2026-03-09", "Shop", 25),
+                .make("2026-04-02", "This month", 10),
+            ],
+            before: "2026-04",
+            planTotal: { $0 == "2026-01" ? 500 : 0 },
+            isUnusual: { $0 == "2026-03" }
+        )
+        #expect(months.map(\.key) == ["2026-01", "2026-03"])     // no February, no April
+
+        let january = months[0]
+        #expect(january.days == 31)
+        #expect(january.spent == 100)            // the laptop is a one-off
+        #expect(january.earned == 2000)
+        #expect(january.byDay == [5: 40, 20: 60])
+        #expect(january.firstDay == 1 && january.lastDay == 20)
+        #expect(january.cap == 500)
+        #expect(january.wasInsidePlan && january.keptSome)
+        #expect(months[1].isUnusual)
+    }
+
+    @Test("A logging run is consecutive days, across a month end")
+    func loggingRun() {
+        let entries: [Entry] = [
+            .make("2026-01-30", "a", 1), .make("2026-01-31", "b", 1),
+            .make("2026-02-01", "c", 1), .make("2026-02-01", "d", 1),
+            .make("2026-02-03", "e", 1),
+        ]
+        #expect(Wins.longestLoggingRun(entries) == 3)
+        #expect(Wins.longestLoggingRun([]) == 0)
     }
 }
 

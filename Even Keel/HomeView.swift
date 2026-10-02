@@ -553,10 +553,11 @@ struct HomeView: View {
                         .appFont(13, weight: .semibold)
                         .lineLimit(2)
                         .multilineTextAlignment(.leading)
-                    Text(model.wins.headline.map { "Latest badge: \($0.title)" }
-                         ?? "^[\(model.wins.badges.count) badge](inflect: true) to earn")
-                        .appFont(11.5).foregroundStyle(Palette.sub)
-                        .lineLimit(1)
+                    Text(Copy.badgeLine(wins: model.wins, new: model.newBadgeIDs))
+                        .appFont(11.5, weight: model.newBadgeIDs.isEmpty ? .regular : .semibold)
+                        .foregroundStyle(model.newBadgeIDs.isEmpty ? Palette.sub : Palette.teal)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                 }
                 Spacer(minLength: 4)
                 Image(systemName: "chevron.right")
