@@ -605,6 +605,34 @@ screen and another way beside it.
   the *smallest* sizes it was shorter than the add button, sat centred in the
   taller box, and let the list show through beneath it.
 
+*Added 2 October 2026 — the roadmap, first steps.* The app has a test target
+now (`Even KeelTests`, Swift Testing, hosted in the app, in-memory store), and
+changes from here on are expected to arrive with tests.
+
+- **Bills still to come are out of the daily figure.** `left` is the plan minus
+  what's been spent, and a bill due on the 20th hasn't been spent on the 3rd, so
+  "a day from here" spread the rent across the month's days until the day it
+  posted. `AppModel.billReserve` now holds each unposted recurring bill back
+  from `safeDaily` (and from `funDaily`, for bills in variable categories), and
+  Home says so in a line under the figures: "A day from here leaves out $60 for
+  Meal kit on the 5th." Three choices in it:
+  - *Only the daily figure moves.* "Left to spend" is still plan minus spent,
+    because that is what Budget shows against the planned total and two screens
+    disagreeing about one word is worse than one figure needing a footnote.
+  - *A bill is held against its own category's remaining room.* One filed under
+    a category with no limit was never in the plan, so the plan holds nothing
+    back for it.
+  - *This is the opposite call from goals, on purpose.* A goal contribution is
+    an intention the app never sees happen, so it is named and not subtracted
+    (28 August, above). A recurring bill is an entry the app will write itself.
+
+  What this doesn't do is treat the unspent part of a **fixed category** as
+  spoken for when there's no recurring item behind it — $400 planned for Savings
+  with nothing transferred yet still counts toward the daily figure. Doing that
+  would make the full view's daily number equal the simplified view's, which is
+  probably right, and is the same fixed-versus-variable decision as the streak
+  (see "Still open").
+
 ### Mechanics that shipped undocumented
 
 Most of these are one idea: **a budget you've broken should offer you a move, not

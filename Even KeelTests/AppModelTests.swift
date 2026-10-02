@@ -206,3 +206,100 @@ struct AppModelTests {
         #expect(model.caps["food"] == 200)
     }
 }
+
+// MARK: - Bills still to come
+
+/// The daily figure, with a bill that hasn't landed yet.
+///
+/// These need a bill due *later this month*, which doesn't exist on the last
+/// day of one — recurring days stop at the 28th so that every month has them.
+/// On those few days the suite has nothing to test and says so by not running,
+/// rather than passing vacuously.
+@Suite("Safe to spend", .serialized,
+       .enabled(if: Calendar.current.component(.day, from: Date()) < Recurring.maxDay,
+                "No recurring day falls later than today this month"))
+struct SafeToSpendTests {
+
+    private let model: AppModel
+    private let later = Recurring.maxDay
+
+    init() {
+        model = AppModel(store: BudgetStore(inMemory: true))
+        model.createHousehold(name: "Test", ownerName: "Me")
+    }
+
+    private var me: String { model.members[0].id }
+
+    @Test("A bill still to come is held back from the daily figure, not from what's left")
+    func billIsHeldBack() {
+        model.setCap("housing", to: 1300)
+        model.setCap("food", to: 600)
+        model.saveRecurring(.make("Rent", 1200, day: later))
+
+        #expect(model.left == 1900)
+        #expect(model.reservedForBills() == 1200)
+        #expect(model.safeDaily == 700 / Double(model.daysLeft))
+        #expect(model.billReserve().bills.map(\.place) == ["Rent"])
+    }
+
+    @Test("A bill outside the plan has nothing of the plan's to hold")
+    func billWithNoLimit() {
+        model.setCap("food", to: 600)
+        model.saveRecurring(.make("Rent", 1200, day: later))
+
+        #expect(model.reservedForBills() == 0)
+        #expect(model.safeDaily == 600 / Double(model.daysLeft))
+        #expect(model.billReserve().bills.isEmpty)
+    }
+
+    @Test("A bill can only claim the room its category has left")
+    func billBiggerThanItsCategory() {
+        model.setCap("housing", to: 1000)
+        model.addEntry(place: "Repair", amount: 300, bucket: "housing", memberID: me)
+        model.saveRecurring(.make("Rent", 1200, day: later))
+
+        #expect(model.reservedForBills() == 700)
+        #expect(model.safeDaily == 0)
+    }
+
+    @Test("Paydays, paused items and bills already posted aren't held back")
+    func whatIsNotABillToCome() {
+        model.setCap("housing", to: 1300)
+        model.saveRecurring(.make("Payday", 3000, day: later, bucket: "salary", kind: .income))
+        model.saveRecurring(.make("Paused", 100, day: later, isActive: false))
+        model.saveRecurring(.make("Posted", 100, day: later,
+                                  lastPosted: Fmt.isoMonth(Date())))
+        #expect(model.billsStillToCome.isEmpty)
+        #expect(model.reservedForBills() == 0)
+    }
+
+    @Test("The simplified view holds back only what its figure still contains")
+    func simplifiedView() {
+        model.setCap("housing", to: 1300)      // fixed: already outside the fun money
+        model.setCap("personal", to: 200)      // variable
+        model.saveRecurring(.make("Rent", 1200, day: later))
+        model.saveRecurring(.make("Gym", 40, day: later, bucket: "personal"))
+
+        #expect(model.reservedForBills() == 1240)
+        #expect(model.reservedForBills(discretionaryOnly: true) == 40)
+        #expect(model.funDaily == 160 / Double(model.daysLeft))
+    }
+
+    @Test("Looking at a closed month, nothing is held back")
+    func closedMonth() {
+        model.setCap("housing", to: 1300)
+        model.saveRecurring(.make("Rent", 1200, day: later))
+        model.stepMonth(-1)
+        #expect(model.reservedForBills() == 0)
+    }
+
+    @Test("The line on Home names a single bill and counts several")
+    func copy() {
+        let one = Copy.billsLeftOut(reserved: 1200, bills: [.make("Rent", 1200, day: 5)])
+        #expect(one == "A day from here leaves out \(Fmt.money(1200)) for Rent on the 5th.")
+        let two = Copy.billsLeftOut(reserved: 1240, bills: [
+            .make("Rent", 1200, day: 5), .make("Gym", 40, day: 20),
+        ])
+        #expect(two == "A day from here leaves out \(Fmt.money(1240)) for 2 bills still to come.")
+    }
+}

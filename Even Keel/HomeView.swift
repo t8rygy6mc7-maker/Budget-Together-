@@ -308,11 +308,14 @@ struct HomeView: View {
             // "Days left 9" about January, and a per-day figure that divided
             // January's leftovers by the days left in September.
             if model.isCurrentMonth {
-                StatRow([
-                    Stat(title: "A day from here",
-                         value: Fmt.money(model.funDaily), color: Palette.teal),
-                    Stat(title: "Days left", value: "\(model.daysLeft)"),
-                ])
+                VStack(alignment: .leading, spacing: 8) {
+                    StatRow([
+                        Stat(title: "A day from here",
+                             value: Fmt.money(model.funDaily), color: Palette.teal),
+                        Stat(title: "Days left", value: "\(model.daysLeft)"),
+                    ])
+                    billsLine(discretionaryOnly: true)
+                }
                 .padding(.bottom, 12)
             }
 
@@ -379,6 +382,25 @@ struct HomeView: View {
         .padding(.horizontal, 14).padding(.vertical, 12)
         .card(border: Palette.cardBorderSoft, radius: 15)
         .accessibilityElement(children: .combine)
+    }
+
+    /// Says what the daily figure has held back, when it has held anything.
+    /// See `AppModel.reservedForBills`.
+    @ViewBuilder
+    private func billsLine(discretionaryOnly: Bool) -> some View {
+        let reserve = model.billReserve(discretionaryOnly: discretionaryOnly)
+        if reserve.amount > 0 {
+            HStack(spacing: 5) {
+                Image(systemName: "calendar.badge.clock")
+                    .appFont(9.5, weight: .bold)
+                Text(Copy.billsLeftOut(reserved: reserve.amount, bills: reserve.bills))
+                    .appFont(11)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .foregroundStyle(Palette.sub)
+            .accessibilityElement(children: .combine)
+        }
     }
 
     /// The compact form of `goalPromiseStrip`, for the full view, where the
@@ -457,6 +479,7 @@ struct HomeView: View {
                         Stat(title: "A day from here", value: Fmt.money(model.safeDaily)),
                         Stat(title: "Days left", value: "\(model.daysLeft)"),
                     ])
+                    billsLine(discretionaryOnly: false).padding(.top, 8)
                     if model.hasGoalPromise {
                         goalPromiseLine.padding(.top, 8)
                     }

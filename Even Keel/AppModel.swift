@@ -550,7 +550,9 @@ final class AppModel: ObservableObject {
     var funMoney: Double { max(0, capTotal - committed) }
     var funSpent: Double { month.discretionarySpent }
     var funLeft: Double { funMoney - funSpent }
-    var funDaily: Double { max(0, funLeft) / Double(daysLeft) }
+    var funDaily: Double {
+        max(0, funLeft - reservedForBills(discretionaryOnly: true)) / Double(daysLeft)
+    }
 
     /// Where the fun money lands if the rest of the month goes like the part
     /// so far. The run-rate half of `Forecast` only: bills stay out of it,
@@ -579,7 +581,63 @@ final class AppModel: ObservableObject {
         return limits.values.reduce(0, +) / Double(days)
     }
     var left: Double { max(0, plannedTotal - spent) }
-    var safeDaily: Double { left / Double(daysLeft) }
+    var safeDaily: Double { max(0, left - reservedForBills()) / Double(daysLeft) }
+
+    // MARK: Bills still to come
+    //
+    // `left` is the plan minus what's been spent, and a bill that posts on the
+    // 20th hasn't been spent on the 3rd. So for most of the month the rent was
+    // counted as money to spread across the remaining days, and "a day from
+    // here" was at its most generous exactly when it was least true.
+    //
+    // The bills come out of the *daily* figure and nowhere else. What's left
+    // of the plan is still what's left of the plan — that's the number Budget
+    // shows against the planned total — but nobody should be told they can
+    // spend the rent at a rate of $40 a day.
+    //
+    // This is the opposite call from goals (see below), and for a reason: a
+    // goal contribution is an intention the app never sees happen, while a
+    // recurring bill is an entry the app is going to write itself.
+
+    /// Recurring bills due later this month that haven't posted, soonest first.
+    /// Always the live month's, like the forecast: a bill is only "still to
+    /// come" relative to today.
+    var billsStillToCome: [Recurring] {
+        let now = Date()
+        let today = Calendar.current.component(.day, from: now)
+        return recurring
+            .filter { $0.isStillToCome(in: Fmt.isoMonth(now), after: today) }
+            .sorted { $0.dayOfMonth < $1.dayOfMonth }
+    }
+
+    /// How much of what's left those bills will take.
+    ///
+    /// Each bill is held against its own category's remaining room and no
+    /// further. A bill filed under a category with no limit was never in the
+    /// plan, so there's nothing of the plan's to hold back for it; and one
+    /// bigger than its category has left can only claim what's there — the
+    /// rest will show up as that category going past its limit, which is a
+    /// different message and already has its own place.
+    ///
+    /// `discretionaryOnly` is for the simplified view, whose figure leaves the
+    /// fixed categories out wholesale and so only needs the rest.
+    func billReserve(discretionaryOnly: Bool = false) -> (amount: Double, bills: [Recurring]) {
+        guard isCurrentMonth else { return (0, []) }
+        var amount = 0.0
+        var counted: [Recurring] = []
+        for (bucket, bills) in Dictionary(grouping: billsStillToCome, by: \.bucket) {
+            if discretionaryOnly, Bucket.named(bucket).cadence == .fixed { continue }
+            let room = max(0, (caps[bucket] ?? 0) - (month.totals[bucket] ?? 0))
+            guard room > 0 else { continue }
+            amount += min(bills.reduce(0) { $0 + $1.amount }, room)
+            counted += bills
+        }
+        return (amount, counted.sorted { $0.dayOfMonth < $1.dayOfMonth })
+    }
+
+    func reservedForBills(discretionaryOnly: Bool = false) -> Double {
+        billReserve(discretionaryOnly: discretionaryOnly).amount
+    }
 
     // MARK: Goals against the plan
     //

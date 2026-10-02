@@ -538,6 +538,12 @@ struct Recurring: Identifiable, Hashable {
 
     /// "3rd of each month"
     var scheduleLabel: String { "\(Self.ordinal(dayOfMonth)) of each month" }
+
+    /// Whether this is a bill due later in `monthKey` that hasn't posted yet:
+    /// money still sitting in what's left of the plan, and already spoken for.
+    func isStillToCome(in monthKey: String, after day: Int) -> Bool {
+        isActive && kind == .expense && lastPostedMonth != monthKey && dayOfMonth > day
+    }
 }
 
 // MARK: - Loans

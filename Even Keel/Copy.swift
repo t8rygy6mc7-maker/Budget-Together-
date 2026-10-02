@@ -170,6 +170,24 @@ enum Copy {
              + "\(top.label) leads at \(Fmt.whole(top.share))%."
     }
 
+    // MARK: Bills still to come
+
+    /// Why the daily figure is smaller than what's left divided by the days.
+    ///
+    /// Said out loud because the alternative is a number that doesn't add up
+    /// against the two beside it, with nothing on the screen to say why. One
+    /// bill is named — "Rent on the 5th" is something a person recognises;
+    /// "1 bill" is something they have to go and look up.
+    static func billsLeftOut(reserved: Double, bills: [Recurring]) -> String {
+        let what: String
+        if bills.count == 1, let bill = bills.first {
+            what = "\(bill.place) on the \(Recurring.ordinal(bill.dayOfMonth))"
+        } else {
+            what = "\(Fmt.count(bills.count, "bill")) still to come"
+        }
+        return "A day from here leaves out \(Fmt.money(reserved)) for \(what)."
+    }
+
     // MARK: Streaks
 
     /// A streak is days inside the daily allowance, and the allowance is the

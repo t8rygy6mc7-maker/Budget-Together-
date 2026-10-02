@@ -45,8 +45,7 @@ struct Forecast {
         forecast.fromPace = spent + perDay * Double(daysLeft)
 
         forecast.billsToCome = recurring
-            .filter { $0.isActive && $0.kind == .expense
-                      && $0.lastPostedMonth != currentMonthKey && $0.dayOfMonth > today }
+            .filter { $0.isStillToCome(in: currentMonthKey, after: today) }
             .reduce(0) { $0 + $1.amount }
 
         // A bill that hasn't landed yet isn't in the run rate, but part of it is
