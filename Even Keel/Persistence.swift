@@ -228,11 +228,11 @@ enum CDModel {
     ///
     /// `allowsCloudEncryption` puts the value in the CloudKit record's
     /// `encryptedValues` rather than its plain fields, which is what makes the
-    /// end-to-end claim true rather than aspirational. It is inert today —
-    /// `cloudSyncEnabled` is `false` and nothing is mirrored — but it is set
-    /// now because it is free now and a migration later: once records exist in
-    /// iCloud with a field in the clear, moving that field into the encrypted
-    /// side means rewriting every record that was ever synced.
+    /// end-to-end claim true rather than aspirational. It was set before
+    /// mirroring was switched on, because it was free then and a migration
+    /// later: once records exist in iCloud with a field in the clear, moving
+    /// that field into the encrypted side means rewriting every record that
+    /// was ever synced.
     ///
     /// Identifiers, dates, enum tags, flags, ordering and timestamps stay in
     /// the clear so they remain usable in predicates and sort descriptors. What
