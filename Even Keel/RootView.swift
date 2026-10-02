@@ -219,6 +219,12 @@ struct BottomBar: View {
             }
             .padding(.horizontal, 26)
             .padding(.vertical, 11)
+            // Never shorter than the add button. The ZStack takes the taller of
+            // the two, and at the smallest text sizes the button won: the bar
+            // sat centred in a taller box, lifted off the bottom edge, and its
+            // background stopped short of the home-indicator strip — which then
+            // showed the list scrolling underneath the tab bar.
+            .frame(minHeight: Self.addSize)
             .background(Palette.navBar)
             .overlay(alignment: .top) {
                 Rectangle().fill(Palette.navBorder).frame(height: 1)
@@ -288,10 +294,20 @@ struct MonthStepper: View {
         HStack(spacing: 10) {
             arrow("chevron.left", enabled: true) { model.stepMonth(-1) }
             Button { model.goToCurrentMonth() } label: {
-                Text(model.monthTitle)
-                    .appFont(13, weight: .semibold)
-                    .foregroundStyle(model.isCurrentMonth ? Palette.sub : Palette.teal)
-                    .frame(minWidth: 96)
+                // One line, always. Beside a title it was being handed less
+                // than its width and wrapped to "September / 2026" — and, at
+                // the accessibility sizes, broke inside the word. Where the
+                // whole name won't fit, the short one ("Sep 2026") says the
+                // same thing, which beats "September…" losing the year.
+                ViewThatFits(in: .horizontal) {
+                    Text(model.monthTitle)
+                    Text(model.shortMonthTitle)
+                }
+                .appFont(13, weight: .semibold)
+                .lineLimit(1)
+                .minimumScaleFactor(0.75)
+                .foregroundStyle(model.isCurrentMonth ? Palette.sub : Palette.teal)
+                .frame(minWidth: 96)
             }
             .accessibilityLabel(model.isCurrentMonth ? model.monthTitle
                                                      : "\(model.monthTitle), back to this month")
@@ -309,6 +325,36 @@ struct MonthStepper: View {
         }
         .disabled(!enabled)
         .accessibilityLabel(symbol == "chevron.left" ? "Previous month" : "Next month")
+    }
+}
+
+/// A tab's title with the month stepper beside it — or under it, once the text
+/// is large enough that the two can't share a line without one of them
+/// breaking. Home already stacks them; the other three tabs now follow it there
+/// rather than squeezing the stepper until its label wraps.
+struct ScreenHeader: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    let title: String
+
+    var body: some View {
+        if typeSize.prefersStackedLayout {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(title).appFont(22, weight: .bold)
+                MonthStepper()
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            HStack(spacing: 12) {
+                Text(title)
+                    .appFont(22, weight: .bold)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                Spacer(minLength: 0)
+                // First claim on the row, so the stepper gets its natural
+                // width and the title does any giving way.
+                MonthStepper().layoutPriority(1)
+            }
+        }
     }
 }
 
@@ -351,93 +397,34 @@ struct EntryRow: View {
     var showsSocial = false
 
     @State private var pickingReaction = false
+    @Environment(\.dynamicTypeSize) private var typeSize
 
     var body: some View {
         let bucket = Bucket.named(entry.bucket)
-        let member = model.member(entry.memberID)
         VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 12) {
-                Image(systemName: bucket.symbol)
-                    .appFont(16, weight: .semibold)
-                    .foregroundStyle(bucket.color)
-                    .frame(width: 36, height: 36)
-                    .background(bucket.tint,
-                                in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-
-                VStack(alignment: .leading, spacing: 1) {
-                    Text(entry.place).appFont(14, weight: .semibold).lineLimit(1)
-                    HStack(spacing: 5) {
-                        if let subtitle = entry.categorySubtitle {
-                            Text(subtitle).appFont(11.5).foregroundStyle(Palette.sub)
-                        }
-                        if entry.isPrivate {
-                            Image(systemName: "lock.fill")
-                                .appFont(9, weight: .semibold)
-                                .foregroundStyle(Palette.label9)
-                                .accessibilityLabel("Private")
-                        }
-                        if let mood = entry.mood {
-                            Image(systemName: mood.symbol)
-                                .appFont(9, weight: .semibold)
-                                .foregroundStyle(mood.color)
-                                .accessibilityLabel(mood.label)
-                        }
-                        if entry.belowTheLine {
-                            Image(systemName: "minus.diamond.fill")
-                                .appFont(9, weight: .semibold)
-                                .foregroundStyle(Palette.moodJoy)
-                                .accessibilityLabel("One-off, not counted against the budget")
-                        }
-                        if entry.hasNote, !showsSocial {
-                            Image(systemName: "text.bubble.fill")
-                                .appFont(9, weight: .semibold)
-                                .foregroundStyle(Palette.muted)
-                                .accessibilityLabel("Has a note")
+            // Past the accessibility sizes the place, its category and up to
+            // five trailing controls can't share one line: the place truncated
+            // to "Par…" and "Transport" broke into three pieces to make room.
+            // So the controls drop onto a line of their own under the text.
+            if typeSize.prefersStackedLayout {
+                HStack(alignment: .top, spacing: 12) {
+                    icon(bucket)
+                    VStack(alignment: .leading, spacing: 6) {
+                        titles
+                        HStack(spacing: 12) {
+                            memberTag
+                            Spacer(minLength: 0)
+                            controls
                         }
                     }
                 }
-
-                Spacer(minLength: 4)
-
-                // With more than two people a bare dot stops being readable, so
-                // the initial rides along with it.
-                HStack(spacing: 4) {
-                    Circle().fill(member.color).frame(width: 8, height: 8)
-                    Text(member.letter)
-                        .appFont(10, weight: .bold)
-                        .foregroundStyle(Palette.sub)
-                }
-                .accessibilityLabel(member.name)
-
-                Text(entry.signedAmount).mono(14).foregroundStyle(entry.kind.color)
-
-                // The react control sits up here with delete rather than on a
-                // row of its own: a dedicated row costs ~28pt on every single
-                // entry, and a log is mostly entries nobody needs to say
-                // anything about.
-                if showsSocial, canReact {
-                    Button { pickingReaction = true } label: {
-                        Image(systemName: model.myReaction(to: entry.id) == nil
-                              ? "face.smiling" : "face.smiling.inverse")
-                            .appFont(13, weight: .semibold)
-                            .foregroundStyle(model.myReaction(to: entry.id) == nil
-                                             ? Palette.muted : Palette.teal)
-                    }
-                    .accessibilityLabel("React to \(entry.place)")
-                    .popover(isPresented: $pickingReaction) {
-                        ReactionPicker(entryID: entry.id)
-                            .environmentObject(model)
-                            .presentationCompactAdaptation(.popover)
-                    }
-                }
-
-                if showDelete {
-                    Button { model.delete(entry.id) } label: {
-                        Image(systemName: "xmark")
-                            .appFont(13, weight: .semibold)
-                            .foregroundStyle(Palette.muted)
-                    }
-                    .accessibilityLabel("Delete \(entry.place)")
+            } else {
+                HStack(spacing: 12) {
+                    icon(bucket)
+                    titles
+                    Spacer(minLength: 4)
+                    memberTag
+                    controls
                 }
             }
 
@@ -461,6 +448,107 @@ struct EntryRow: View {
         }
         .padding(.horizontal, 13).padding(.vertical, 11)
         .card(border: Palette.cardBorderSoft, radius: 15)
+    }
+
+    private func icon(_ bucket: Bucket) -> some View {
+        Image(systemName: bucket.symbol)
+            .appFont(16, weight: .semibold)
+            .foregroundStyle(bucket.color)
+            .frame(width: 36, height: 36)
+            .background(bucket.tint,
+                        in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+    }
+
+    /// The place, then its category and whatever's worth flagging about it.
+    private var titles: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(entry.place)
+                .appFont(14, weight: .semibold)
+                .lineLimit(typeSize.prefersStackedLayout ? 2 : 1)
+            HStack(spacing: 5) {
+                if let subtitle = entry.categorySubtitle {
+                    Text(subtitle).appFont(11.5).foregroundStyle(Palette.sub)
+                }
+                if entry.isPrivate {
+                    Image(systemName: "lock.fill")
+                        .appFont(9, weight: .semibold)
+                        .foregroundStyle(Palette.label9)
+                        .accessibilityLabel("Private")
+                }
+                if let mood = entry.mood {
+                    Image(systemName: mood.symbol)
+                        .appFont(9, weight: .semibold)
+                        .foregroundStyle(mood.color)
+                        .accessibilityLabel(mood.label)
+                }
+                if entry.belowTheLine {
+                    Image(systemName: "minus.diamond.fill")
+                        .appFont(9, weight: .semibold)
+                        .foregroundStyle(Palette.moodJoy)
+                        .accessibilityLabel("One-off, not counted against the budget")
+                }
+                if entry.hasNote, !showsSocial {
+                    Image(systemName: "text.bubble.fill")
+                        .appFont(9, weight: .semibold)
+                        .foregroundStyle(Palette.muted)
+                        .accessibilityLabel("Has a note")
+                }
+            }
+        }
+    }
+
+    /// With more than two people a bare dot stops being readable, so the
+    /// initial rides along with it.
+    private var memberTag: some View {
+        let member = model.member(entry.memberID)
+        return HStack(spacing: 4) {
+            Circle().fill(member.color).frame(width: 8, height: 8)
+            Text(member.letter)
+                .appFont(10, weight: .bold)
+                .foregroundStyle(Palette.sub)
+        }
+        .accessibilityLabel(member.name)
+    }
+
+    /// The amount, then what can be done to the row.
+    @ViewBuilder
+    private var controls: some View {
+        Text(entry.signedAmount).mono(14).foregroundStyle(entry.kind.color)
+
+        // The react control sits up here with delete rather than on a row of
+        // its own: a dedicated row costs ~28pt on every single entry, and a log
+        // is mostly entries nobody needs to say anything about.
+        if showsSocial, canReact {
+            Button { pickingReaction = true } label: {
+                Image(systemName: model.myReaction(to: entry.id) == nil
+                      ? "face.smiling" : "face.smiling.inverse")
+                    .appFont(13, weight: .semibold)
+                    .foregroundStyle(model.myReaction(to: entry.id) == nil
+                                     ? Palette.muted : Palette.teal)
+            }
+            .accessibilityLabel("React to \(entry.place)")
+            .popover(isPresented: $pickingReaction) {
+                ReactionPicker(entryID: entry.id)
+                    .environmentObject(model)
+                    .presentationCompactAdaptation(.popover)
+            }
+        } else if showsSocial, model.members.count > 1 {
+            // Holds the react button's place on rows that can't have one —
+            // your own, private ones — so the amounts stay in a column instead
+            // of jumping right on every row of yours.
+            Image(systemName: "face.smiling")
+                .appFont(13, weight: .semibold)
+                .hidden()
+        }
+
+        if showDelete {
+            Button { model.delete(entry.id) } label: {
+                Image(systemName: "xmark")
+                    .appFont(13, weight: .semibold)
+                    .foregroundStyle(Palette.muted)
+            }
+            .accessibilityLabel("Delete \(entry.place)")
+        }
     }
 
     /// Whether there's anyone to react *to*. Never your own entries — reacting

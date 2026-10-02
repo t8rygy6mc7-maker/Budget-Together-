@@ -10,17 +10,12 @@ struct BudgetView: View {
 
     var body: some View {
         let totals = model.month.totals
-        let totalPct = min(100, model.spent / max(model.plannedTotal, 1) * 100)
 
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Budget").appFont(22, weight: .bold)
-                Spacer()
-                MonthStepper()
-            }
+            ScreenHeader(title: "Budget")
             Text(model.hasPlan
                  ? "Tap a number to change what you're aiming for in \(model.monthTitle). Later months follow it until you change them again."
-                 : "Nothing's set yet — that's fine. Set what you like here, or let the app suggest limits once it's seen a few weeks of spending.")
+                 : "Nothing's set yet — that's fine. Set what you like below, or let the app suggest limits once it's seen a few weeks of spending.")
                 .appFont(13, weight: .medium)
                 .foregroundStyle(Palette.sub)
                 .fixedSize(horizontal: false, vertical: true)
@@ -30,67 +25,12 @@ struct BudgetView: View {
                 SuggestedPlanCard().padding(.bottom, 12)
             }
 
-            VStack(spacing: 0) {
-                HStack {
-                    Text("Planned total")
-                        .appFont(13, weight: .medium).foregroundStyle(Palette.sub)
-                    Spacer()
-                    Text(Fmt.money(model.plannedTotal)).mono(18)
-                }
-                ProgressBar(pct: totalPct, fill: Palette.tealGradient, height: 10)
-                    .padding(.vertical, 10)
-                HStack {
-                    Text("\(Fmt.money(model.spent)) spent")
-                        .appFont(12.5, weight: .semibold).foregroundStyle(Palette.teal)
-                    Spacer()
-                    Text("\(Fmt.money(model.left)) left")
-                        .appFont(12.5, weight: .semibold).foregroundStyle(Palette.sub)
-                }
-                if model.rollover > 0 {
-                    HStack(spacing: 5) {
-                        Image(systemName: "arrow.turn.down.right")
-                            .appFont(9.5, weight: .bold)
-                        Text("Includes \(Fmt.money(model.rollover)) carried over from \(model.previousMonthName)")
-                            .appFont(11)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                    }
-                    .foregroundStyle(Palette.green)
-                    .padding(.top, 9)
-                }
-                // Stated here for the same reason the rollover is: the planned
-                // total is the figure people read as "what I have", and a
-                // standing promise against it belongs in the same breath. It is
-                // named, not deducted — see `AppModel.leftAfterGoals`.
-                if model.hasPlan, model.hasGoalPromise {
-                    HStack(spacing: 5) {
-                        Image(systemName: "target")
-                            .appFont(9.5, weight: .bold)
-                        Text("\(Fmt.money(model.promisedToGoals)) a month is promised to goals, and isn't taken out of this")
-                            .appFont(11)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                    }
-                    .foregroundStyle(Palette.teal)
-                    .padding(.top, 9)
-                }
-            }
-            .padding(.horizontal, 17).padding(.vertical, 16)
-            .card()
-            .padding(.bottom, 12)
+            planCard.padding(.bottom, 12)
 
-            rolloverToggle.padding(.bottom, 9)
-            unusualMonthCard.padding(.bottom, 9)
-
-            recurringCard
-                .padding(.bottom, 9)
-
-            goalsCard
-                .padding(.bottom, 9)
-
-            loansCard
-                .padding(.bottom, 16)
-
+            // The limits come straight after the total they add up to. They
+            // used to sit under five cards of settings and side-ledgers, so the
+            // thing the sentence above says to tap was the one thing on the
+            // screen you had to scroll to find.
             VStack(spacing: 9) {
                 ForEach(model.expenseCategories) { bucket in
                     BudgetRow(bucket: bucket, actual: totals[bucket.id] ?? 0)
@@ -99,12 +39,101 @@ struct BudgetView: View {
 
             categoriesCard.padding(.top, 12)
             strandedHiddenRows(totals: totals)
+
+            // Everything else here is either a ledger of its own — bills,
+            // goals, debts — or a setting for how the month is judged. All of
+            // it matters; none of it is why somebody opened this tab.
+            VStack(spacing: 9) {
+                recurringCard
+                goalsCard
+                loansCard
+                // Nothing to carry over without a plan to have left over from.
+                if model.hasPlan { rolloverToggle }
+                unusualMonthCard
+            }
+            .padding(.top, 22)
         }
         .sheet(isPresented: $showRecurring) { RecurringSheet().environmentObject(model) }
         .sheet(isPresented: $showLoans) { LoansSheet().environmentObject(model) }
         .sheet(isPresented: $showGoals) { GoalsSheet().environmentObject(model) }
         .sheet(isPresented: $markingUnusual) { UnusualMonthSheet().environmentObject(model) }
         .sheet(isPresented: $showCategories) { CategoriesSheet().environmentObject(model) }
+    }
+
+    @ViewBuilder
+    private var planCard: some View {
+        if model.hasPlan { plannedTotalCard } else { noPlanCard }
+    }
+
+    /// With no limits there's no total to measure against, and the planned
+    /// card drew one anyway: "$0" planned, a full bar, "$0 left" — which reads
+    /// as "you've spent everything" to someone who simply hasn't set anything.
+    /// This says what is actually known.
+    private var noPlanCard: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(model.isCurrentMonth ? "Spent so far" : "Spent in \(model.monthTitle)")
+                    .appFont(13, weight: .medium).foregroundStyle(Palette.sub)
+                Spacer()
+                Text(Fmt.money(model.spent)).mono(18)
+            }
+            Text("No limits yet, so nothing to measure it against.")
+                .appFont(12).foregroundStyle(Palette.sub)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 17).padding(.vertical, 16)
+        .card()
+    }
+
+    private var plannedTotalCard: some View {
+        let totalPct = min(100, model.spent / max(model.plannedTotal, 1) * 100)
+        return VStack(spacing: 0) {
+            HStack {
+                Text("Planned total")
+                    .appFont(13, weight: .medium).foregroundStyle(Palette.sub)
+                Spacer()
+                Text(Fmt.money(model.plannedTotal)).mono(18)
+            }
+            ProgressBar(pct: totalPct, fill: Palette.tealGradient, height: 10)
+                .padding(.vertical, 10)
+            HStack {
+                Text("\(Fmt.money(model.spent)) spent")
+                    .appFont(12.5, weight: .semibold).foregroundStyle(Palette.teal)
+                Spacer()
+                Text("\(Fmt.money(model.left)) left")
+                    .appFont(12.5, weight: .semibold).foregroundStyle(Palette.sub)
+            }
+            if model.rollover > 0 {
+                HStack(spacing: 5) {
+                    Image(systemName: "arrow.turn.down.right")
+                        .appFont(9.5, weight: .bold)
+                    Text("Includes \(Fmt.money(model.rollover)) carried over from \(model.previousMonthName)")
+                        .appFont(11)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(Palette.green)
+                .padding(.top, 9)
+            }
+            // Stated here for the same reason the rollover is: the planned
+            // total is the figure people read as "what I have", and a
+            // standing promise against it belongs in the same breath. It is
+            // named, not deducted — see `AppModel.leftAfterGoals`.
+            if model.hasGoalPromise {
+                HStack(spacing: 5) {
+                    Image(systemName: "target")
+                        .appFont(9.5, weight: .bold)
+                    Text("\(Fmt.money(model.promisedToGoals)) a month is promised to goals, and isn't taken out of this")
+                        .appFont(11)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 0)
+                }
+                .foregroundStyle(Palette.teal)
+                .padding(.top, 9)
+            }
+        }
+        .padding(.horizontal, 17).padding(.vertical, 16)
+        .card()
     }
 
     /// Way into the category editor.
@@ -343,55 +372,48 @@ struct BudgetRow: View {
     @State private var limitText = ""
     @FocusState private var editingLimit: Bool
 
+    /// The limit box grows with the text inside it. At a fixed 52pt, "1300"
+    /// came out as "13…" at the accessibility sizes: a limit nobody could read.
+    @ScaledMetric(relativeTo: .footnote) private var limitWidth: CGFloat = 52
+
     var body: some View {
         let cap = model.caps[bucket.id] ?? 0
         let isOver = cap > 0 && actual > cap
-        let pct = cap > 0 ? min(100, actual / cap * 100) : (actual > 0 ? 100 : 0)
+        let pct = cap > 0 ? min(100, actual / cap * 100) : 0
 
         VStack(spacing: 9) {
-            HStack(spacing: 11) {
-                Image(systemName: bucket.symbol)
-                    .appFont(15, weight: .semibold)
-                    .foregroundStyle(bucket.color)
-                    .frame(width: 32, height: 32)
-                    .background(bucket.tint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-                Text(bucket.label).appFont(14, weight: .semibold)
-
-                Spacer(minLength: 4)
-
-                Text(Fmt.money(actual)).mono(13)
-                    .foregroundStyle(isOver ? Palette.overText : Palette.text)
-                Text("/").appFont(13).foregroundStyle(Palette.muted)
-
-                HStack(spacing: 2) {
-                    Text(Fmt.currencySymbol).mono(12, weight: .regular).foregroundStyle(Palette.muted)
-                    TextField("0", text: $limitText)
-                        .keyboardType(.decimalPad)
-                        .multilineTextAlignment(.trailing)
-                        .appFont(13, weight: .bold, design: .monospaced)
-                        .frame(width: 52)
-                        .focused($editingLimit)
-                        .accessibilityLabel("\(bucket.label) budget")
-                        .onSubmit(commitLimit)
-                        .onChange(of: editingLimit) { _, isEditing in
-                            if !isEditing { commitLimit() }
-                        }
-                }
-                .padding(.horizontal, 8).padding(.vertical, 7)
-                .fieldBackground(radius: 10)
+            AdaptiveRow(spacing: 11) {
+                icon
+                name
+            } figures: {
+                figures(isOver: isOver)
             }
 
-            ProgressBar(pct: pct, fill: isOver ? Palette.over : bucket.color, height: 7)
+            // No limit, no bar. A bar is a share of something, and with no
+            // limit there's nothing for it to be a share of — drawn full, as it
+            // was, it said "all used up" about a category with no ceiling.
+            //
+            // The fill stays the category's own colour even past the limit —
+            // "fill encodes identity" (DESIGN-NOTES §1), which the accessibility
+            // statement promises. Turned `Palette.over` instead, an overspent
+            // Fun bar came out the exact coral of Housing's. Being past the
+            // limit is said by the line underneath, in words and an icon.
+            if cap > 0 {
+                ProgressBar(pct: pct, fill: bucket.color, height: 7)
+            }
 
             // The number people actually want: what's left, or how far past —
-            // and, when it's past, the one tap that fixes it. A red bar with no
+            // and, when it's past, the one tap that fixes it. A verdict with no
             // offered next move is just a scolding.
             HStack(spacing: 4) {
                 if cap <= 0 {
                     Text("No limit set")
                         .appFont(11.5).foregroundStyle(Palette.muted)
                 } else if isOver {
+                    Image(systemName: "exclamationmark.circle.fill")
+                        .appFont(11, weight: .semibold)
+                        .foregroundStyle(Palette.overText)
+                        .accessibilityHidden(true)
                     Text("\(Fmt.money(actual - cap)) past the limit")
                         .appFont(11.5, weight: .semibold)
                         .foregroundStyle(Palette.overText)
@@ -430,6 +452,44 @@ struct BudgetRow: View {
         // that would overwrite the half-finished number under the cursor.
         .onChange(of: cap) { _, new in
             if !editingLimit { limitText = Self.limitField(new) }
+        }
+    }
+
+    private var icon: some View {
+        Image(systemName: bucket.symbol)
+            .appFont(15, weight: .semibold)
+            .foregroundStyle(bucket.color)
+            .frame(width: 32, height: 32)
+            .background(bucket.tint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+    }
+
+    private var name: some View {
+        Text(bucket.label).appFont(14, weight: .semibold)
+    }
+
+    /// What's gone, and the editable limit it's measured against.
+    private func figures(isOver: Bool) -> some View {
+        HStack(spacing: 11) {
+            Text(Fmt.money(actual)).mono(13)
+                .foregroundStyle(isOver ? Palette.overText : Palette.text)
+            Text("/").appFont(13).foregroundStyle(Palette.muted)
+
+            HStack(spacing: 2) {
+                Text(Fmt.currencySymbol).mono(12, weight: .regular).foregroundStyle(Palette.muted)
+                TextField("0", text: $limitText)
+                    .keyboardType(.decimalPad)
+                    .multilineTextAlignment(.trailing)
+                    .appFont(13, weight: .bold, design: .monospaced)
+                    .frame(width: limitWidth)
+                    .focused($editingLimit)
+                    .accessibilityLabel("\(bucket.label) budget")
+                    .onSubmit(commitLimit)
+                    .onChange(of: editingLimit) { _, isEditing in
+                        if !isEditing { commitLimit() }
+                    }
+            }
+            .padding(.horizontal, 8).padding(.vertical, 7)
+            .fieldBackground(radius: 10)
         }
     }
 

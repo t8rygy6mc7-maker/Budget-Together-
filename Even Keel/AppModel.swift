@@ -28,8 +28,12 @@ struct MonthDigest {
     var discretionarySpent: Double = 0
     /// Day of month → spending, for the under-pace streak.
     var byDay: [Int: Double] = [:]
-    /// Same-scope total for the previous month, for the header comparison.
+    /// Same-scope total for the previous month, for the rollover.
     var previousSpent: Double = 0
+    /// The previous month up to the same day of the month — what the header
+    /// comparison measures a month still in progress against. Equal to
+    /// `previousSpent` when the digest wasn't cut off at a day.
+    var previousSpentToDate: Double = 0
     /// One-off spending the user has set aside from the plan. Deliberately
     /// *not* folded into `spent` — but tracked, and shown, because money that
     /// left the account has to appear somewhere.
@@ -478,6 +482,7 @@ final class AppModel: ObservableObject {
 
     var today: String { Fmt.isoDay(Date()) }
     var monthTitle: String { Fmt.monthTitle(selectedMonth) }
+    var shortMonthTitle: String { Fmt.shortMonthTitle(selectedMonth) }
     var monthKey: String { Fmt.isoMonth(selectedMonth) }
     var previousMonthName: String { Fmt.monthName(Self.month(before: selectedMonth)) }
 
@@ -485,11 +490,19 @@ final class AppModel: ObservableObject {
     /// days-left only mean anything when it is.
     var isCurrentMonth: Bool { monthKey == Fmt.isoMonth(Date()) }
 
+    /// Days the rest of the month's money has to cover, today included —
+    /// today isn't over, so it's still a day to spend in.
+    ///
+    /// This used to count from tomorrow, which disagreed with itself at both
+    /// ends: the 29th and the 30th both said "1 day to go", and the weekly
+    /// figure multiplied a tomorrow-onward daily allowance by a today-onward
+    /// count of days, overstating the week by a day's worth. Ask already
+    /// counted this way.
     var daysLeft: Int {
         let cal = Calendar.current
         let now = Date()
         let total = cal.range(of: .day, in: .month, for: now)?.count ?? 30
-        return max(1, total - cal.component(.day, from: now))
+        return max(1, total - cal.component(.day, from: now) + 1)
     }
 
     /// There's nothing to show past the current month, so forward stops there.
@@ -539,11 +552,31 @@ final class AppModel: ObservableObject {
     var funLeft: Double { funMoney - funSpent }
     var funDaily: Double { max(0, funLeft) / Double(daysLeft) }
 
-    /// Even spread of the whole plan across the month — the yardstick a daily
-    /// streak is measured against.
+    /// Where the fun money lands if the rest of the month goes like the part
+    /// so far. The run-rate half of `Forecast` only: bills stay out of it,
+    /// because the simplified view's whole premise is that they're handled.
+    var funProjected: Double {
+        guard isCurrentMonth else { return funSpent }
+        let cal = Calendar.current
+        let now = Date()
+        let today = cal.component(.day, from: now)
+        let days = cal.range(of: .day, in: .month, for: now)?.count ?? 30
+        return funSpent / Double(max(today, 1)) * Double(days)
+    }
+
+    /// Even spread of the live month's plan across its days — the yardstick a
+    /// daily streak is measured against.
+    ///
+    /// The live month's, whichever month is on screen, because the streak is
+    /// always the live month's too. Reading the selected month instead meant
+    /// that browsing back to February re-judged this month's days against
+    /// February's plan and February's length, and the streak changed under
+    /// someone who had only gone to look at something.
     var dailyAllowance: Double {
-        let days = Calendar.current.range(of: .day, in: .month, for: selectedMonth)?.count ?? 30
-        return capTotal / Double(days)
+        let now = Date()
+        let days = Calendar.current.range(of: .day, in: .month, for: now)?.count ?? 30
+        let limits = isCurrentMonth ? caps : store.caps(for: Fmt.isoMonth(now))
+        return limits.values.reduce(0, +) / Double(days)
     }
     var left: Double { max(0, plannedTotal - spent) }
     var safeDaily: Double { left / Double(daysLeft) }
@@ -597,6 +630,11 @@ final class AppModel: ObservableObject {
     /// What's safe to spend between now and the end of the week.
     var weeklyAllowance: Double { safeDaily * Double(daysLeftInWeek) }
 
+    /// The same, out of the fun money — what the simplified view has to quote,
+    /// or its weekly line promises more than the figure above it says is free
+    /// for the whole rest of the month.
+    var funWeeklyAllowance: Double { funDaily * Double(daysLeftInWeek) }
+
     /// Whether the weekly figure actually tells you anything the monthly one
     /// didn't. In the last few days of a month the two coincide, and repeating
     /// the same number under a different label is noise pretending to be help.
@@ -604,15 +642,18 @@ final class AppModel: ObservableObject {
         isCurrentMonth && daysLeft > daysLeftInWeek
     }
 
-    /// Spending since the start of the current week.
-    var spentThisWeek: Double {
+    /// Spending since the start of the current week. One-offs stay out, as
+    /// they do from every other spending figure; `discretionaryOnly` leaves out
+    /// the fixed bills too, for the simplified view that treats them as handled.
+    func spentThisWeek(discretionaryOnly: Bool = false) -> Double {
         guard isCurrentMonth else { return 0 }
         let calendar = Calendar.current
         guard let weekStart = calendar.dateInterval(of: .weekOfYear, for: Date())?.start
         else { return 0 }
         let startKey = Fmt.isoDay(weekStart)
         return month.entries
-            .filter { $0.kind == .expense && $0.date >= startKey }
+            .filter { $0.kind == .expense && !$0.belowTheLine && $0.date >= startKey }
+            .filter { !discretionaryOnly || Bucket.named($0.bucket).cadence == .variable }
             .reduce(0) { $0 + $1.amount }
     }
 
@@ -626,12 +667,27 @@ final class AppModel: ObservableObject {
         // Comparing against a month the user has told us was strange produces a
         // number that's technically correct and completely misleading.
         guard !isUnusual(previousKey), !isSelectedMonthUnusual else { return nil }
-        let previous = month.previousSpent
+        // A month in progress is measured against last month *to the same
+        // day*. Against last month's whole total, every month read as a steep
+        // drop until its last week — "↓ 60% vs August" on the 8th, in the
+        // encouraging colour, about a month that was going exactly the same.
+        //
+        // And not at all for the first few days, the same quiet spell the
+        // pace maths keeps (DESIGN-NOTES §2): two receipts against two
+        // receipts is decided by which side of the 1st the rent landed on.
+        if isCurrentMonth,
+           Calendar.current.component(.day, from: Date()) < Self.minimumDaysForComparison {
+            return nil
+        }
+        let previous = isCurrentMonth ? month.previousSpentToDate : month.previousSpent
         guard previous > 0 else { return nil }
         let change = Fmt.whole(((month.spent - previous) / previous) * 100)
         guard change != 0 else { return nil }
         return (abs(change), change < 0)
     }
+
+    /// Days into a month before it's compared with the last one.
+    private static let minimumDaysForComparison = 5
 
     /// Below this many purchases the ranking turns over with every entry, and a
     /// "takeaway" is really just the last thing somebody bought wearing a
@@ -743,10 +799,30 @@ final class AppModel: ObservableObject {
 
     // MARK: Suggested limits
 
-    /// Whether there's enough real spending to propose a plan from. Ten entries
-    /// is roughly the point where the categories stop being noise.
+    /// Whether there's enough real spending to propose a plan from: ten
+    /// expenses, across at least a fortnight. Ten is roughly where the
+    /// categories stop being noise. The fortnight is what the copy has always
+    /// promised — "once it's seen a few weeks" — and what stops one busy first
+    /// weekend being stretched into a month.
     var canSuggestPlan: Bool {
-        !hasPlan && allEntries.filter { $0.kind == .expense }.count >= 10
+        guard !hasPlan else { return false }
+        let expenses = planningExpenses
+        return expenses.count >= 10 && daysCovered(by: expenses) >= Self.minimumDaysForSuggestion
+    }
+
+    private static let minimumDaysForSuggestion = 14
+    private static let averageMonthLength = 30.44
+
+    /// The spending a plan is measured against — so, not one-offs. A laptop
+    /// marked as never part of the plan shouldn't become a Shopping limit.
+    private var planningExpenses: [Entry] {
+        allEntries.filter { $0.kind == .expense && !$0.belowTheLine }
+    }
+
+    /// Days from the earliest of these entries to today, both ends included.
+    private func daysCovered(by entries: [Entry]) -> Int {
+        guard let first = entries.compactMap({ Fmt.day(from: $0.date) }).min() else { return 0 }
+        return (Calendar.current.dateComponents([.day], from: first, to: Date()).day ?? 0) + 1
     }
 
     /// Limits derived from what the household has actually spent, rather than
@@ -754,31 +830,47 @@ final class AppModel: ObservableObject {
     /// category is its own average monthly spend, rounded up to something
     /// memorable, with a little headroom so the first month isn't a failure by
     /// construction.
+    ///
+    /// Averaged over the time the history actually covers, not the calendar
+    /// months it touches. Counting months treated a household that started on
+    /// the 12th as having a whole month behind it, and proposed limits the size
+    /// of a fortnight's spending — the exact first-month failure the headroom
+    /// is there to prevent.
     func suggestedPlan() -> [String: Double] {
-        let expenses = allEntries.filter { $0.kind == .expense }
+        let expenses = planningExpenses
         guard !expenses.isEmpty else { return Self.defaultCaps }
 
         var byBucket: [String: Double] = [:]
-        var months: Set<String> = []
+        var monthsSeen: [String: Set<String>] = [:]
         for entry in expenses {
             byBucket[entry.bucket, default: 0] += entry.amount
-            months.insert(String(entry.date.prefix(7)))
+            monthsSeen[entry.bucket, default: []].insert(String(entry.date.prefix(7)))
         }
-        let span = Double(max(months.count, 1))
+        // Floored at the fortnight `canSuggestPlan` waits for, so the stretch
+        // from part of a month to a whole one is never more than about double.
+        let covered = Double(max(daysCovered(by: expenses), Self.minimumDaysForSuggestion))
+        let months = covered / Self.averageMonthLength
 
         // Only propose limits for categories that are actually on offer —
         // suggesting one for a category the user has hidden would put a number
         // on the plan with no row anywhere to change it.
         let offerable = Set(expenseCategories.map(\.id))
-        return byBucket
-            .filter { offerable.contains($0.key) }
-            .compactMapValues { total in
-                let monthly = total / span * 1.1        // 10% headroom
-                guard monthly >= 1 else { return nil }
-                // Round to a figure someone would actually say out loud.
-                let step: Double = monthly < 100 ? 10 : (monthly < 500 ? 25 : 50)
-                return (monthly / step).rounded(.up) * step
-            }
+        var plan: [String: Double] = [:]
+        for (bucket, total) in byBucket where offerable.contains(bucket) {
+            // A fixed bill lands once a month whatever day logging began, so it
+            // averages over the months it turned up in. Stretched by days like
+            // everything else, rent logged in someone's first fortnight would
+            // come back as two rents a month.
+            let span = Bucket.named(bucket).cadence == .fixed
+                ? Double(max(monthsSeen[bucket]?.count ?? 1, 1))
+                : months
+            let monthly = total / span * 1.1        // 10% headroom
+            guard monthly >= 1 else { continue }
+            // Round to a figure someone would actually say out loud.
+            let step: Double = monthly < 100 ? 10 : (monthly < 500 ? 25 : 50)
+            plan[bucket] = (monthly / step).rounded(.up) * step
+        }
+        return plan
     }
 
     /// Writes a whole plan at once, for the suggestion flow and onboarding.
@@ -790,11 +882,14 @@ final class AppModel: ObservableObject {
         reload()
     }
 
+    /// `day` is when the money went, which is often not when it's logged —
+    /// last night's dinner, typed in over breakfast. Never later than today:
+    /// every screen treats a future entry as impossible, and counts it anyway.
     func addEntry(place: String, amount: Double, bucket: String,
                   memberID: String, kind: EntryKind = .expense, mood: Mood? = nil,
                   note: String = "", belowTheLine: Bool = false,
-                  isPrivate: Bool = false) {
-        store.addEntry(id: UUID().uuidString, date: today, place: place,
+                  isPrivate: Bool = false, on day: Date = Date()) {
+        store.addEntry(id: UUID().uuidString, date: Fmt.isoDay(min(day, Date())), place: place,
                        amount: amount, bucket: bucket, memberID: memberID,
                        kind: kind, mood: mood, note: note,
                        belowTheLine: belowTheLine, isPrivate: isPrivate)
@@ -802,11 +897,14 @@ final class AppModel: ObservableObject {
         reload()
     }
 
+    /// `day` moves the entry to another date; `nil` leaves it where it was.
     func updateEntry(_ entry: Entry, place: String, amount: Double, bucket: String,
                      memberID: String, kind: EntryKind, mood: Mood?, note: String,
-                     belowTheLine: Bool, isPrivate: Bool) {
+                     belowTheLine: Bool, isPrivate: Bool, on day: Date? = nil) {
         offerUndo(.editedEntry(before: entry), message: "Changes to \(entry.place) saved.")
-        store.updateEntry(id: entry.id, date: entry.date, place: place, amount: amount,
+        store.updateEntry(id: entry.id,
+                          date: day.map { Fmt.isoDay(min($0, Date())) } ?? entry.date,
+                          place: place, amount: amount,
                           bucket: bucket, memberID: memberID, kind: kind, mood: mood,
                           note: note, belowTheLine: belowTheLine, isPrivate: isPrivate)
         Haptics.saved()
@@ -1239,10 +1337,17 @@ final class AppModel: ObservableObject {
 
     /// Everyone *other than this device's owner* who has logged something
     /// today, in household order. Drives the presence line in the log.
+    ///
+    /// Judged by when the entry was made, not the day it's filed under: the
+    /// line says somebody *added* something today, and yesterday's receipts
+    /// typed in this morning are exactly that.
     var othersActiveToday: [Member] {
         let me = store.localMemberID
+        let calendar = Calendar.current
         let active = Set(
-            allEntries.filter { $0.date == today && $0.memberID != me }.map(\.memberID)
+            allEntries
+                .filter { calendar.isDateInToday($0.createdAt) && $0.memberID != me }
+                .map(\.memberID)
         )
         return members.filter { active.contains($0.id) }
     }
@@ -1303,7 +1408,9 @@ final class AppModel: ObservableObject {
         rolloverEnabled = snapshot.rolloverEnabled
         month = Self.digest(snapshot.entries,
                             month: monthKey,
-                            previous: Fmt.isoMonth(Self.month(before: selectedMonth)))
+                            previous: Fmt.isoMonth(Self.month(before: selectedMonth)),
+                            previousThroughDay: isCurrentMonth
+                                ? Calendar.current.component(.day, from: Date()) : nil)
         history = Self.history(snapshot.entries, endingAt: selectedMonth,
                                length: Self.historyLength)
         wins = buildWins(snapshot.entries)
@@ -1406,7 +1513,15 @@ final class AppModel: ObservableObject {
         // oldest first. The live month is excluded: it hasn't finished. Months
         // the household flagged as strange are excluded too — a run of good
         // months shouldn't be ended by the one they moved house in.
-        let closed: [(spent: Double, cap: Double)] = history
+        //
+        // The months leading up to *now*, not up to whichever month is on
+        // screen: `history` ends at the selected month, so browsing back to
+        // March used to judge the run of months ending in March, and "Three in
+        // a row" came and went with the month stepper.
+        let recent = isCurrentMonth
+            ? history
+            : Self.history(entries, endingAt: Date(), length: Self.historyLength)
+        let closed: [(spent: Double, cap: Double)] = recent
             .filter { $0.key < currentKey && !isUnusual($0.key) }
             .map { ($0.spent, store.caps(for: $0.key).values.reduce(0, +)) }
 
@@ -1657,7 +1772,11 @@ final class AppModel: ObservableObject {
         for entry in entries {
             let key = String(entry.date.prefix(7))
             if entry.kind == .income { earned[key, default: 0] += entry.amount }
-            else { spent[key, default: 0] += entry.amount }
+            // One-offs are set aside from every spending figure Home shows, so
+            // the chart beside them leaves them out too — and so do the closed
+            // months the badges judge, which read from here. Otherwise the
+            // month with the laptop in it lost "Under budget" after the fact.
+            else if !entry.belowTheLine { spent[key, default: 0] += entry.amount }
         }
 
         let calendar = Calendar.current
@@ -1673,7 +1792,11 @@ final class AppModel: ObservableObject {
     /// Splits the store's (already sorted) entries into this month and last, and
     /// accumulates every total in a single pass. Income is tallied separately at
     /// every step — it belongs in neither the spending totals nor the charts.
-    private static func digest(_ entries: [Entry], month: String, previous: String) -> MonthDigest {
+    ///
+    /// `previousThroughDay` cuts `previousSpentToDate` off at that day of the
+    /// previous month, for comparing a month that's still in progress.
+    private static func digest(_ entries: [Entry], month: String, previous: String,
+                               previousThroughDay: Int? = nil) -> MonthDigest {
         var digest = MonthDigest()
         digest.entries.reserveCapacity(entries.count)
         var incomeTotals: [String: Double] = [:]
@@ -1716,6 +1839,9 @@ final class AppModel: ObservableObject {
                 // Same exclusion as the current month, or the comparison would
                 // be measuring two different things against each other.
                 digest.previousSpent += entry.amount
+                if let cutoff = previousThroughDay,
+                   let day = Int(entry.date.suffix(2)), day > cutoff { continue }
+                digest.previousSpentToDate += entry.amount
             }
         }
 

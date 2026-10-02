@@ -200,16 +200,19 @@ struct PeopleSheet: View {
 
             Button { showData = true } label: {
                 HStack(spacing: 12) {
-                    Image(systemName: "square.and.arrow.up.on.square")
+                    Image(systemName: "lock.shield.fill")
                         .appFont(15, weight: .semibold)
                         .foregroundStyle(Palette.teal)
                         .frame(width: 34, height: 34)
                         .background(Palette.teal.opacity(0.16),
                                     in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    // Names the lock as well. It lives on the data screen, and
+                    // under a title that only mentioned exporting and deleting,
+                    // nobody looking for a Face ID switch would think to open it.
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Export or delete everything")
+                        Text("Privacy and your data")
                             .appFont(14, weight: .semibold)
-                        Text("It's all on this phone — take a copy, or wipe it.")
+                        Text("Lock with \(AppLock.biometryName), take a copy, or wipe it all.")
                             .appFont(11.5).foregroundStyle(Palette.sub)
                             .fixedSize(horizontal: false, vertical: true)
                             .multilineTextAlignment(.leading)

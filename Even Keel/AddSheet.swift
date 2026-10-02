@@ -17,6 +17,14 @@ struct AddSheet: View {
     @State private var note = ""
     @State private var belowTheLine = false
     @State private var isPrivate = false
+    /// When the money went. Today unless someone says otherwise — and the
+    /// other answer is nearly always "yesterday", so that's one tap as well.
+    /// Every entry used to be filed under the day it was typed in, so last
+    /// night's dinner logged over breakfast landed on the wrong day, in the
+    /// wrong streak, and sometimes in the wrong month.
+    @State private var day = Date()
+    /// Whether the calendar for an earlier day is open.
+    @State private var pickingDay = false
     /// Whether this also becomes a standing item in Repeating.
     @State private var repeats = false
     /// Which day it would post on, defaulting to today's — you're logging it
@@ -53,6 +61,8 @@ struct AddSheet: View {
         let isPrivate: Bool
         /// The day it now repeats on, or `nil` if this was a one-time log.
         let repeatsOn: Int?
+        /// When it was filed under — worth repeating back when it isn't today.
+        let day: Date
     }
 
     /// Adaptive rather than a fixed four, so the labels still fit when Dynamic
@@ -104,6 +114,11 @@ struct AddSheet: View {
             autoCategorize()
         }
         .onChange(of: place) { _, _ in autoCategorize() }
+        // A bill logged on the day it landed repeats on that day, not on the
+        // day it happened to be typed in.
+        .onChange(of: day) { _, new in
+            repeatDay = min(Calendar.current.component(.day, from: new), Recurring.maxDay)
+        }
         // Someone added from the people sheet should be selectable right away;
         // if the selected person was removed, fall back rather than lose the draft.
         .onChange(of: model.members) { _, _ in
@@ -129,6 +144,7 @@ struct AddSheet: View {
         detailsDisclosure
         if showDetails {
             personPicker
+            whenPicker
             categoryPicker
             if kind == .expense { moodPicker }
             noteField
@@ -152,9 +168,16 @@ struct AddSheet: View {
                 Image(systemName: Bucket.named(bucket).symbol)
                     .appFont(10, weight: .semibold)
                     .foregroundStyle(Bucket.named(bucket).color)
-                Text(Bucket.named(bucket).label)
+                Text(Bucket.named(bucket).label).lineLimit(1)
                 Text("·").foregroundStyle(Palette.muted)
-                Text(model.member(memberID).name)
+                Text(model.member(memberID).name).lineLimit(1)
+                Text("·").foregroundStyle(Palette.muted)
+                // Stated every time, so the date is never a hidden setting —
+                // and in the accent once it isn't today, because it stays put
+                // across "Add another" and ought to be noticed doing so.
+                Text(Fmt.shortDayLabel(day))
+                    .lineLimit(1)
+                    .foregroundStyle(isToday ? Palette.sub : tint)
                 Spacer(minLength: 0)
                 Text("Change").foregroundStyle(Palette.teal)
             }
@@ -163,7 +186,76 @@ struct AddSheet: View {
             .padding(.top, 10)
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("Filed under \(Bucket.named(bucket).label) for \(model.member(memberID).name). Change")
+        .accessibilityLabel("Filed under \(Bucket.named(bucket).label) for \(model.member(memberID).name), "
+                          + "\(Fmt.shortDayLabel(day)). Change")
+    }
+
+    private var isToday: Bool { Calendar.current.isDateInToday(day) }
+    private var isYesterday: Bool { Calendar.current.isDateInYesterday(day) }
+
+    /// Today, yesterday, or any earlier day from a calendar. Nothing later:
+    /// every screen in the app treats a future entry as impossible, and would
+    /// count it anyway.
+    private var whenPicker: some View {
+        VStack(spacing: 9) {
+            HStack {
+                Text("When").appFont(12, weight: .semibold)
+                    .foregroundStyle(Palette.sub)
+                Spacer()
+            }
+            HStack(spacing: 8) {
+                dayChip("Today", isSelected: isToday) { pick(Date()) }
+                dayChip("Yesterday", isSelected: isYesterday) {
+                    pick(Calendar.current.date(byAdding: .day, value: -1, to: Date()) ?? Date())
+                }
+                // Lit by the value alone, so exactly one chip is ever lit. The
+                // open calendar underneath is signal enough that it's open.
+                dayChip(isToday || isYesterday ? "Earlier" : Fmt.shortDayLabel(day),
+                        symbol: "calendar",
+                        isSelected: !(isToday || isYesterday)) {
+                    withAppAnimation(.easeInOut(duration: 0.2)) { pickingDay.toggle() }
+                }
+                .accessibilityHint("Opens a calendar")
+            }
+            if pickingDay {
+                DatePicker("Day", selection: $day, in: ...Date(), displayedComponents: .date)
+                    .datePickerStyle(.graphical)
+                    .labelsHidden()
+                    .padding(.horizontal, 6)
+                    .fieldBackground(AnyShapeStyle(Palette.card), radius: 14)
+                    // A day picked is a question answered — close the calendar.
+                    // Paging between months doesn't change the selection, so
+                    // this only fires on an actual pick.
+                    .onChange(of: day) { _, _ in
+                        withAppAnimation(.easeInOut(duration: 0.2)) { pickingDay = false }
+                    }
+            }
+        }
+        .padding(.bottom, 14)
+    }
+
+    private func pick(_ newDay: Date) {
+        day = newDay
+        withAppAnimation(.easeInOut(duration: 0.2)) { pickingDay = false }
+    }
+
+    private func dayChip(_ label: String, symbol: String? = nil, isSelected: Bool,
+                         action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                if let symbol {
+                    Image(systemName: symbol).appFont(11, weight: .semibold)
+                }
+                Text(label).appFont(13, weight: .semibold).lineLimit(1)
+            }
+            .frame(maxWidth: .infinity).padding(9)
+            .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
+            .fieldBackground(isSelected ? AnyShapeStyle(tint.opacity(0.14))
+                                        : AnyShapeStyle(Palette.card),
+                             border: isSelected ? tint : Palette.cardBorder,
+                             radius: 14)
+        }
+        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     /// One tap to log something you log often. Built from the household's own
@@ -324,6 +416,10 @@ struct AddSheet: View {
                         Image(systemName: "repeat").appFont(9, weight: .semibold)
                         Text("Every \(Recurring.ordinal(day))")
                     }
+                    if !Calendar.current.isDateInToday(saved.day) {
+                        Text("·").foregroundStyle(Palette.muted)
+                        Text(Fmt.shortDayLabel(saved.day))
+                    }
                 }
                 .appFont(12, weight: .medium)
                 .foregroundStyle(Palette.sub)
@@ -393,21 +489,43 @@ struct AddSheet: View {
 
     private var amountField: some View {
         VStack(spacing: 6) {
+            // The field sizes to what's in it, so the symbol sits against the
+            // number. It used to be a fixed-width box with its text centred,
+            // which left the symbol stranded a thumb's width from the digits it
+            // belongs to — most of all at "0", the first thing anyone sees.
             HStack(spacing: 2) {
                 Text(kind.sign + Fmt.currencySymbol).mono(14, weight: .regular)
                     .foregroundStyle(Palette.muted)
                 TextField("0", text: $amount)
                     .keyboardType(.decimalPad)
-                    .multilineTextAlignment(.center)
                     .focused($amountFocused)
-                    .appFont(46, weight: .bold, design: .monospaced)
+                    .appFont(amountSize, weight: .bold, design: .monospaced)
                     .foregroundStyle(kind == .income ? Palette.green : Palette.text)
-                    .frame(maxWidth: 220)
+                    .fixedSize()
                     .accessibilityLabel("Amount")
             }
+            .frame(maxWidth: .infinity)
+            // The digits are a small target once the field hugs them, so the
+            // whole row answers a tap.
+            .contentShape(Rectangle())
+            .onTapGesture { amountFocused = true }
             voiceButton
         }
         .padding(.bottom, 6)
+        .onChange(of: amount) { _, new in
+            if new.count > Self.maxAmountLength { amount = String(new.prefix(Self.maxAmountLength)) }
+        }
+    }
+
+    /// Room for anything `Fmt.amount(from:)` accepts — "999999999.99" — and no
+    /// more, since a field that sizes to its text has to stop somewhere.
+    private static let maxAmountLength = 12
+
+    /// Steps the figure down as it grows, so a long amount stays on screen
+    /// rather than running off both edges of a field that sizes to its text.
+    private var amountSize: CGFloat {
+        let digits = CGFloat(max(amount.count, 1))
+        return digits <= 7 ? 46 : max(30, 46 * 7 / digits)
     }
 
     /// Say the amount instead of typing it.
@@ -505,6 +623,9 @@ struct AddSheet: View {
                 addPersonChip
             }
         }
+        // Clear of the "Hide details" toggle above it, which it otherwise
+        // butts right up against.
+        .padding(.top, 14)
         .padding(.bottom, 14)
     }
 
@@ -610,7 +731,7 @@ struct AddSheet: View {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("This repeats every month").appFont(13.5, weight: .semibold)
                     Text(repeats
-                         ? "Logged now, then posts itself on the \(Recurring.ordinal(repeatDay)) of every month from next month on. Change or stop it under Repeating."
+                         ? "Logged now, then posts itself on the \(Recurring.ordinal(repeatDay)) of every month after this one. Change or stop it under Repeating."
                          : "For rent, a subscription or a payday — anything that lands on the same day each month.")
                         .appFont(11.5).foregroundStyle(Palette.sub)
                         .fixedSize(horizontal: false, vertical: true)
@@ -814,6 +935,7 @@ struct AddSheet: View {
         belowTheLine = editing.belowTheLine
         isPrivate = editing.isPrivate
         memberID = editing.memberID
+        day = Fmt.day(from: editing.date) ?? Date()
     }
 
     private func save() {
@@ -826,7 +948,7 @@ struct AddSheet: View {
                               bucket: bucket, memberID: draft.memberID, kind: kind,
                               mood: tag, note: trimmedNote,
                               belowTheLine: kind == .expense && belowTheLine,
-                              isPrivate: isPrivate)
+                              isPrivate: isPrivate, on: day)
             // An edit is one finished job — there's no "another" to offer.
             dismiss()
             return
@@ -835,17 +957,19 @@ struct AddSheet: View {
                        bucket: bucket, memberID: draft.memberID, kind: kind,
                        mood: tag, note: trimmedNote,
                        belowTheLine: kind == .expense && belowTheLine,
-                       isPrivate: isPrivate)
+                       isPrivate: isPrivate, on: day)
         if repeats {
             model.saveRecurring(Recurring(
                 id: UUID().uuidString,
                 place: draft.place, amount: draft.amount,
                 bucket: bucket, memberID: draft.memberID, kind: kind,
                 dayOfMonth: repeatDay, isActive: true,
-                // This month's copy is the entry that was just logged. Leaving
+                // The entry just logged is the copy for its own month. Leaving
                 // this blank would have the item post a duplicate of it the
-                // next time the app opens.
-                lastPostedMonth: Fmt.isoMonth(Date())
+                // next time the app opens — and it's the entry's month, not
+                // this one, so last month's rent logged late still lets this
+                // month's post itself when it's due.
+                lastPostedMonth: Fmt.isoMonth(day)
             ))
         }
         savedCount += 1
@@ -855,7 +979,8 @@ struct AddSheet: View {
                             bucket: Bucket.named(bucket),
                             memberName: model.member(draft.memberID).name,
                             isPrivate: isPrivate,
-                            repeatsOn: repeats ? repeatDay : nil)
+                            repeatsOn: repeats ? repeatDay : nil,
+                            day: day)
         }
     }
 
@@ -865,6 +990,11 @@ struct AddSheet: View {
     /// inherit being hidden from the one before it, and neither should a note.
     /// Repeating resets for the same reason, and more sharply — inheriting it
     /// would quietly set up a standing monthly bill nobody asked for.
+    ///
+    /// The day stays. A run of entries on an earlier day is someone catching up
+    /// on a weekend, and making them re-pick it every time is the tedium that
+    /// ends a catch-up halfway. The summary line names the day before each
+    /// save, in the accent colour whenever it isn't today.
     private func addAnother() {
         pickedCategory = false
         guess = nil
@@ -875,7 +1005,8 @@ struct AddSheet: View {
         belowTheLine = false
         isPrivate = false
         repeats = false
-        repeatDay = Recurring.defaultDay
+        repeatDay = min(Calendar.current.component(.day, from: day), Recurring.maxDay)
+        pickingDay = false
         showDetails = false
         bucket = Bucket.fallback(for: kind).id
         withAppAnimation(.easeOut(duration: 0.2)) { saved = nil }

@@ -61,7 +61,7 @@ struct EmptySpendPrompt: View {
     var body: some View {
         EmptyState(
             symbol: "sparkles",
-            title: model.members.count > 1 ? "Nothing logged yet" : "Let's start with one thing",
+            title: title,
             message: "Add anything you spent today — a coffee counts. "
                    + "Once there are a few, this fills in with where the money actually went.",
             actionTitle: "Add the first one",
@@ -69,5 +69,12 @@ struct EmptySpendPrompt: View {
         )
         .card(border: Palette.cardBorderSoft, radius: 18)
         .padding(.top, 12).padding(.bottom, 4)
+    }
+
+    /// A payday on the 1st is something logged, so "Nothing logged yet" under
+    /// it would be wrong — it's the spending that hasn't started.
+    private var title: String {
+        if !model.month.entries.isEmpty { return "No spending logged yet" }
+        return model.members.count > 1 ? "Nothing logged yet" : "Let's start with one thing"
     }
 }

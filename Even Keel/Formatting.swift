@@ -54,6 +54,7 @@ enum Fmt {
     private static let isoMonthFormatter = fixed("yyyy-MM")
 
     private static let weekdayFormatter = display("EEEE, MMM d")
+    private static let shortDayFormatter = display("MMM d")
     /// Localised medium date — "12 Mar 2027". Built from a style rather than a
     /// pattern because a date this far out is read, not scanned, and the order
     /// of its parts should be the reader's own.
@@ -64,6 +65,7 @@ enum Fmt {
         return f
     }()
     private static let monthYearFormatter = display("LLLL yyyy")
+    private static let shortMonthYearFormatter = display("LLL yyyy")
     private static let monthNameFormatter = display("LLLL")
     private static let shortMonthFormatter = display("LLL")
 
@@ -152,6 +154,16 @@ enum Fmt {
         return Int(min(max(n.rounded(), -1e15), 1e15))
     }
 
+    /// "62%", or "<1%" for a share that rounds to nothing. A share that rounds
+    /// to zero still isn't zero, and "0%" beside a real amount reads as an
+    /// arithmetic bug. The spoken form differs only so VoiceOver doesn't have
+    /// to pronounce the chevron.
+    static func share(_ percent: Double, spoken: Bool = false) -> String {
+        let rounded = whole(percent)
+        guard rounded > 0 else { return spoken ? "under 1%" : "<1%" }
+        return "\(rounded)%"
+    }
+
     /// "1 day" / "25 days".
     ///
     /// SwiftUI's `^[…](inflect: true)` markup only applies when the literal
@@ -177,6 +189,9 @@ enum Fmt {
     /// "July 2026" — screen subtitles.
     static func monthTitle(_ d: Date) -> String { monthYearFormatter.string(from: d) }
 
+    /// "Jul 2026" — the month stepper, where the full name doesn't fit.
+    static func shortMonthTitle(_ d: Date) -> String { shortMonthYearFormatter.string(from: d) }
+
     /// "June" — the comparison month in the home header.
     static func monthName(_ d: Date) -> String { monthNameFormatter.string(from: d) }
 
@@ -188,6 +203,15 @@ enum Fmt {
     static func dayTitle(_ iso: String) -> String {
         guard let day = isoDayFormatter.date(from: iso) else { return iso }
         return dayTitleFormatter.string(from: day)
+    }
+
+    /// "Today" / "Yesterday" / "Jul 20" — short enough for a chip or the end
+    /// of a line, for a day picked rather than stored.
+    static func shortDayLabel(_ day: Date) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(day) { return "Today" }
+        if calendar.isDateInYesterday(day) { return "Yesterday" }
+        return shortDayFormatter.string(from: day)
     }
 
     /// "Today" / "Yesterday" / "Monday, Jul 20" for a stored day key.

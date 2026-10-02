@@ -14,6 +14,8 @@ struct LogView: View {
     /// put March's dinners under a July heading with no explanation.
     @State private var allMonths = false
     @FocusState private var searching: Bool
+    /// Narrowest a person chip may be. Scaled with its own label's text style.
+    @ScaledMetric(relativeTo: .caption) private var personChipWidth: CGFloat = 96
 
     /// One day's entries with its running totals, kept apart by direction so a
     /// day's spending isn't quietly netted against a paycheque.
@@ -39,11 +41,7 @@ struct LogView: View {
     var body: some View {
         let entries = filtered(model.search(query, monthOnly: !searchesEverything))
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Daily log").appFont(22, weight: .bold)
-                Spacer()
-                MonthStepper()
-            }
+            ScreenHeader(title: "Daily log")
             countLine(entries.count)
                 .padding(.top, 2).padding(.bottom, 14)
 
@@ -254,8 +252,11 @@ struct LogView: View {
                 kindChip(nil, label: "All")
                 ForEach(EntryKind.allCases, id: \.self) { kindChip($0, label: $0.label) }
             }
-            // People wrap rather than scroll, so nobody hides off-screen.
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 96), spacing: 8)], spacing: 8) {
+            // People wrap rather than scroll, so nobody hides off-screen — and
+            // the columns widen with the text, so a name isn't cut to
+            // "Everyo…" to keep three to a row.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: personChipWidth), spacing: 8)],
+                      spacing: 8) {
                 personChip(nil, label: "Everyone")
                 ForEach(model.members) { personChip($0.id, label: $0.name, color: $0.color) }
             }

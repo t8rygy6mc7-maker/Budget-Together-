@@ -24,7 +24,7 @@ struct HomeView: View {
                 Spacer()
                 Button { showPeople = true } label: { avatarStack }
                     .accessibilityLabel("^[\(model.members.count) person](inflect: true) on this budget")
-                    .accessibilityHint("Opens people")
+                    .accessibilityHint("Opens people and settings")
             }
             .padding(.bottom, 18)
 
@@ -53,19 +53,31 @@ struct HomeView: View {
     /// a verdict, delivered before any context, in the position the eye lands
     /// first. The arithmetic hasn't changed and it's all still below; it just
     /// isn't the greeting any more.
+    /// Whether Home is showing the fun money rather than the whole plan.
+    private var showsFunMoney: Bool { model.isSimplified && model.hasPlan }
+
     private var summaryLine: some View {
+        // In the simplified view the sentence has to be about the same money
+        // as the number under it. Quoting the whole plan there put "$1,178
+        // left" above "Free to spend $646", and a weekly figure bigger than
+        // everything the screen said was free for the rest of the month.
+        //
+        // A closed month keeps the whole figure: its sentence is "$N went out
+        // in total", and in total means everything.
+        let fun = showsFunMoney && model.isCurrentMonth
         let summary = Copy.summary(
             hasPlan: model.hasPlan,
-            left: model.left,
+            left: fun ? model.funLeft : model.left,
             daysLeft: model.daysLeft,
-            spent: model.spent,
-            projected: model.forecast.projected,
-            plan: model.plannedTotal,
+            spent: fun ? model.funSpent : model.spent,
+            projected: fun ? model.funProjected : model.forecast.projected,
+            plan: fun ? model.funMoney : model.plannedTotal,
             entryCount: model.month.entries.count,
             isCurrentMonth: model.isCurrentMonth,
             isUnusualMonth: model.isSelectedMonthUnusual,
             name: model.me?.name
         )
+        let leftForWeek = fun ? model.funLeft : model.left
         return VStack(alignment: .leading, spacing: 3) {
             Text(summary.headline)
                 .appFont(19, weight: .bold)
@@ -76,8 +88,10 @@ struct HomeView: View {
                 .foregroundStyle(summary.needsAttention ? Palette.overText : Palette.sub)
                 .fixedSize(horizontal: false, vertical: true)
 
-            if model.hasPlan, model.left > 0, model.weeklyFramingIsUseful {
-                weeklyLine.padding(.top, 7)
+            if model.hasPlan, leftForWeek > 0, model.weeklyFramingIsUseful {
+                weeklyLine(allowance: fun ? model.funWeeklyAllowance : model.weeklyAllowance,
+                           spent: model.spentThisWeek(discretionaryOnly: fun))
+                    .padding(.top, 7)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -87,13 +101,12 @@ struct HomeView: View {
     /// The same allowance in the unit people actually think in. "$840 over 19
     /// days" is arithmetic; "about $180 between now and Sunday" is a decision
     /// you can make at a till.
-    private var weeklyLine: some View {
+    private func weeklyLine(allowance: Double, spent: Double) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "calendar.day.timeline.left")
                 .appFont(10, weight: .semibold)
-            Text("About \(Fmt.money(model.weeklyAllowance)) to see out the week"
-               + (model.spentThisWeek > 0
-                  ? " — \(Fmt.money(model.spentThisWeek)) gone so far" : ""))
+            Text("About \(Fmt.money(allowance)) to see out the week"
+               + (spent > 0 ? " — \(Fmt.money(spent)) gone so far" : ""))
                 .appFont(11.5, weight: .medium)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
@@ -272,7 +285,10 @@ struct HomeView: View {
     /// handled rather than itemised, which is the entire point of the mode.
     private var simplified: some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("Free to spend").appFont(13, weight: .medium)
+            // Nothing in a finished month is free to spend any more; what the
+            // same figure means by then is what went unspent.
+            Text(model.isCurrentMonth ? "Free to spend" : "Left over in \(model.monthTitle)")
+                .appFont(13, weight: .medium)
                 .foregroundStyle(Palette.sub)
             Text(Fmt.money(max(0, model.funLeft)))
                 .mono(52, weight: .semibold)
@@ -288,12 +304,17 @@ struct HomeView: View {
                 .foregroundStyle(Palette.sub)
                 .padding(.bottom, 20)
 
-            StatRow([
-                Stat(title: model.isCurrentMonth ? "A day from here" : "Per day",
-                     value: Fmt.money(model.funDaily), color: Palette.teal),
-                Stat(title: "Days left", value: "\(model.daysLeft)"),
-            ])
-            .padding(.bottom, 12)
+            // Live month only, as in the full view. On a closed one this said
+            // "Days left 9" about January, and a per-day figure that divided
+            // January's leftovers by the days left in September.
+            if model.isCurrentMonth {
+                StatRow([
+                    Stat(title: "A day from here",
+                         value: Fmt.money(model.funDaily), color: Palette.teal),
+                    Stat(title: "Days left", value: "\(model.daysLeft)"),
+                ])
+                .padding(.bottom, 12)
+            }
 
             HStack(spacing: 12) {
                 Image(systemName: "checkmark.circle.fill")
@@ -402,6 +423,12 @@ struct HomeView: View {
                     }
                     .foregroundStyle(change.isDown ? Palette.teal : Palette.over)
                     .padding(.bottom, 6)
+                    // The badge is short to sit beside the total; the spoken
+                    // form can afford to say what it's actually comparing.
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(change.percent)% \(change.isDown ? "less" : "more") than "
+                        + (model.isCurrentMonth ? "by this point in \(model.previousMonthName)"
+                                                : model.previousMonthName))
                 }
             }
 
@@ -493,10 +520,16 @@ struct HomeView: View {
                     .background(model.wins.streak > 0 ? Palette.teal.opacity(0.16) : Palette.chip,
                                 in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                 VStack(alignment: .leading, spacing: 2) {
+                    // Two lines, not one. "…daily allowance — one slip
+                    // forgiven" doesn't fit one at the default size, and at one
+                    // line the part cut off was the forgiveness, which is the
+                    // part that explains the number.
                     Text(Copy.streakLine(days: model.wins.streak,
-                                         graceUsed: model.wins.graceUsed))
+                                         graceUsed: model.wins.graceUsed,
+                                         hasPlan: model.hasPlan))
                         .appFont(13, weight: .semibold)
-                        .lineLimit(1)
+                        .lineLimit(2)
+                        .multilineTextAlignment(.leading)
                     Text(model.wins.headline.map { "Latest badge: \($0.title)" }
                          ?? "^[\(model.wins.badges.count) badge](inflect: true) to earn")
                         .appFont(11.5).foregroundStyle(Palette.sub)
@@ -586,7 +619,11 @@ struct SpendBreakdown: View {
     var body: some View {
         let items = model.month.ranked
         if items.isEmpty {
-            EmptySpendPrompt()
+            // Only the live month gets the invitation. On a closed one it said
+            // "add anything you spent today" under "That month is done", and
+            // its button filed the entry under today, not under the month on
+            // screen. The sentence above already says there's nothing here.
+            if model.isCurrentMonth { EmptySpendPrompt() }
         } else {
             VStack(alignment: .leading, spacing: 0) {
                 // `spent` and `ranked` are accumulated in the same pass over
@@ -628,7 +665,7 @@ struct SpendBreakdown: View {
             model.reveal(.stats)
         } label: {
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 10) {
+                AdaptiveRow {
                     Image(systemName: symbol)
                         .appFont(12, weight: .semibold)
                         .foregroundStyle(color)
@@ -636,12 +673,12 @@ struct SpendBreakdown: View {
                         .background(tint,
                                     in: RoundedRectangle(cornerRadius: 9, style: .continuous))
                     Text(label).appFont(13, weight: .semibold).lineLimit(1)
-                    Spacer(minLength: 4)
+                } figures: {
                     Text(Fmt.money(amount)).mono(13)
-                    Text(shareLabel(share))
+                    Text(Fmt.share(share))
                         .appFont(11.5, weight: .medium)
                         .foregroundStyle(Palette.sub)
-                        .frame(width: 38, alignment: .trailing)
+                        .figureColumn(width: 38)
                 }
                 // Floored, like the trend chart's columns: a $5 category next
                 // to a $1,200 one draws about a pixel of bar, and a row with
@@ -652,17 +689,8 @@ struct SpendBreakdown: View {
         .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(label), \(Fmt.money(amount)), "
-                          + "\(shareLabel(share, spoken: true)) of spending")
+                          + "\(Fmt.share(share, spoken: true)) of spending")
         .accessibilityHint("Opens the spending charts")
-    }
-
-    /// A share that rounds to zero still isn't zero, and "0%" beside a real
-    /// amount reads as an arithmetic bug. The spoken form differs only so
-    /// VoiceOver doesn't have to pronounce the chevron.
-    private func shareLabel(_ share: Double, spoken: Bool = false) -> String {
-        let whole = Fmt.whole(share)
-        guard whole > 0 else { return spoken ? "under 1%" : "<1%" }
-        return "\(whole)%"
     }
 
     /// The way into the full breakdown. Every row above goes to the same place;

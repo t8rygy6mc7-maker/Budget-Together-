@@ -533,6 +533,78 @@ no such figure — "more than the $0 free to spend" is a verdict on somebody who
 has simply not filled anything in yet. The Goals sheet's own line is ungated,
 because what a monthly figure *means* is true with or without a plan.
 
+*Added 22 September 2026 — a review pass against the running app.* Most of it
+was the same finding in different places: a figure computed one way on one
+screen and another way beside it.
+
+- **Entries have a day.** Every entry used to be filed under the day it was
+  typed in, so last night's dinner logged over breakfast landed on the wrong
+  day, in the wrong streak, and at month end in the wrong month. The add sheet's
+  details now open with Today / Yesterday / Earlier (a calendar that stops at
+  today), and the folded summary line always names the day — in the accent
+  colour when it isn't today, because the day deliberately survives "Add
+  another": catching up on a weekend is a run of entries on one earlier day.
+  Knock-on decisions: the presence line judges "added something today" by
+  `createdAt`, not by the day filed under; a repeating item logged late takes
+  the *entry's* month as `lastPostedMonth`, so last month's rent entered now
+  still lets this month's post itself.
+- **`daysLeft` counts today.** It counted from tomorrow, which made the 29th and
+  the 30th both "1 day to go" and overstated the weekly figure by a day's worth
+  (a tomorrow-onward daily allowance times a today-onward count of days). Ask
+  already counted today. The early-month guard in `Copy.summary` moved from 24
+  to 25 to keep the same five quiet days.
+- **"vs last month" is like for like.** A month in progress is compared with the
+  previous month *up to the same day* (`previousSpentToDate`), and not at all
+  for its first four days. Against last month's whole total, every month read
+  as a steep drop, in the encouraging colour, until its final week.
+  `previousSpent` stays whole, because the rollover needs the finished month.
+- **One-offs are out of every spending figure, not most of them.** The trend
+  chart, the closed months the badges judge (which read from the chart's
+  history, so the month with the laptop lost "Under budget" after the fact),
+  "gone so far this week", suggested limits, and Ask's answers all counted them
+  while Home didn't.
+- **Suggested limits are averaged over time, not calendar months.** A household
+  that started on the 12th counted as having a month behind it and was offered
+  limits the size of a fortnight's spending — the first-month failure the 10%
+  headroom exists to prevent. Variable categories now divide by days covered;
+  fixed ones by the months they appeared in (rent logged in someone's first
+  fortnight shouldn't come back as two rents a month); and `canSuggestPlan`
+  waits for fourteen days as well as ten entries, which is what the copy has
+  always promised.
+- **Wins describe the live month from every month.** `dailyAllowance` read the
+  *selected* month's plan and length, and the closed months came from a history
+  ending at the selected month, so stepping back to March changed the streak
+  and made "Three in a row" come and go.
+- **No plan, no pretend plan.** Budget without limits drew "Planned total $0",
+  a full bar and "$0 left"; each unlimited category drew a full bar too. It now
+  shows what's been spent and nothing to measure it against, and bars appear
+  only where there's a limit for them to be a share of. The streak copy stopped
+  inviting people to "stay under $0 today", and Home's no-plan sentence stopped
+  restating the total printed directly beneath it.
+- **The simplified view talks about the fun money throughout.** Its sentence
+  and weekly line quoted the whole plan — "$1,178 left" over "Free to spend
+  $646", and a week's allowance larger than everything the screen said was free
+  for the month. On a closed month it no longer shows days left.
+- **Budget leads with the limits.** They sat under five cards of settings and
+  side-ledgers, so the thing the header tells you to tap was the thing you had
+  to scroll to. Repeating, goals, debts, rollover and "was this month strange"
+  now follow the categories; rollover is hidden without a plan to roll over.
+- **A Budget bar keeps its category's colour past the limit.** It turned
+  `Palette.over` — the exact coral of Housing — which broke §1's rule and made
+  an overspent Fun bar read as Housing. Past the limit is now an icon and the
+  words, and the accessibility statement, which had described the §1 design (cap
+  marker, overage tail, an amber drift state) as shipped, now describes what
+  actually is. The marker and tail are still the plan; see the order of work.
+- **The accessibility sizes, checked on screen.** Rows pairing a name with
+  figures broke the name mid-word ("Housi" / "ng") and wrapped fixed-width share
+  columns ("62" over "%"); log entries truncated to "Par…"; the month stepper
+  broke "Septemb" / "er". `AdaptiveRow` (`Comfort.swift`) puts the figures on
+  their own line past `prefersStackedLayout`, `figureColumn` lets a share column
+  grow instead of wrapping, log rows drop their controls under the text, and the
+  stepper falls back to "Sep 2026". The tab bar also gained a minimum height: at
+  the *smallest* sizes it was shorter than the add button, sat centred in the
+  taller box, and let the list show through beneath it.
+
 ### Mechanics that shipped undocumented
 
 Most of these are one idea: **a budget you've broken should offer you a move, not
@@ -661,6 +733,19 @@ Two further changes landed immediately after the pass and belong here too:
   presence made the log feel shared; none of them answer "we each put in $X, so
   who owes whom". `SplitBar` still reports proportions of spending, not balance.
   This is the last structurally missing piece of the differentiator.
+- **Fixed bills break the streak.** Noted 22 September 2026. The streak compares
+  each day's *total* spending with the whole plan spread evenly, so the day rent
+  lands is always over the allowance and uses up the forgiven day, every month.
+  It's §2's fixed-vs-variable problem again. The obvious fix — variable spending
+  against a variable-only allowance — is honest but much harder to keep (the
+  sample household's 20-day streak becomes 7, because a normal grocery run
+  outspends a day's fun money). A cumulative "days on pace" run would be
+  smoother. Either changes what the streak means, so it's a decision rather than
+  a fix.
+- **No way from a category to its entries.** Home's rows open Stats and Stats'
+  rows open nothing, so "where did the $400 of Food go" is answered by typing
+  "Food" into the log's search, which also matches places and notes containing
+  the word. A category filter in the log, reachable from both, would close it.
 
 ## 6. The app icon
 
@@ -748,6 +833,8 @@ becomes a question; not worth doing on its own.
    §4c leaves `muted` sitting exactly on that floor, so it can't absorb a nudge.
 3. Add `cadence` to `Bucket` and the `PaceState` computation to `AppModel`.
 4. Rebuild the Budget row with cap marker, overage tail, and status line.
+   Partly done 22 September 2026: the fill no longer turns to `over`, and past
+   the limit carries an icon and words. Marker and tail still to build.
 5. Rebuild Home to lead with pace and safe-to-spend; move bubbles to Stats.
 6. Replace the donut with the sorted stacked bar.
 7. Then the pace line chart, once the fixed vs variable question is settled.

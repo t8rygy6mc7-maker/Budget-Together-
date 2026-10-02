@@ -76,14 +76,21 @@ struct RuleQueryEngine: QueryEngine {
 
     // MARK: Answers
 
+    /// One-offs are counted apart, the way Home counts them: left in, a total
+    /// here disagreed with "Spent this month" on the screen underneath it.
+    /// They're still named, because leaving money out without saying so is
+    /// how an answer starts disagreeing with somebody's bank balance instead.
     private func spentAnswer(_ subject: Subject?, scoped: [Entry],
                              timeframe: Timeframe) -> QueryAnswer {
-        let matched = filter(scoped, by: subject).filter { $0.kind == .expense }
+        let expenses = filter(scoped, by: subject).filter { $0.kind == .expense }
+        let matched = expenses.filter { !$0.belowTheLine }
         let total = matched.reduce(0) { $0 + $1.amount }
+        let oneOffs = expenses.filter(\.belowTheLine).reduce(0) { $0 + $1.amount }
         let what = subject?.label ?? "everything"
         return QueryAnswer(
             headline: Fmt.money2(total),
-            detail: "on \(what) \(timeframe.label), across \(Fmt.count(matched.count, "entry", plural: "entries")).",
+            detail: "on \(what) \(timeframe.label), across \(Fmt.count(matched.count, "entry", plural: "entries"))"
+                  + (oneOffs > 0 ? ", plus \(Fmt.money2(oneOffs)) in one-offs set aside." : "."),
             entries: matched
         )
     }
@@ -91,7 +98,9 @@ struct RuleQueryEngine: QueryEngine {
     private func remainingAnswer(_ subject: Subject?, scoped: [Entry],
                                  context: QueryContext, timeframe: Timeframe) -> QueryAnswer {
         // Caps are monthly, so a weekly question gets a weekly slice of one.
-        let monthEntries = entries(in: .thisMonth, from: context)
+        // One-offs never count against a limit anywhere else in the app, so
+        // they don't here either.
+        let monthEntries = entries(in: .thisMonth, from: context).filter { !$0.belowTheLine }
 
         guard case let .bucket(bucket)? = subject else {
             if case let .keyword(word)? = subject {

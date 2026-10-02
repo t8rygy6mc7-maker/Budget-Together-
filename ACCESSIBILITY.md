@@ -1,7 +1,7 @@
 # Accessibility Statement for Even Keel
 
 **Effective date:** August 5, 2026
-**Last updated:** August 5, 2026
+**Last updated:** September 22, 2026
 
 ## The short version
 
@@ -33,10 +33,19 @@ result is that the layout keeps its hierarchy as you turn text up, instead of
 collapsing into one uniform size.
 
 Where a layout genuinely cannot survive the largest sizes, it changes shape
-rather than truncating. The three-figure summary rows on Home ("Budget left /
-Safe daily / Days left") stop sitting side by side and stack into a list once
-you reach the accessibility sizes. Nothing is dropped and nothing is cut off;
-only the direction changes.
+rather than truncating. Once you reach the accessibility sizes:
+
+- The figure rows on Home ("Left to spend / A day from here / Days left") stop
+  sitting side by side and stack into a list.
+- Rows that pair a name with figures — the category breakdown, every limit on
+  Budget, the charts' legends — put the figures on a line of their own under the
+  name, instead of squeezing the name until it breaks mid-word.
+- Each entry in the log moves its amount and its buttons onto a line beneath the
+  place and category.
+- The month switcher moves under the screen's title, and shortens "September
+  2026" to "Sep 2026" where the full name won't fit.
+
+Nothing is dropped; only the direction changes.
 
 Money amounts are the one exception to wrapping: an amount is held to a single
 line and shrinks to fit if it has to. This is deliberate. "$1,965" broken after
@@ -55,8 +64,8 @@ screen background — cards are the lighter surface, so they are the ones that
 squeeze light text, and a colour checked only against the screen has been
 checked against the easy case.
 
-The two status colours are measured too: the amber used for "ahead of pace"
-reaches 7.89:1 on cards, and the red used for "over" reaches 4.74:1.
+The colour used for "past the limit" is measured too: 8.48:1 on cards in the
+dark scheme and 10.89:1 in the light one.
 
 **One documented exception.** The app's dimmest grey measures 4.17:1 on the
 chip surface, below the threshold. Every remaining use of it there is an
@@ -76,9 +85,8 @@ Status is carried separately, and always by more than one channel at once:
 
 | State | How you can tell |
 | --- | --- |
-| On pace | No marker, no icon, no message. The absence of alarm is the signal. |
-| Drifting | An icon **and** the words "N% ahead of pace" |
-| Over | A tail past the cap marker **and** an icon **and** "Over by $N" |
+| Inside the limit | The words "$N left", with no icon and no alarm. The absence of alarm is the signal. |
+| Past the limit | An icon **and** the words "$N past the limit", and a button offering to move money over |
 
 So if you cannot distinguish the colours, or cannot see them at all, you have
 not lost any information about whether your budget is in trouble. The words say

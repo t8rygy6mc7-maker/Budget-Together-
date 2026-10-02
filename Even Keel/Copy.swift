@@ -65,7 +65,8 @@ enum Copy {
             return Summary(
                 headline: "That month is done.",
                 detail: spent > 0 ? "\(Fmt.money(spent)) went out in total."
-                                  : "Nothing was logged.",
+                    : entryCount > 0 ? "No spending was logged in it."
+                    : "Nothing was logged.",
                 needsAttention: false
             )
         }
@@ -89,19 +90,25 @@ enum Copy {
         // Without limits there's nothing to be over or under, so the app
         // reports rather than judges. This is the normal state for a new
         // household now, not an error to nag about.
+        //
+        // It doesn't restate the total, though: the month's total is the very
+        // next thing on the screen, in type twice this size, and a sentence
+        // that repeats it reads as a template showing through.
         guard hasPlan else {
             return Summary(
-                headline: "\(Fmt.money(spent)) so far this month.",
-                detail: "No limits set — just keeping track for now.",
+                headline: "Just keeping track for now.",
+                detail: "\(Fmt.count(entryCount, "entry", plural: "entries")) this month, "
+                      + "and no limits set — so nothing to be over or under.",
                 needsAttention: false
             )
         }
 
         // Too little of the month gone, or too little logged, for a projection
         // to mean anything. Saying "on track" here would be a guess wearing a
-        // confident voice.
+        // confident voice. (`daysLeft` counts today, so 25 is the first five
+        // days of a thirty-day month.)
         let elapsed = plan > 0 ? spent / plan : 0
-        if daysLeft > 24 || elapsed < 0.05 {
+        if daysLeft > 25 || elapsed < 0.05 {
             return Summary(
                 headline: "\(you.isEmpty ? "Off" : you + "off") to a quiet start.",
                 detail: "\(Fmt.money(spent)) so far. Too early to call it either way.",
@@ -165,12 +172,17 @@ enum Copy {
 
     // MARK: Streaks
 
-    static func streakLine(days: Int, graceUsed: Bool) -> String {
+    /// A streak is days inside the daily allowance, and the allowance is the
+    /// plan spread across the month — so with no plan there's no streak to
+    /// start, and "Start a streak today" was an invitation the app couldn't
+    /// honour.
+    static func streakLine(days: Int, graceUsed: Bool, hasPlan: Bool) -> String {
+        guard hasPlan else { return "Streaks start once there's a plan" }
         switch days {
-        case 0:  "Start a streak today"
-        case 1:  "One day inside your daily allowance"
-        default: "\(days) days inside your daily allowance"
-                 + (graceUsed ? " — one slip forgiven" : "")
+        case 0:  return "Start a streak today"
+        case 1:  return "One day inside your daily allowance"
+        default: return "\(days) days inside your daily allowance"
+                      + (graceUsed ? " — one slip forgiven" : "")
         }
     }
 

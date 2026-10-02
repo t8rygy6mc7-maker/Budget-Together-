@@ -110,6 +110,58 @@ struct StatRow: View {
     }
 }
 
+// MARK: - Name-and-figures row
+
+/// A name on the left and figures on the right — the shape of most rows in the
+/// app — or, past the accessibility sizes, the figures on a line of their own
+/// under the name.
+///
+/// Side by side at those sizes, the figures won and the name lost: "Housing"
+/// broke into "Housi" and "ng", and a share column 38pt wide wrapped "62%"
+/// into "62" over "%". Same rule as `StatRow`: nothing dropped, only the axis
+/// changes.
+struct AdaptiveRow<Name: View, Figures: View>: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
+    var spacing: CGFloat = 10
+    @ViewBuilder var name: Name
+    @ViewBuilder var figures: Figures
+
+    var body: some View {
+        if typeSize.prefersStackedLayout {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: spacing) { name }
+                HStack(spacing: spacing) {
+                    Spacer(minLength: 0)
+                    figures
+                }
+            }
+        } else {
+            HStack(spacing: spacing) {
+                name
+                Spacer(minLength: 4)
+                // First claim on the width. Nested in their own stack, the
+                // figures were being offered an even share with the name and
+                // the spacer, and gave way from the cheapest end — the currency
+                // symbol in front of a limit box shrank to nothing. A name can
+                // truncate; a figure can't.
+                HStack(spacing: spacing) { figures }
+                    .layoutPriority(1)
+            }
+        }
+    }
+}
+
+extension View {
+    /// A right-aligned column of short figures — shares, counts — that keeps its
+    /// width at the default sizes so the rows line up, and grows past it rather
+    /// than wrapping when the text does.
+    func figureColumn(width: CGFloat) -> some View {
+        lineLimit(1)
+            .fixedSize()
+            .frame(minWidth: width, alignment: .trailing)
+    }
+}
+
 // MARK: - Motion
 
 // Reduce Motion asks for less *movement*, not for less of everything. Apple's

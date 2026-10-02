@@ -9,12 +9,8 @@ struct StatsView: View {
         let people = model.memberTotals
 
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                Text("Stats").appFont(22, weight: .bold)
-                Spacer()
-                MonthStepper()
-            }
-            .padding(.bottom, 16)
+            ScreenHeader(title: "Stats")
+                .padding(.bottom, 16)
 
             if items.isEmpty {
                 EmptyState(
@@ -43,25 +39,29 @@ struct StatsView: View {
 
             DonutChart(items: items, total: spent)
 
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Who spent what").appFont(13, weight: .semibold)
-                SplitBar(shares: people).frame(height: 14)
-                // One row per person: with more than two, a single line of
-                // legends runs out of width and the shares stop comparing.
-                VStack(spacing: 9) {
-                    ForEach(people) { person in
-                        legend(person, share: spent > 0 ? person.total / spent * 100 : 0)
+            // Only when there's a split to show. For a budget of one this was
+            // a bar in a single colour over "You — 100%".
+            if people.count > 1 {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Who spent what").appFont(13, weight: .semibold)
+                    SplitBar(shares: people).frame(height: 14)
+                    // One row per person: with more than two, a single line of
+                    // legends runs out of width and the shares stop comparing.
+                    VStack(spacing: 9) {
+                        ForEach(people) { person in
+                            legend(person, share: spent > 0 ? person.total / spent * 100 : 0)
+                        }
                     }
                 }
+                .padding(.horizontal, 17).padding(.vertical, 16)
+                .card()
+                .padding(.top, 18)
             }
-            .padding(.horizontal, 17).padding(.vertical, 16)
-            .card()
-            .padding(.vertical, 18)
 
             MoodCard(totals: model.month.byMood,
                      tagged: model.month.moodTagged,
                      spent: spent)
-                .padding(.bottom, 18)
+                .padding(.vertical, 18)
 
             if !model.month.incomeRanked.isEmpty {
                 VStack(alignment: .leading, spacing: 11) {
@@ -95,35 +95,43 @@ struct StatsView: View {
                 ForEach(items) { item in
                     let pct = item.total / max(spent, 1) * 100
                     VStack(spacing: 6) {
-                        HStack(spacing: 9) {
+                        AdaptiveRow(spacing: 9) {
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(item.bucket.color).frame(width: 9, height: 9)
                             Text(item.bucket.label).appFont(13, weight: .medium)
-                            Spacer(minLength: 4)
+                        } figures: {
                             Text(Fmt.money(item.total)).mono(13)
-                            Text("\(Fmt.whole(pct))%")
+                            Text(Fmt.share(pct))
                                 .appFont(11.5).foregroundStyle(Palette.sub)
-                                .frame(width: 38, alignment: .trailing)
+                                .figureColumn(width: 38)
                         }
-                        ProgressBar(pct: pct, fill: item.bucket.color, height: 7)
+                        // Floored like Home's rows, so a small category still
+                        // shows a mark beside its amount.
+                        ProgressBar(pct: max(pct, 1.5), fill: item.bucket.color, height: 7)
                     }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(item.bucket.label), \(Fmt.money(item.total)), "
+                                      + "\(Fmt.share(pct, spoken: true)) of spending")
                 }
             }
         }
     }
 
     private func legend(_ person: MemberTotal, share: Double) -> some View {
-        HStack(spacing: 7) {
+        AdaptiveRow(spacing: 7) {
             Circle().fill(person.member.color).frame(width: 9, height: 9)
             Text(person.member.name)
                 .appFont(12.5, weight: .semibold)
                 .lineLimit(1)
-            Spacer(minLength: 4)
+        } figures: {
             Text(Fmt.money(person.total)).mono(12.5)
-            Text("\(Fmt.whole(share))%")
+            Text(Fmt.share(share))
                 .appFont(11.5).foregroundStyle(Palette.sub)
-                .frame(width: 38, alignment: .trailing)
+                .figureColumn(width: 38)
         }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(person.member.name), \(Fmt.money(person.total)), "
+                          + "\(Fmt.share(share, spoken: true)) of spending")
     }
 }
 
@@ -186,7 +194,7 @@ struct MoodCard: View {
 
                 ForEach(totals) { item in
                     VStack(spacing: 6) {
-                        HStack(spacing: 9) {
+                        AdaptiveRow(spacing: 9) {
                             Image(systemName: item.mood.symbol)
                                 .appFont(11, weight: .semibold)
                                 .foregroundStyle(item.mood.color)
@@ -194,11 +202,11 @@ struct MoodCard: View {
                                 .background(item.mood.color.opacity(0.16),
                                             in: RoundedRectangle(cornerRadius: 7, style: .continuous))
                             Text(item.mood.label).appFont(13, weight: .medium)
-                            Spacer(minLength: 4)
+                        } figures: {
                             Text(Fmt.money(item.total)).mono(13)
                             Text("^[\(item.count) buy](inflect: true)")
                                 .appFont(11).foregroundStyle(Palette.sub)
-                                .frame(width: 56, alignment: .trailing)
+                                .figureColumn(width: 56)
                         }
                         ProgressBar(pct: item.total / max(tagged, 1) * 100,
                                     fill: item.mood.color, height: 6)
@@ -226,6 +234,7 @@ struct MoodCard: View {
 /// Spending per month with an income marker, so a month reads in context
 /// instead of in isolation. The selected month is the last bar.
 struct TrendChart: View {
+    @Environment(\.dynamicTypeSize) private var typeSize
     let points: [MonthPoint]
 
     private static let height: CGFloat = 96
@@ -234,12 +243,22 @@ struct TrendChart: View {
         let peak = points.map { max($0.spent, $0.earned) }.max() ?? 0
 
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
+            // The key moves under the title at the accessibility sizes, where
+            // the three of them on one line wrapped "Income" into "Incom" / "e".
+            if typeSize.prefersStackedLayout {
                 Text("Last \(points.count) months").appFont(13, weight: .semibold)
-                Spacer()
                 HStack(spacing: 12) {
                     key(Palette.teal, "Spent")
                     key(Palette.green, "Income")
+                }
+            } else {
+                HStack {
+                    Text("Last \(points.count) months").appFont(13, weight: .semibold)
+                    Spacer()
+                    HStack(spacing: 12) {
+                        key(Palette.teal, "Spent")
+                        key(Palette.green, "Income")
+                    }
                 }
             }
 
@@ -331,6 +350,9 @@ struct DonutChart: View {
                 Text("Total").appFont(11, weight: .medium).foregroundStyle(Palette.sub)
                 Text(Fmt.money(total)).mono(22)
             }
+            // Kept inside the hole. The ring doesn't grow with the text, so at
+            // the larger sizes the total used to run out across the slices.
+            .frame(maxWidth: Self.holeDiameter - 14)
         }
         .frame(maxWidth: .infinity)
         .accessibilityElement(children: .ignore)

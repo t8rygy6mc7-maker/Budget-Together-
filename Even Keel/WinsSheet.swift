@@ -15,7 +15,8 @@ struct WinsSheet: View {
             VStack(alignment: .leading, spacing: 0) {
                 header
 
-                StreakCard(streak: wins.streak, allowance: model.dailyAllowance)
+                StreakCard(streak: wins.streak, allowance: model.dailyAllowance,
+                           hasPlan: model.hasPlan)
                     .padding(.bottom, 8)
 
                 if wins.monthsUnderBudget > 0 {
@@ -99,6 +100,20 @@ struct WinsSheet: View {
 struct StreakCard: View {
     let streak: Int
     let allowance: Double
+    let hasPlan: Bool
+
+    /// Without a plan the allowance is $0, and this used to say "Stay under $0
+    /// today to start one" — the verdict `hasPlan` exists to keep off screens,
+    /// and an instruction nobody can follow, since the streak needs an
+    /// allowance above zero to count anything at all.
+    private var detail: String {
+        guard hasPlan else {
+            return "A streak counts days spent inside your daily allowance. Set some limits and there'll be one to stay inside."
+        }
+        return streak > 0
+            ? "Inside \(Fmt.money(allowance)) a day."
+            : "Stay under \(Fmt.money(allowance)) today to start one."
+    }
 
     var body: some View {
         HStack(spacing: 14) {
@@ -114,9 +129,7 @@ struct StreakCard: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(streak > 0 ? "^[\(streak) day](inflect: true) in a row" : "No streak yet")
                     .appFont(16, weight: .bold)
-                Text(streak > 0
-                     ? "Inside \(Fmt.money(allowance)) a day."
-                     : "Stay under \(Fmt.money(allowance)) today to start one.")
+                Text(detail)
                     .appFont(12).foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
             }
