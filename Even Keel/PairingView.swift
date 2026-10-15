@@ -79,6 +79,7 @@ struct PairingView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 24)
+            .readableColumn()
         }
     }
 

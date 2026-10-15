@@ -62,6 +62,43 @@ extension DynamicTypeSize {
     var prefersStackedLayout: Bool { self >= .accessibility1 }
 }
 
+// MARK: - Readable width
+//
+// Every screen was laid out for a phone held upright, and never had to fill
+// anything wider than about 440 points. iOS 27 ends that: an app built against
+// its SDK resizes with its window, and on iPhone Duo's inner display — or in a
+// resized iPhone Mirroring window — it gets an iPad's width whatever
+// orientation it asked for. Left to stretch, a category's name and its figures
+// end up a hand-span apart and every progress bar runs the width of the display.
+//
+// So content keeps to a centred column of comfortable reading width, and only
+// backgrounds and bars run edge to edge. The cap scales with Dynamic Type, so
+// larger text gets a wider column rather than more wrapping; at the
+// accessibility sizes it stops binding at all.
+
+private struct ReadableColumn: ViewModifier {
+    @ScaledMetric private var width: CGFloat
+
+    init(width: CGFloat) {
+        _width = ScaledMetric(wrappedValue: width, relativeTo: .body)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .frame(maxWidth: width)
+            .frame(maxWidth: .infinity)
+    }
+}
+
+extension View {
+    /// Caps content at a readable width and centres it in whatever is left.
+    /// Takes the full width itself, so a background applied after it still
+    /// reaches both edges.
+    func readableColumn(_ width: CGFloat = 640) -> some View {
+        modifier(ReadableColumn(width: width))
+    }
+}
+
 // MARK: - Stat row
 
 /// One labelled figure in a `StatRow`.

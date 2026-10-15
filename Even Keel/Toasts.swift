@@ -50,7 +50,7 @@ struct UndoToast: View {
             .shadow(color: .black.opacity(0.22), radius: 16, y: 6)
             .padding(.horizontal, 18)
             .padding(.bottom, 10)
-            .frame(maxWidth: .infinity)
+            .readableColumn()
             .background(Palette.screen)
             // The one place Reduce Motion can't just remove the animation. This
             // offer expires on its own, so it has to be noticed to be taken —
@@ -116,7 +116,7 @@ struct SampleDataBar: View {
                 }
             }
             .padding(.horizontal, 16).padding(.vertical, 9)
-            .frame(maxWidth: .infinity)
+            .readableColumn()
             .background(Palette.chip)
             .overlay(alignment: .bottom) {
                 Rectangle().fill(Palette.cardBorder).frame(height: 1)

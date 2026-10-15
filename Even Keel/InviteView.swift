@@ -442,6 +442,8 @@ struct JoiningOverlay: View {
                 .padding(20)
                 .card()
                 .padding(.horizontal, 28)
+                // An alert, so it keeps a phone's width rather than a column's.
+                .readableColumn(440)
             }
             .transition(.opacity)
         case .joined:

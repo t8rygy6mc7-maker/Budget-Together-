@@ -135,6 +135,9 @@ struct RootView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 24)
             .padding(.top, 8)
+            // Inside the scroll view rather than around it, so a wide window
+            // still scrolls from its margins. See `readableColumn`.
+            .readableColumn()
         }
         // The toast rides in the bottom inset with the tab bar rather than in an
         // overlay. As an overlay it rendered correctly but never took the tap —
@@ -227,6 +230,9 @@ struct BottomBar: View {
                 ForEach(tabs.dropFirst(split), id: \.self) { navButton($0) }
             }
             .padding(.horizontal, 26)
+            // The tabs share out the row's width, so on a wide display they
+            // would drift a hand-span apart. The bar itself still spans it.
+            .readableColumn()
             .padding(.vertical, 11)
             // Never shorter than the add button. The ZStack takes the taller of
             // the two, and at the smallest text sizes the button won: the bar
