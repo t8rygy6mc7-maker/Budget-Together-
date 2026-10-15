@@ -120,6 +120,9 @@ struct RootView: View {
             Text("\(model.seatConflict ?? "That name") is signed in on another "
                + "phone. Pick a different one, or add yourself.")
         }
+        // Last, so a gate it puts up replaces the sheets and alerts above as
+        // well as the screens. Inside the lock for the same reason they are.
+        .ageChecks(hasBudget: model.hasHousehold)
     }
 
     private var main: some View {

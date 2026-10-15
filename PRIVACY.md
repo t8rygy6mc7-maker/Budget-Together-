@@ -1,7 +1,7 @@
 # Privacy Policy for Even Keel
 
 **Effective date:** August 3, 2026
-**Last updated:** August 3, 2026
+**Last updated:** October 15, 2026
 
 ## The short version
 
@@ -148,6 +148,26 @@ Even Keel does not knowingly collect personal information from anyone,
 children included, because it does not collect personal information at all. It
 is not directed at children, and it has no chat, no social features, and no
 external links to unmoderated content.
+
+## Age checks where the law requires them
+
+Some places — at the time of writing, the US states of Texas, Utah and
+Louisiana — require every app to confirm the age range of the people using it
+through the App Store. If iOS tells Even Keel that a law like this applies to
+you, the app asks iOS for your age range when it opens. Where the law requires
+it, iOS supplies the range without asking you first.
+
+What the app gets is a range, such as "under 18" or "18 and over", and whether
+the App Store confirmed it. It never gets your birthdate. The range stays on
+your iPhone: it is kept in memory only while the app is open, and is never
+saved, synced to iCloud or sent anywhere. It is used for one thing — deciding
+whether a future significant change to the app needs a parent's or guardian's
+approval, or needs to be shown to you, before you carry on. The app does not
+change what anyone can do in it based on age.
+
+The app does save one thing for this: a note of which significant changes this
+device has already been through, so you are not asked about the same one
+twice. If iOS says no such law applies to you, the app never asks for your age.
 
 ## Your controls
 
