@@ -123,34 +123,60 @@ struct RootView: View {
     }
 
     private var main: some View {
-        ScrollView(showsIndicators: false) {
-            Group {
-                switch model.tab {
-                case .home:   HomeView()
-                case .log:    LogView()
-                case .budget: BudgetView()
-                case .stats:  StatsView()
+        // Where iOS would stand a bar on its end right now, or nil where bars
+        // run along the bottom as on any other iPhone. See `SideBar`.
+        VerticalBarEdgeReader { barEdge in
+            GeometryReader { proxy in
+                // The strip iOS keeps down that side for the status bar and its
+                // own vertical bars. The rail moves into it, as a system tab bar
+                // does, rather than taking a second column out of the content.
+                let strip = barEdge.map { $0 == .leading ? proxy.safeAreaInsets.leading
+                                                         : proxy.safeAreaInsets.trailing } ?? 0
+                let railWidth = max(strip, SideBar.minWidth)
+
+                ZStack(alignment: barEdge == .leading ? Alignment.leading : .trailing) {
+                    ScrollView(showsIndicators: false) {
+                        Group {
+                            switch model.tab {
+                            case .home:   HomeView()
+                            case .log:    LogView()
+                            case .budget: BudgetView()
+                            case .stats:  StatsView()
+                            }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 24)
+                        .padding(.top, 8)
+                        // Inside the scroll view rather than around it, so a wide window
+                        // still scrolls from its margins. See `readableColumn`.
+                        .readableColumn()
+                    }
+                    // The toast rides in the bottom inset with the tab bar rather than in an
+                    // overlay. As an overlay it rendered correctly but never took the tap —
+                    // touches fell straight through to the row behind it, which meant
+                    // "Undo" opened whatever entry happened to be underneath. Living in the
+                    // layout also means it pushes the list up instead of covering it.
+                    .safeAreaInset(edge: .bottom, spacing: 0) {
+                        VStack(spacing: 0) {
+                            UndoToast()
+                            if barEdge == nil { BottomBar() }
+                        }
+                    }
+                    .safeAreaInset(edge: .top, spacing: 0) { SampleDataBar() }
+                    // Only takes room where the strip is narrower than the rail:
+                    // the content gives up the difference rather than sit under it.
+                    .safeAreaInset(edge: barEdge ?? .trailing, spacing: 0) {
+                        Color.clear.frame(width: barEdge == nil ? 0 : railWidth - strip)
+                    }
+
+                    if let barEdge {
+                        SideBar(edge: barEdge)
+                            .frame(width: railWidth)
+                            .padding(barEdge == .leading ? Edge.Set.leading : .trailing, -strip)
+                    }
                 }
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 24)
-            .padding(.top, 8)
-            // Inside the scroll view rather than around it, so a wide window
-            // still scrolls from its margins. See `readableColumn`.
-            .readableColumn()
         }
-        // The toast rides in the bottom inset with the tab bar rather than in an
-        // overlay. As an overlay it rendered correctly but never took the tap —
-        // touches fell straight through to the row behind it, which meant
-        // "Undo" opened whatever entry happened to be underneath. Living in the
-        // layout also means it pushes the list up instead of covering it.
-        .safeAreaInset(edge: .bottom, spacing: 0) {
-            VStack(spacing: 0) {
-                UndoToast()
-                BottomBar()
-            }
-        }
-        .safeAreaInset(edge: .top, spacing: 0) { SampleDataBar() }
         .sheet(isPresented: $model.isAddingEntry) { AddSheet().environmentObject(model) }
         // Asked once the user is actually in a household — permission prompts
         // before there's anything to alert about get declined.
@@ -225,9 +251,9 @@ struct BottomBar: View {
             // tabs around a centred gap and one of them ends up stranded
             // against the edge; that's why the pair is all-or-nothing there.
             HStack(spacing: 0) {
-                ForEach(tabs.prefix(split), id: \.self) { navButton($0) }
+                ForEach(tabs.prefix(split), id: \.self) { TabButton(tab: $0) }
                 Spacer().frame(width: Self.addGap)   // gap for the floating add button
-                ForEach(tabs.dropFirst(split), id: \.self) { navButton($0) }
+                ForEach(tabs.dropFirst(split), id: \.self) { TabButton(tab: $0) }
             }
             .padding(.horizontal, 26)
             // The tabs share out the row's width, so on a wide display they
@@ -253,29 +279,48 @@ struct BottomBar: View {
             // helps nobody. The icons carry the meaning past this point.
             .dynamicTypeSize(...DynamicTypeSize.xLarge)
 
-            Button {
-                Haptics.selected()
-                model.isAddingEntry = true
-            } label: {
-                Image(systemName: "plus")
-                    .appFont(27, weight: .bold)
-                    .foregroundStyle(Palette.tealInk)
-                    .frame(width: Self.addSize, height: Self.addSize)
-                    .background(Palette.tealGradient,
-                                in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                    .shadow(color: Palette.addGlow, radius: 17, x: 0, y: 11)
-            }
-            .accessibilityLabel("Add something")
-            .offset(y: -Self.addLift)
+            AddEntryButton(size: Self.addSize)
+                .offset(y: -Self.addLift)
         }
         // Reserving the overhang keeps the raised half of the button off
         // whatever content has scrolled to the bottom of the screen.
         .padding(.top, Self.addLift + 2)
     }
+}
 
-    private func navButton(_ tab: Tab) -> some View {
+/// The button that starts everything. Shared by both bars.
+struct AddEntryButton: View {
+    @EnvironmentObject var model: AppModel
+    let size: CGFloat
+
+    var body: some View {
+        Button {
+            Haptics.selected()
+            model.isAddingEntry = true
+        } label: {
+            Image(systemName: "plus")
+                .appFont(27, weight: .bold)
+                .foregroundStyle(Palette.tealInk)
+                .frame(width: size, height: size)
+                .background(Palette.tealGradient,
+                            in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .shadow(color: Palette.addGlow, radius: 17, x: 0, y: 11)
+        }
+        .accessibilityLabel("Add something")
+    }
+}
+
+/// One tab in either bar.
+struct TabButton: View {
+    @EnvironmentObject var model: AppModel
+    let tab: Tab
+    /// Extra height for the tap target. The bottom bar gets its height from
+    /// the bar itself; stacked down the side, each tab has to bring its own.
+    var verticalPadding: CGFloat = 0
+
+    var body: some View {
         let isSelected = model.tab == tab
-        return Button {
+        Button {
             Haptics.selected()
             model.tab = tab
         } label: {
@@ -293,8 +338,90 @@ struct BottomBar: View {
             // teal now means "this is the thing to press".
             .foregroundStyle(isSelected ? Palette.text : Palette.muted)
             .frame(maxWidth: .infinity)
+            .padding(.vertical, verticalPadding)
+            .contentShape(Rectangle())
         }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
+    }
+}
+
+// MARK: - Side navigation
+
+/// The same bar stood on its end, for the poses where iOS moves its own bars
+/// to the side: iPhone Duo's outer display, and the inner one held sideways.
+/// There the display is wide for its height, so a bar along the bottom spends
+/// the scarcer dimension, and down the side it's where a thumb already is.
+///
+/// System tab bars make that move by themselves; a hand-built one has to be
+/// told. Rather than guess at poses, this follows the system: it appears
+/// exactly when `toolbarVerticalEdge` says a system bar would be vertical, on
+/// the side that names, in the strip iOS keeps there for the status bar and
+/// its own bars.
+///
+/// Same order as `BottomBar` — half the tabs, the add button, the other half —
+/// so turning the phone moves the bar without reshuffling it, and the add
+/// button keeps its place in the middle of the group. Pinned to the bottom of
+/// the strip, as the system's own tab bar is: the top of it belongs to the clock.
+struct SideBar: View {
+    @EnvironmentObject var model: AppModel
+    let edge: HorizontalEdge
+
+    /// The add button with a margin either side. The system's strip is wider
+    /// than this wherever there is one.
+    static let minWidth: CGFloat = 76
+    private static let addSize: CGFloat = 56
+
+    var body: some View {
+        // Same all-or-nothing pairs as `BottomBar`; see the note there.
+        let tabs = model.visibleTabs
+        let split = (tabs.count + 1) / 2
+
+        VStack(spacing: 2) {
+            Spacer(minLength: 0)
+            ForEach(tabs.prefix(split), id: \.self) { TabButton(tab: $0, verticalPadding: 8) }
+            AddEntryButton(size: Self.addSize).padding(.vertical, 14)
+            ForEach(tabs.dropFirst(split), id: \.self) { TabButton(tab: $0, verticalPadding: 8) }
+        }
+        .padding(.bottom, 4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Palette.navBar.ignoresSafeArea())
+        // The border faces the content, as the bottom bar's does.
+        .overlay(alignment: edge == .leading ? .trailing : .leading) {
+            Rectangle().fill(Palette.navBorder).frame(width: 1).ignoresSafeArea()
+        }
+        .appAnimation(.easeInOut(duration: 0.25), value: tabs)
+        // As in `BottomBar`: chrome, not content. The rail is narrow, and the
+        // icons carry the meaning past this size.
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
+        // Stays put under the keyboard, as a system tab bar does. Pushed up
+        // above it, the rail ran into the clock at the top of the strip.
+        .ignoresSafeArea(.keyboard)
+    }
+}
+
+/// Hands its content the edge iOS would put a vertical bar on right now, or
+/// nil where bars run horizontally — always nil before iOS 27.1, which never
+/// stands one up.
+///
+/// The edge is reported whether or not a system bar is on screen, which is
+/// what lets a hand-built bar follow it.
+struct VerticalBarEdgeReader<Content: View>: View {
+    @ViewBuilder let content: (HorizontalEdge?) -> Content
+
+    var body: some View {
+        if #available(iOS 27.1, *) {
+            Reader(content: content)
+        } else {
+            content(nil)
+        }
+    }
+
+    @available(iOS 27.1, *)
+    private struct Reader: View {
+        @Environment(\.toolbarVerticalEdge) private var edge
+        let content: (HorizontalEdge?) -> Content
+
+        var body: some View { content(edge) }
     }
 }
 
