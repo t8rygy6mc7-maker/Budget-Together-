@@ -1,0 +1,28 @@
+Even Keel is a budgeting app for one person or a household. There is no sign-in, no account, no in-app purchase, no ads, and no analytics or tracking. Data stays on the device and in the user's own iCloud. We run no servers and cannot see anyone's data.
+
+QUICKEST LOOK
+On the first screen, tap "Have a look around first" to open a sample budget filled with example spending. Every screen can be reached from there. To start a real budget, tap "Start" (a monthly figure is optional).
+
+SHARED BUDGETS
+A budget can be shared with the other people in a household, such as a partner. Sharing uses Apple's CloudKit sharing sheet, limited to private, read-write invitations: only the iCloud accounts the owner invites can join, and there is no public link. There are no public profiles, no search or discovery, no messaging and no photos. Members see the budget's entries (amount, place, category and an optional short note) and each other's names, and can leave one of four fixed reactions on an entry. Entries marked Private are never shared.
+
+The owner can remove anyone in Apple's sharing sheet, or end sharing for everyone with "Stop sharing this budget". A member can leave with "Leave this budget". Both are in the Sharing section of the People screen (tap the avatars at the top right of Home). Contact: budgetog@icloud.com
+
+HOW TO TEST SHARING
+Sharing needs two devices signed in to iCloud with two different Apple Accounts, both online. It cannot be tested with a single account or in Simulator.
+1. Device A: tap "Start" to create a budget.
+2. Tap the avatars at the top right of Home to open People, scroll to Sharing, tap "Invite someone", and send the invitation by Messages or Mail to device B's Apple Account.
+3. Device B: install Even Keel, then open the invitation. The app opens, shows "Joining the budget…", then asks "Which of these is you?". Pick a name or add one.
+4. Log a spend on either device with the + button. With both apps open, it appears on the other device within a minute or so.
+5. To finish: on B, People > "Leave this budget"; or on A, People > "Stop sharing this budget".
+
+AGE ASSURANCE
+Where iOS reports that a regional age-assurance law applies to the user's account (for example in Texas, Utah or Louisiana), the app asks iOS for the user's age range once per launch, using Declared Age Range. Everywhere else this code does nothing and shows nothing. The age range is kept in memory only. It is never stored, synced or sent, and nothing in the app changes with age. The app also supports PermissionKit's parental consent for significant updates, but this version declares no significant updates, so no approval or acknowledgement screen will appear.
+
+OPTIONAL PERMISSIONS (each requested only when its feature is first used)
+- Face ID: optional app lock, in People > "Privacy and your data".
+- Microphone and Speech Recognition: speaking an amount on the add screen. Recognition runs on the device only.
+- Notifications: optional alerts when a category is running low, switched on in the Alerts section of People.
+- Siri: "Log a spend in Even Keel" and "What's left in Even Keel".
+
+Everything in this build is reachable from the interface as described above. The app has no remote configuration and nothing is switched on after review.
