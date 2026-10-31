@@ -2,62 +2,55 @@ import SwiftUI
 
 struct BudgetView: View {
     @EnvironmentObject var model: AppModel
-    @State private var showRecurring = false
-    @State private var showLoans = false
-    @State private var showGoals = false
     @State private var markingUnusual = false
-    @State private var showCategories = false
 
     var body: some View {
         let totals = model.month.totals
 
-        VStack(alignment: .leading, spacing: 0) {
-            ScreenHeader(title: "Budget")
-            Text(model.hasPlan
-                 ? "Tap a number to change what you're aiming for in \(model.monthTitle). Later months follow it until you change them again."
-                 : "Nothing's set yet — that's fine. Set what you like below, or let the app suggest limits once it's seen a few weeks of spending.")
-                .appFont(13, weight: .medium)
-                .foregroundStyle(Palette.sub)
-                .fixedSize(horizontal: false, vertical: true)
-                .padding(.top, 2).padding(.bottom, 16)
+        Page(title: "Budget") {
+            VStack(alignment: .leading, spacing: Space.md) {
+                Text(model.hasPlan
+                     ? "Tap a number to change what you're aiming for in \(model.monthTitle). Later months follow it until you change them again."
+                     : "Nothing's set yet — that's fine. Set what you like below, or let the app suggest limits once it's seen a few weeks of spending.")
+                    .appFont(12.5)
+                    .foregroundStyle(Palette.sub)
+                    .fixedSize(horizontal: false, vertical: true)
 
-            if model.canSuggestPlan {
-                SuggestedPlanCard().padding(.bottom, 12)
-            }
-
-            planCard.padding(.bottom, 12)
-
-            // The limits come straight after the total they add up to. They
-            // used to sit under five cards of settings and side-ledgers, so the
-            // thing the sentence above says to tap was the one thing on the
-            // screen you had to scroll to find.
-            VStack(spacing: 9) {
-                ForEach(model.expenseCategories) { bucket in
-                    BudgetRow(bucket: bucket, actual: totals[bucket.id] ?? 0)
+                if model.canSuggestPlan {
+                    SuggestedPlanCard()
                 }
-            }
 
-            categoriesCard.padding(.top, 12)
-            strandedHiddenRows(totals: totals)
+                planCard
 
-            // Everything else here is either a ledger of its own — bills,
-            // goals, debts — or a setting for how the month is judged. All of
-            // it matters; none of it is why somebody opened this tab.
-            VStack(spacing: 9) {
-                recurringCard
-                goalsCard
-                loansCard
-                // Nothing to carry over without a plan to have left over from.
-                if model.hasPlan { rolloverToggle }
-                unusualMonthCard
+                // The limits come straight after the total they add up to. They
+                // used to sit under five cards of settings and side-ledgers, so the
+                // thing the sentence above says to tap was the one thing on the
+                // screen you had to scroll to find.
+                AdaptiveCards(spacing: Space.sm) {
+                    ForEach(model.expenseCategories) { bucket in
+                        BudgetRow(bucket: bucket, actual: totals[bucket.id] ?? 0)
+                    }
+                }
+
+                strandedHiddenRows(totals: totals)
+
+                // Everything else here is either a ledger of its own — bills,
+                // goals, debts — or a setting for how the month is judged. All of
+                // it matters; none of it is why somebody opened this tab.
+                RowGroup(title: "Around the plan") {
+                    recurringRow
+                    goalsRow
+                    loansRow
+                    categoriesRow
+                    // Nothing to carry over without a plan to have left over from.
+                    if model.hasPlan { rolloverToggle }
+                    unusualMonthRow
+                }
+                .padding(.top, Space.xs)
             }
-            .padding(.top, 22)
         }
-        .sheet(isPresented: $showRecurring) { RecurringSheet().environmentObject(model) }
-        .sheet(isPresented: $showLoans) { LoansSheet().environmentObject(model) }
-        .sheet(isPresented: $showGoals) { GoalsSheet().environmentObject(model) }
+        .monthControls()
         .sheet(isPresented: $markingUnusual) { UnusualMonthSheet().environmentObject(model) }
-        .sheet(isPresented: $showCategories) { CategoriesSheet().environmentObject(model) }
     }
 
     @ViewBuilder
@@ -81,7 +74,7 @@ struct BudgetView: View {
                 .appFont(12).foregroundStyle(Palette.sub)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .padding(.horizontal, 17).padding(.vertical, 16)
+        .padding(Space.md)
         .card()
     }
 
@@ -95,7 +88,7 @@ struct BudgetView: View {
                 Text(Fmt.money(model.plannedTotal)).mono(18)
             }
             ProgressBar(pct: totalPct, fill: Palette.tealGradient, height: 10)
-                .padding(.vertical, 10)
+                .padding(.vertical, Space.sm)
             HStack {
                 Text("\(Fmt.money(model.spent)) spent")
                     .appFont(12.5, weight: .semibold).foregroundStyle(Palette.teal)
@@ -113,7 +106,7 @@ struct BudgetView: View {
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(Palette.green)
-                .padding(.top, 9)
+                .padding(.top, Space.xs)
             }
             // Stated here for the same reason the rollover is: the planned
             // total is the figure people read as "what I have", and a
@@ -129,38 +122,21 @@ struct BudgetView: View {
                     Spacer(minLength: 0)
                 }
                 .foregroundStyle(Palette.teal)
-                .padding(.top, 9)
+                .padding(.top, Space.xs)
             }
         }
-        .padding(.horizontal, 17).padding(.vertical, 16)
+        .padding(Space.md)
         .card()
     }
 
     /// Way into the category editor.
-    private var categoriesCard: some View {
-        Button { showCategories = true } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "square.grid.2x2.fill")
-                    .appFont(15, weight: .semibold)
-                    .foregroundStyle(Palette.teal)
-                    .frame(width: 34, height: 34)
-                    .background(Palette.teal.opacity(0.16),
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Categories").appFont(14, weight: .semibold)
-                    Text("Rename them, recolour them, add your own")
-                        .appFont(11.5).foregroundStyle(Palette.sub)
-                        .lineLimit(2).multilineTextAlignment(.leading)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .appFont(12, weight: .semibold)
-                    .foregroundStyle(Palette.muted)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .card(border: Palette.cardBorderSoft, radius: 15)
+    private var categoriesRow: some View {
+        NavigationLink(value: Route.categories) {
+            RowLabel(symbol: "square.grid.2x2.fill",
+                     title: Text("Categories"),
+                     subtitle: Text("Rename them, recolour them, add your own"))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.row)
     }
 
     /// Hidden categories that still hold a limit or this month's spending.
@@ -175,7 +151,7 @@ struct BudgetView: View {
         let stranded = model.hiddenCategories(for: .expense)
             .filter { (model.caps[$0.id] ?? 0) > 0 || (totals[$0.id] ?? 0) > 0 }
         if !stranded.isEmpty {
-            VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: Space.xs) {
                 HStack(spacing: 6) {
                     Image(systemName: "eye.slash.fill")
                         .appFont(10, weight: .semibold)
@@ -191,11 +167,13 @@ struct BudgetView: View {
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
 
-                ForEach(stranded) { bucket in
-                    BudgetRow(bucket: bucket, actual: totals[bucket.id] ?? 0)
+                AdaptiveCards(spacing: Space.sm) {
+                    ForEach(stranded) { bucket in
+                        BudgetRow(bucket: bucket, actual: totals[bucket.id] ?? 0)
+                    }
                 }
             }
-            .padding(.top, 22)
+            .padding(.top, Space.xs)
         }
     }
 
@@ -203,86 +181,51 @@ struct BudgetView: View {
     /// every other number on this screen means and that should be a choice
     /// somebody made rather than one they inherited.
     private var rolloverToggle: some View {
-        Toggle(isOn: Binding(get: { model.rolloverEnabled },
-                             set: { model.setRollover($0) })) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Carry the leftovers over").appFont(13.5, weight: .semibold)
-                Text(model.rolloverEnabled
-                     ? "Whatever you don't spend gets added to next month."
-                     : "Each month starts fresh from the same plan.")
-                    .appFont(11.5).foregroundStyle(Palette.sub)
-                    .fixedSize(horizontal: false, vertical: true)
+        GroupedRow(separatorInset: Space.md + 32 + Space.sm) {
+            Toggle(isOn: Binding(get: { model.rolloverEnabled },
+                                 set: { model.setRollover($0) })) {
+                HStack(spacing: Space.sm) {
+                    IconTile(symbol: "arrow.turn.down.right", color: Palette.green)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Carry the leftovers over").appFont(14, weight: .medium)
+                        Text(model.rolloverEnabled
+                             ? "Whatever you don't spend gets added to next month."
+                             : "Each month starts fresh from the same plan.")
+                            .appFont(11.5).foregroundStyle(Palette.sub)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 11)
-        .card(border: Palette.cardBorderSoft, radius: 15)
     }
 
     /// The escape hatch for a month that genuinely wasn't typical.
-    private var unusualMonthCard: some View {
+    private var unusualMonthRow: some View {
         Button { markingUnusual = true } label: {
-            HStack(spacing: 12) {
-                Image(systemName: model.isSelectedMonthUnusual
-                      ? "calendar.badge.exclamationmark" : "calendar")
-                    .appFont(15, weight: .semibold)
-                    .foregroundStyle(model.isSelectedMonthUnusual ? Palette.moodJoy : Palette.sub)
-                    .frame(width: 34, height: 34)
-                    .background((model.isSelectedMonthUnusual ? Palette.moodJoy : Palette.sub)
-                        .opacity(0.16),
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(model.isSelectedMonthUnusual
-                         ? "\(model.monthTitle) is marked unusual"
-                         : "Was this month strange?")
-                        .appFont(14, weight: .semibold)
-                    Text(model.isSelectedMonthUnusual
-                         ? (model.selectedMonthReason.isEmpty
-                            ? "It won't count against your streak or averages."
-                            : model.selectedMonthReason)
-                         : "A move, a wedding, a hospital bill — say so and it won't skew anything.")
-                        .appFont(11.5).foregroundStyle(Palette.sub)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .appFont(12, weight: .semibold)
-                    .foregroundStyle(Palette.muted)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .card(border: Palette.cardBorderSoft, radius: 15)
+            RowLabel(symbol: model.isSelectedMonthUnusual
+                     ? "calendar.badge.exclamationmark" : "calendar",
+                     color: model.isSelectedMonthUnusual ? Palette.moodJoy : Palette.sub,
+                     title: Text(model.isSelectedMonthUnusual
+                                 ? "\(model.monthTitle) is marked unusual"
+                                 : "Was this month strange?"),
+                     subtitle: Text(model.isSelectedMonthUnusual
+                                    ? (model.selectedMonthReason.isEmpty
+                                       ? "It won't count against your streak or averages."
+                                       : model.selectedMonthReason)
+                                    : "A move, a wedding, a hospital bill — say so and it won't skew anything."))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.row)
     }
 
-    /// Way into what's being saved for. Sits above `loansCard` on purpose: the
+    /// Way into what's being saved for. Sits above `loansRow` on purpose: the
     /// two are the same shape of thing — a balance moving toward a number — and
     /// the one that's going the right way should be read first.
-    private var goalsCard: some View {
-        let open = model.openGoals
-        return Button { showGoals = true } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "target")
-                    .appFont(15, weight: .semibold)
-                    .foregroundStyle(Palette.teal)
-                    .frame(width: 34, height: 34)
-                    .background(Palette.teal.opacity(0.16),
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Saving for").appFont(14, weight: .semibold)
-                    Text(goalsSubtitle(open: open))
-                        .appFont(11.5).foregroundStyle(Palette.sub)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .appFont(12, weight: .semibold)
-                    .foregroundStyle(Palette.muted)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .card(border: Palette.cardBorderSoft, radius: 15)
+    private var goalsRow: some View {
+        NavigationLink(value: Route.goals) {
+            RowLabel(symbol: "target", title: Text("Saving for"),
+                     subtitle: Text(goalsSubtitle(open: model.openGoals)))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.row)
     }
 
     /// Counts only what's still outstanding, so a household that has reached
@@ -296,64 +239,30 @@ struct BudgetView: View {
         return "\(Fmt.money(model.totalSaved)) put by · \(Fmt.money(remaining)) to go"
     }
 
-    private var loansCard: some View {
-        Button { showLoans = true } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "graduationcap.fill")
-                    .appFont(15, weight: .semibold)
-                    .foregroundStyle(Palette.moodRoutine)
-                    .frame(width: 34, height: 34)
-                    .background(Palette.moodRoutine.opacity(0.16),
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Owed").appFont(14, weight: .semibold)
-                    Text(model.loans.isEmpty
-                         ? "Track student loans and other balances"
-                         : "\(Fmt.money(model.totalOwed)) across ^[\(model.loans.count) balance](inflect: true)")
-                        .appFont(11.5).foregroundStyle(Palette.sub)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .appFont(12, weight: .semibold)
-                    .foregroundStyle(Palette.muted)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .card(border: Palette.cardBorderSoft, radius: 15)
+    private var loansRow: some View {
+        NavigationLink(value: Route.loans) {
+            RowLabel(symbol: "graduationcap.fill", color: Palette.moodRoutine,
+                     title: Text("Owed"),
+                     subtitle: Text(model.loans.isEmpty
+                                    ? "Track student loans and other balances"
+                                    : "\(Fmt.money(model.totalOwed)) across ^[\(model.loans.count) balance](inflect: true)"))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.row)
     }
 
     /// Entry point to the repeating items — bills are budget planning, not
     /// day-to-day logging, so they live here rather than behind the + button.
-    private var recurringCard: some View {
+    private var recurringRow: some View {
         let active = model.recurring.filter(\.isActive)
         let monthly = active.filter { $0.kind == .expense }.reduce(0) { $0 + $1.amount }
-        return Button { showRecurring = true } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "repeat")
-                    .appFont(15, weight: .semibold)
-                    .foregroundStyle(Palette.purple)
-                    .frame(width: 34, height: 34)
-                    .background(Palette.purple.opacity(0.16),
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("Repeating").appFont(14, weight: .semibold)
-                    Text(active.isEmpty
-                         ? "Add rent, subscriptions and paydays"
-                         : "^[\(active.count) item](inflect: true) · \(Fmt.money(monthly)) of bills a month")
-                        .appFont(11.5).foregroundStyle(Palette.sub)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .appFont(12, weight: .semibold)
-                    .foregroundStyle(Palette.muted)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .card(border: Palette.cardBorderSoft, radius: 15)
+        return NavigationLink(value: Route.recurring) {
+            RowLabel(symbol: "repeat", color: Palette.purple,
+                     title: Text("Repeating"),
+                     subtitle: Text(active.isEmpty
+                                    ? "Add rent, subscriptions and paydays"
+                                    : "^[\(active.count) item](inflect: true) · \(Fmt.money(monthly)) of bills a month"))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.row)
     }
 }
 
@@ -381,8 +290,8 @@ struct BudgetRow: View {
         let isOver = cap > 0 && actual > cap
         let pct = cap > 0 ? min(100, actual / cap * 100) : 0
 
-        VStack(spacing: 9) {
-            AdaptiveRow(spacing: 11) {
+        VStack(spacing: Space.xs) {
+            AdaptiveRow(spacing: Space.xs) {
                 icon
                 name
             } figures: {
@@ -427,21 +336,16 @@ struct BudgetRow: View {
 
                 if isOver, model.isCurrentMonth {
                     Button { moving = true } label: {
-                        HStack(spacing: 4) {
-                            Image(systemName: "arrow.left.arrow.right")
-                                .appFont(9.5, weight: .bold)
-                            Text("Move money here").appFont(11, weight: .bold)
-                        }
-                        .foregroundStyle(Palette.teal)
-                        .padding(.horizontal, 9).padding(.vertical, 5)
-                        .background(Palette.teal.opacity(0.14), in: Capsule())
+                        Label("Move money here", systemImage: "arrow.left.arrow.right")
+                            .appFont(11, weight: .semibold)
                     }
+                    .inlineActionStyle()
                     .accessibilityHint("Takes room from another category")
                 }
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .card(border: Palette.cardBorderSoft, radius: 15)
+        .padding(Space.md)
+        .card()
         .sheet(isPresented: $moving) {
             MoveMoneySheet(destination: bucket).environmentObject(model)
         }
@@ -456,30 +360,27 @@ struct BudgetRow: View {
     }
 
     private var icon: some View {
-        Image(systemName: bucket.symbol)
-            .appFont(15, weight: .semibold)
-            .foregroundStyle(bucket.color)
-            .frame(width: 32, height: 32)
-            .background(bucket.tint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        IconTile(symbol: bucket.symbol, color: bucket.color, fill: bucket.tint)
     }
 
     private var name: some View {
-        Text(bucket.label).appFont(14, weight: .semibold)
+        Text(bucket.label).appFont(14, weight: .medium).lineLimit(1)
     }
 
     /// What's gone, and the editable limit it's measured against.
     private func figures(isOver: Bool) -> some View {
-        HStack(spacing: 11) {
+        HStack(spacing: Space.xs) {
             Text(Fmt.money(actual)).mono(13)
                 .foregroundStyle(isOver ? Palette.overText : Palette.text)
-            Text("/").appFont(13).foregroundStyle(Palette.muted)
+            Text("of").appFont(11.5).foregroundStyle(Palette.muted)
 
             HStack(spacing: 2) {
                 Text(Fmt.currencySymbol).mono(12, weight: .regular).foregroundStyle(Palette.muted)
                 TextField("0", text: $limitText)
                     .keyboardType(.decimalPad)
                     .multilineTextAlignment(.trailing)
-                    .appFont(13, weight: .bold, design: .monospaced)
+                    .appFont(13, weight: .semibold)
+                    .monospacedDigit()
                     .frame(width: limitWidth)
                     .focused($editingLimit)
                     .accessibilityLabel("\(bucket.label) budget")
@@ -488,8 +389,8 @@ struct BudgetRow: View {
                         if !isEditing { commitLimit() }
                     }
             }
-            .padding(.horizontal, 8).padding(.vertical, 7)
-            .fieldBackground(radius: 10)
+            .padding(.horizontal, Space.xs).padding(.vertical, 6)
+            .fieldBackground(radius: Radius.tile)
         }
     }
 

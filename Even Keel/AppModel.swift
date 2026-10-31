@@ -1501,16 +1501,12 @@ final class AppModel: ObservableObject {
     /// under someone who just used it would be worse than never hiding it.
     @Published private(set) var revealedTabs: Set<Tab> = []
 
-    /// Which tabs the bottom bar shows. Budget and Stats stay out of the way
+    /// Which tabs the bar shows. Budget and Stats stay out of the way
     /// until there's something in them worth opening; both are still reachable
     /// from Home before that, so nothing is actually locked away.
     ///
-    /// They arrive as a pair, never one at a time, and that's a layout
-    /// constraint as much as a product one. The bar carves a centred gap for
-    /// the add button, and with an odd number of tabs an evenly spaced row and
-    /// a centred gap are mutually exclusive — three tabs either strand one
-    /// against the edge or push the button off centre. All-or-nothing keeps the
-    /// bar at two tabs or four. `BottomBar` depends on that being true.
+    /// They arrive as a pair, never one at a time: two new places to look reads
+    /// as the app opening up, and the two are about the same thing.
     var visibleTabs: [Tab] {
         [.home, .log] + (showsFullBar ? [.budget, .stats] : [])
     }

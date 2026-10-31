@@ -46,9 +46,9 @@ struct PairingView: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
+        ScrollView {
             VStack(alignment: .leading, spacing: 0) {
-                Spacer(minLength: 32)
+                Spacer(minLength: Space.xl)
 
                 Image(systemName: "heart.text.square.fill")
                     .appFont(34, weight: .semibold)
@@ -56,29 +56,32 @@ struct PairingView: View {
                     .frame(width: 74, height: 74)
                     .background(Palette.tealGradient,
                                 in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-                    .shadow(color: Palette.addGlow, radius: 16, x: 0, y: 12)
-                    .padding(.bottom, 22)
+                    .padding(.bottom, Space.lg)
 
                 Text("Share a budget,\ntogether")
                     .appFont(28, weight: .bold)
                     .foregroundStyle(Palette.text)
-                    .padding(.bottom, 8)
+                    .padding(.bottom, Space.xs)
                 Text("One budget, however many of you there are. Add everyone who spends "
                    + "from it — entries stay in sync on every phone through iCloud.")
-                    .appFont(14, weight: .medium)
+                    .appFont(13)
                     .foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.bottom, 18)
+                    .padding(.bottom, Space.lg)
 
-                trustCard.padding(.bottom, 18)
-                lookAroundButton.padding(.bottom, 18)
-                createCard.padding(.bottom, 18)
-                joinHint
+                VStack(spacing: Space.md) {
+                    trustCard
+                    createCard
+                    RowGroup {
+                        lookAroundButton
+                        joinHint
+                    }
+                }
 
-                Spacer(minLength: 40)
+                Spacer(minLength: Space.xxl)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Space.md)
             .readableColumn()
         }
     }
@@ -90,7 +93,7 @@ struct PairingView: View {
     /// a stranger seeing your spending — is something this app simply doesn't
     /// do, and saying so plainly is worth more than any feature on the list.
     private var trustCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: Space.sm) {
             promise("lock.fill", "No bank login, ever",
                     "You type in what you spend. There's nothing to connect and nothing to leak.")
             promise("iphone", "It lives on your phone",
@@ -98,20 +101,15 @@ struct PairingView: View {
             promise("eye.slash.fill", "Nobody's watching",
                     "No ads, no tracking, no credit score. Anything you mark private stays yours — nobody else in the budget can see it.")
         }
-        .padding(14)
-        .card(border: Palette.cardBorderSoft, radius: 16)
+        .padding(Space.md)
+        .card()
     }
 
     private func promise(_ symbol: String, _ title: String, _ detail: String) -> some View {
-        HStack(alignment: .top, spacing: 11) {
-            Image(systemName: symbol)
-                .appFont(12, weight: .semibold)
-                .foregroundStyle(Palette.teal)
-                .frame(width: 26, height: 26)
-                .background(Palette.teal.opacity(0.14),
-                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+        HStack(alignment: .top, spacing: Space.sm) {
+            IconTile(symbol: symbol, color: Palette.teal)
             VStack(alignment: .leading, spacing: 2) {
-                Text(title).appFont(12.5, weight: .semibold)
+                Text(title).appFont(13, weight: .medium)
                 Text(detail)
                     .appFont(11.5)
                     .foregroundStyle(Palette.sub)
@@ -127,46 +125,28 @@ struct PairingView: View {
             Haptics.selected()
             model.startLookingAround()
         } label: {
-            HStack(spacing: 11) {
-                Image(systemName: "eye")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Palette.teal)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Have a look around first")
-                        .appFont(14, weight: .bold)
-                    Text("A worked example you can poke at. Nothing kept.")
-                        .appFont(11.5)
-                        .foregroundStyle(Palette.sub)
-                }
-                Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
-                    .appFont(11, weight: .semibold)
-                    .foregroundStyle(Palette.muted)
-            }
-            .foregroundStyle(Palette.chipText)
-            .padding(.horizontal, 14).padding(.vertical, 13)
-            .fieldBackground(AnyShapeStyle(Palette.card),
-                             border: Palette.cardBorder, radius: 15)
+            RowLabel(symbol: "eye", title: Text("Have a look around first"),
+                     subtitle: Text("A worked example you can poke at. Nothing kept."))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.row)
     }
 
     private var createCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.sm) {
             Text("Name your budget")
-                .appFont(12, weight: .semibold)
+                .appFont(12, weight: .medium)
                 .foregroundStyle(Palette.sub)
 
             TextField("", text: $name,
                       prompt: Text("e.g. Together").foregroundStyle(Palette.muted))
                 .focused($focusedField, equals: .budget)
                 .textFieldStyle(.plain)
-                .appFont(15, weight: .medium)
-                .padding(.horizontal, 14).padding(.vertical, 13)
-                .fieldBackground(radius: 13)
+                .appFont(15)
+                .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                .fieldBackground()
 
             Text("Your name")
-                .appFont(12, weight: .semibold)
+                .appFont(12, weight: .medium)
                 .foregroundStyle(Palette.sub)
                 .padding(.top, 2)
 
@@ -174,16 +154,16 @@ struct PairingView: View {
                       prompt: Text("e.g. Sam").foregroundStyle(Palette.muted))
                 .focused($focusedField, equals: .you)
                 .textFieldStyle(.plain)
-                .appFont(15, weight: .medium)
-                .padding(.horizontal, 14).padding(.vertical, 13)
-                .fieldBackground(radius: 13)
+                .appFont(15)
+                .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                .fieldBackground()
 
             // Folded away, and explicitly optional. Being a required field here
             // was the single biggest thing standing between someone opening the
             // app and actually seeing it.
             if showBudgetField {
                 Text("Roughly per month")
-                    .appFont(12, weight: .semibold)
+                    .appFont(12, weight: .medium)
                     .foregroundStyle(Palette.sub)
                     .padding(.top, 2)
 
@@ -194,10 +174,11 @@ struct PairingView: View {
                               prompt: Text("e.g. 800").foregroundStyle(Palette.muted))
                         .focused($focusedField, equals: .total)
                         .keyboardType(.decimalPad)
-                        .appFont(15, weight: .bold, design: .monospaced)
+                        .appFont(15, weight: .medium)
+                        .monospacedDigit()
                 }
-                .padding(.horizontal, 14).padding(.vertical, 13)
-                .fieldBackground(radius: 13)
+                .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                .fieldBackground()
 
                 Text(planNote)
                     .appFont(12)
@@ -226,47 +207,24 @@ struct PairingView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
 
-            Button {
+            PrimaryButton(title: "Start", symbol: "arrow.right") {
                 focusedField = nil
                 Haptics.saved()
                 model.createHousehold(name: name, ownerName: yourName,
                                       monthlyTotal: Fmt.amount(from: monthlyTotal))
-            } label: {
-                HStack(spacing: 8) {
-                    Image(systemName: "arrow.right")
-                    Text("Start")
-                }
-                .appFont(15, weight: .bold)
-                .frame(maxWidth: .infinity).padding(15)
-                .foregroundStyle(Palette.tealInk)
-                .background(Palette.tealGradient,
-                            in: RoundedRectangle(cornerRadius: 15, style: .continuous))
             }
+            .padding(.top, Space.xxs)
         }
-        .padding(16)
+        .padding(Space.md)
         .card()
     }
 
     private var joinHint: some View {
-        HStack(alignment: .top, spacing: 12) {
-            Image(systemName: "link")
-                .appFont(15, weight: .semibold)
-                .foregroundStyle(Palette.purple)
-                .frame(width: 34, height: 34)
-                .background(Palette.purple.opacity(0.16),
-                            in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Got an invite?")
-                    .appFont(14, weight: .semibold)
-                Text("Open the link they sent you — you'll join their budget automatically.")
-                    .appFont(12.5)
-                    .foregroundStyle(Palette.sub)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
+        RowLabel(symbol: "link", color: Palette.purple, title: Text("Got an invite?"),
+                 subtitle: Text("Open the link they sent you — you'll join their budget automatically.")) {
+            EmptyView()
         }
-        .padding(14)
-        .card(border: Palette.cardBorderSoft, radius: 15)
+        .accessibilityElement(children: .combine)
     }
 }
 

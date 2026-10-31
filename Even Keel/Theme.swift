@@ -54,8 +54,6 @@ enum Palette {
     static let card           = Color(dark: "1D2130", light: "FFFFFF")
     static let cardBorder     = Color(dark: "2A3042", light: "D6DBE9")
     static let cardBorderSoft = Color(dark: "23283A", light: "E5E9F3")
-    static let navBar         = Color(dark: "181B27", light: "FFFFFF")
-    static let navBorder      = Color(dark: "262B3A", light: "DDE2EE")
     static let sheetBg        = Color(dark: "1A1D29", light: "FBFCFE")
     static let field          = Color(dark: "141620", light: "EFF1F7")
     static let chip           = Color(dark: "232838", light: "EAEDF5")
@@ -100,50 +98,109 @@ enum Palette {
     /// scheme.
     static let addGlow = Color(dark: "5EEAD4", darkAlpha: 0.55,
                                light: "0F1729", lightAlpha: 0.18)
+
+    /// What lifts a card off the screen in light, where white on near-white has
+    /// next to no contrast of its own. Nothing in dark: the surfaces already
+    /// step in lightness, and a shadow on navy reads as a smudge.
+    static let cardShadow = Color(dark: "000000", darkAlpha: 0,
+                                  light: "1B1F2B", lightAlpha: 0.05)
+}
+
+// MARK: - Spacing and shape
+//
+// Twenty different horizontal paddings and as many corner radii had built up,
+// each one locally reasonable and together the reason the screens never quite
+// lined up. Everything now comes off two short scales. A value that isn't on
+// them is a decision somebody should be able to defend.
+
+enum Space {
+    static let xxs: CGFloat = 4
+    static let xs: CGFloat = 8
+    static let sm: CGFloat = 12
+    static let md: CGFloat = 16
+    static let lg: CGFloat = 20
+    static let xl: CGFloat = 28
+    static let xxl: CGFloat = 40
+
+    /// The distance from a screen's edge to its content. This is where the large
+    /// title sits at either size, so cards and headings share one edge.
+    static func margin(for sizeClass: UserInterfaceSizeClass?) -> CGFloat {
+        sizeClass == .regular ? lg : md
+    }
+}
+
+enum Radius {
+    /// A card or group of rows. Matches the rounder sections iOS 26 gave `List`.
+    static let card: CGFloat = 22
+    /// Something inside a card: a field, a chip. Card radius less its inset,
+    /// which is what keeps nested corners looking concentric.
+    static let control: CGFloat = 14
+    /// The small tinted square behind an icon.
+    static let tile: CGFloat = 9
 }
 
 // MARK: - Reusable styling
 
 private struct CardBackground: ViewModifier {
-    let border: Color
+    let border: Color?
     let radius: CGFloat
 
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return content
-            .background(Palette.card, in: shape)
-            .overlay(shape.strokeBorder(border, lineWidth: 1))
+            .background {
+                shape.fill(Palette.card)
+                    .shadow(color: Palette.cardShadow, radius: 14, y: 5)
+            }
+            .overlay {
+                if let border { shape.strokeBorder(border, lineWidth: 1) }
+            }
     }
 }
 
 extension View {
-    func card(border: Color = Palette.cardBorder, radius: CGFloat = 18) -> some View {
+    /// A raised surface. Separation comes from the fill, the way a grouped list
+    /// does it; the outline every card used to wear was what made the app read
+    /// as a web page. Pass `border` only when it means something, like
+    /// "this one needs an answer".
+    func card(border: Color? = nil, radius: CGFloat = Radius.card) -> some View {
         modifier(CardBackground(border: border, radius: radius))
     }
 
-    /// Tabular figures for anything that has to line up in a column. Scales with
-    /// Dynamic Type like every other size in the app — see `Comfort.swift`.
+    /// Figures that line up in a column. Scales with Dynamic Type like every
+    /// other size in the app — see `Comfort.swift`.
+    ///
+    /// SF's tabular digits, not SF Mono: only the digits need to be fixed-width,
+    /// and in the mono face the comma took a full cell, so "$1,992" read as
+    /// "$1, 992". Hero figures use the rounded design, the way Fitness and
+    /// Wallet set theirs.
     ///
     /// Never wraps. At large text sizes an unconstrained "$1,965" breaks after
     /// the comma and renders as "$1,96" above a lone "5", which is not a
     /// degraded reading of the number — it's a different number. Shrinking to
     /// fit is the only acceptable failure mode for a figure.
-    func mono(_ size: CGFloat, weight: Font.Weight = .bold) -> some View {
-        appFont(size, weight: weight, design: .monospaced)
+    func mono(_ size: CGFloat, weight: Font.Weight = .semibold) -> some View {
+        appFont(size, weight: weight, design: size >= 28 ? .rounded : .default)
+            .monospacedDigit()
             .lineLimit(1)
             .minimumScaleFactor(0.5)
+            // Inert until something animates: stepping a month rolls the
+            // figures to their new values rather than swapping them.
+            .contentTransition(.numericText())
     }
 
-    /// Rounded field/chip background with a hairline border — used by text
-    /// fields and the pickers in `AddSheet`.
+    /// Rounded fill for text fields and the pickers in `AddSheet`. The outline
+    /// is for selection, so an unselected chip passes none.
     func fieldBackground(
         _ fill: some ShapeStyle = Palette.field,
-        border: Color = Palette.cardBorder,
-        radius: CGFloat
+        border: Color? = nil,
+        radius: CGFloat = Radius.control
     ) -> some View {
         let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
         return background(fill, in: shape)
-            .overlay(shape.strokeBorder(border, lineWidth: 1))
+            .overlay {
+                if let border { shape.strokeBorder(border, lineWidth: 1.5) }
+            }
     }
 }
 

@@ -30,50 +30,21 @@ struct DataSheet: View {
     private static let phrase = "DELETE"
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
+        Page(title: "Your data",
+             subtitle: "All of it is on this phone. Here's how to take it with you, or get rid of it.",
+             displayMode: .inline, surface: .sheet) {
             VStack(alignment: .leading, spacing: 0) {
-                header
                 promise
                 syncSection
                 lockSection
                 exportSection
                 deleteSection
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
         }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
         .sheet(item: $file) { ShareSheet(url: $0.url) }
     }
 
     // MARK: Sections
-
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Your data").appFont(17, weight: .bold)
-                Text("All of it is on this phone. Here's how to take it with you, "
-                   + "or get rid of it.")
-                    .appFont(12.5)
-                    .foregroundStyle(Palette.sub)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 8)
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Palette.label9)
-                    .frame(width: 30, height: 30)
-                    .background(Palette.chip, in: Circle())
-            }
-            .accessibilityLabel("Close")
-        }
-        .padding(.top, 6).padding(.bottom, 18)
-    }
 
     private var promise: some View {
         let footprint = model.dataFootprint
@@ -102,9 +73,9 @@ struct DataSheet: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .card(border: Palette.cardBorderSoft, radius: 15)
-        .padding(.bottom, 22)
+        .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+        .card()
+        .padding(.bottom, Space.lg)
     }
 
     /// Whether the budget is actually syncing — which is not the same question
@@ -112,9 +83,7 @@ struct DataSheet: View {
     private var syncSection: some View {
         let status = model.cloudStatus
         return VStack(alignment: .leading, spacing: 10) {
-            Text("ICLOUD")
-                .appFont(10, weight: .bold).tracking(0.8)
-                .foregroundStyle(Palette.label9)
+            SectionTitle("iCloud")
 
             HStack(alignment: .top, spacing: 12) {
                 Image(systemName: status.symbol)
@@ -131,8 +100,8 @@ struct DataSheet: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .card(border: Palette.cardBorderSoft, radius: 15)
+            .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+            .card()
             .accessibilityElement(children: .combine)
         }
         .padding(.bottom, 26)
@@ -143,9 +112,7 @@ struct DataSheet: View {
     /// and for the limits of what it covers.
     private var lockSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("LOCK")
-                .appFont(10, weight: .bold).tracking(0.8)
-                .foregroundStyle(Palette.label9)
+            SectionTitle("Lock")
 
             Toggle(isOn: Binding(get: { lock.isEnabled },
                                  set: { wantsOn in
@@ -167,8 +134,8 @@ struct DataSheet: View {
                 }
             }
             .disabled(lock.isAuthenticating)
-            .padding(.horizontal, 14).padding(.vertical, 11)
-            .card(border: Palette.cardBorderSoft, radius: 15)
+            .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+            .card()
 
             if let failure = lock.failure {
                 Text(failure)
@@ -194,9 +161,7 @@ struct DataSheet: View {
 
     private var exportSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("TAKE IT WITH YOU")
-                .appFont(10, weight: .bold).tracking(0.8)
-                .foregroundStyle(Palette.label9)
+            SectionTitle("Take it with you")
 
             exportRow(
                 title: "Spreadsheet (CSV)",
@@ -274,17 +239,15 @@ struct DataSheet: View {
                     .appFont(13, weight: .semibold)
                     .foregroundStyle(Palette.muted)
             }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .card(border: Palette.cardBorderSoft, radius: 15)
+            .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+            .card()
         }
         .buttonStyle(.plain)
     }
 
     private var deleteSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("DELETE EVERYTHING")
-                .appFont(10, weight: .bold).tracking(0.8)
-                .foregroundStyle(Palette.label9)
+            SectionTitle("Delete everything")
 
             if confirming {
                 confirmation
@@ -310,8 +273,8 @@ struct DataSheet: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 12)
-                    .card(border: Palette.cardBorderSoft, radius: 15)
+                    .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                    .card()
                 }
                 .buttonStyle(.plain)
             }
@@ -347,8 +310,8 @@ struct DataSheet: View {
                 .autocorrectionDisabled()
                 .textInputAutocapitalization(.characters)
                 .appFont(15, weight: .semibold, design: .monospaced)
-                .padding(.horizontal, 14).padding(.vertical, 13)
-                .fieldBackground(radius: 13)
+                .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                .fieldBackground()
                 .accessibilityLabel("Type \(Self.phrase) to confirm deletion")
 
             if eraseFailed {
@@ -389,11 +352,11 @@ struct DataSheet: View {
                     .appFont(14, weight: .semibold)
                     .foregroundStyle(Palette.chipText)
                     .frame(maxWidth: .infinity).padding(13)
-                    .fieldBackground(radius: 14)
+                    .fieldBackground()
             }
         }
-        .padding(14)
-        .card(border: Palette.over.opacity(0.4), radius: 16)
+        .padding(Space.md)
+        .card(border: Palette.over.opacity(0.4))
     }
 
     /// Shown when the on-disk file couldn't be confirmed gone. Everything is

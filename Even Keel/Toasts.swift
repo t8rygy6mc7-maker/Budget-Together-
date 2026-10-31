@@ -2,8 +2,9 @@ import SwiftUI
 
 // MARK: - Undo toast
 
-/// The offer to take back whatever just happened. Sits above the tab bar,
-/// dismisses itself after a few seconds, and can be swiped away.
+/// The offer to take back whatever just happened, for systems without the bar
+/// accessory: see `BarAccessory`. Sits above the tab bar, dismisses itself after
+/// a few seconds, and can be swiped away.
 ///
 /// This is doing more work than it looks like it is: nothing else in the app
 /// changes how *safe* it feels to tap something, and a delete that can't be
@@ -41,17 +42,12 @@ struct UndoToast: View {
                 }
                 .accessibilityLabel("Dismiss")
             }
-            .padding(.horizontal, 14).padding(.vertical, 11)
-            .background(Palette.card, in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 15, style: .continuous)
-                    .strokeBorder(Palette.cardBorder, lineWidth: 1)
-            )
+            .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+            .background(Palette.card, in: RoundedRectangle(cornerRadius: Radius.card, style: .continuous))
             .shadow(color: .black.opacity(0.22), radius: 16, y: 6)
-            .padding(.horizontal, 18)
-            .padding(.bottom, 10)
+            .padding(.horizontal, Space.md)
+            .padding(.bottom, Space.xs)
             .readableColumn()
-            .background(Palette.screen)
             // The one place Reduce Motion can't just remove the animation. This
             // offer expires on its own, so it has to be noticed to be taken —
             // appearing from nowhere with no change to catch the eye is worse
@@ -74,6 +70,57 @@ struct UndoToast: View {
             .accessibilityElement(children: .contain)
             .accessibilityAddTraits(.isModal)
         }
+    }
+}
+
+// MARK: - Bar accessory
+
+/// The undo offer and the sample-data reminder, in the glass bar iOS keeps above
+/// the tab bar. Both are about the whole app rather than one screen, which is
+/// what that bar is for, and the undo offer outranks the reminder while it lasts.
+///
+/// Before iOS 26.1 it can't be switched off when there's nothing to say, so
+/// `UndoToast` and `SampleDataBar` do these jobs from inside each tab instead.
+@available(iOS 26.1, *)
+struct BarAccessory: View {
+    @EnvironmentObject private var model: AppModel
+    @State private var confirming = false
+
+    var body: some View {
+        Group {
+            if let prompt = model.undoPrompt {
+                row(Text(prompt.message), action: "Undo", hint: "Puts it back") { model.undo() }
+                    // Announced rather than silently drawn — the offer is
+                    // time-limited, so a VoiceOver user who doesn't hear about
+                    // it can't take it.
+                    .accessibilityAddTraits(.isModal)
+            } else {
+                // How much room this gets varies more than it looks: the row shrinks
+                // when the tab bar does, and again beside a bar on its end.
+                row(ViewThatFits(in: .horizontal) {
+                    Text("You're looking at sample data")
+                    Text("Sample data")
+                }, action: "Start mine", hint: nil) { confirming = true }
+            }
+        }
+        .dynamicTypeSize(...DynamicTypeSize.xLarge)
+        .sampleDataConfirmation(isPresented: $confirming)
+    }
+
+    private func row(_ message: some View, action: String, hint: String?,
+                     perform: @escaping () -> Void) -> some View {
+        HStack(spacing: Space.xs) {
+            message
+                .appFont(13, weight: .medium)
+                .lineLimit(1)
+                .minimumScaleFactor(0.85)
+            Spacer(minLength: Space.xxs)
+            Button(action, action: perform)
+                .appFont(13, weight: .semibold)
+                .foregroundStyle(Palette.teal)
+                .accessibilityHint(hint ?? "")
+        }
+        .padding(.horizontal, Space.md)
     }
 }
 
@@ -107,33 +154,47 @@ struct SampleDataBar: View {
                 Spacer(minLength: 4)
                 Button { confirming = true } label: {
                     Text("Start mine")
-                        .appFont(12, weight: .bold)
+                        .appFont(12, weight: .semibold)
                         .lineLimit(1)
                         .fixedSize()
                         .foregroundStyle(Palette.tealInk)
-                        .padding(.horizontal, 12).padding(.vertical, 7)
-                        .background(Palette.tealGradient, in: Capsule())
                 }
+                .buttonStyle(.borderedProminent)
+                .buttonBorderShape(.capsule)
+                .controlSize(.small)
             }
-            .padding(.horizontal, 16).padding(.vertical, 9)
+            .padding(.horizontal, Space.md).padding(.vertical, Space.xs)
             .readableColumn()
             .background(Palette.chip)
-            .overlay(alignment: .bottom) {
-                Rectangle().fill(Palette.cardBorder).frame(height: 1)
-            }
             // Chrome pinned above every screen, like the tab bar: it has to stay
             // a bar rather than grow into a panel that owns half the display.
             .dynamicTypeSize(...DynamicTypeSize.xLarge)
-            .confirmationDialog("Clear the sample and start your own budget?",
-                                isPresented: $confirming, titleVisibility: .visible) {
-                Button("Start my own", role: .destructive) {
-                    model.discardSampleAndStartOver()
-                }
-                Button("Keep looking", role: .cancel) {}
-            } message: {
-                Text("The sample entries and people all go. Nothing of yours is affected — "
-                   + "you haven't set anything up yet.")
+            .sampleDataConfirmation(isPresented: $confirming)
+        }
+    }
+}
+
+extension View {
+    /// The one question before the sample goes.
+    fileprivate func sampleDataConfirmation(isPresented: Binding<Bool>) -> some View {
+        modifier(SampleDataConfirmation(isPresented: isPresented))
+    }
+}
+
+private struct SampleDataConfirmation: ViewModifier {
+    @EnvironmentObject private var model: AppModel
+    @Binding var isPresented: Bool
+
+    func body(content: Content) -> some View {
+        content.confirmationDialog("Clear the sample and start your own budget?",
+                                   isPresented: $isPresented, titleVisibility: .visible) {
+            Button("Start my own", role: .destructive) {
+                model.discardSampleAndStartOver()
             }
+            Button("Keep looking", role: .cancel) {}
+        } message: {
+            Text("The sample entries and people all go. Nothing of yours is affected — "
+               + "you haven't set anything up yet.")
         }
     }
 }

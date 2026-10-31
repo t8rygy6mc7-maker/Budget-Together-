@@ -40,10 +40,12 @@ struct MoveMoneySheet: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
+        ModalPage(title: "Give \(destination.label) more room",
+                  subtitle: shortfall > 0
+                      ? "\(Fmt.money(shortfall)) past its limit"
+                      : "From a category that isn't using it",
+                  detents: [.medium, .large]) {
             VStack(alignment: .leading, spacing: 0) {
-                header
-
                 if donors.isEmpty {
                     EmptyState(
                         symbol: "tray",
@@ -55,47 +57,25 @@ struct MoveMoneySheet: View {
                 } else {
                     amountField
                     sourcePicker
-                    confirmButton
+                    moveFootnote
                 }
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
+            .toolbar {
+                if !donors.isEmpty {
+                    ConfirmItem(title: requested.map { "Move \(Fmt.money($0))" } ?? "Move",
+                                isEnabled: requested != nil) {
+                        guard let requested, let source else { return }
+                        model.moveBudget(from: source, to: destination.id, amount: requested)
+                        dismiss()
+                    }
+                }
+            }
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
         .onAppear {
             source = donors.first?.bucket.id
             if shortfall > 0 { amount = Fmt.plain(shortfall.rounded(.up)) }
             amountFocused = true
         }
-    }
-
-    private var header: some View {
-        HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text("Give \(destination.label) more room")
-                    .appFont(17, weight: .bold)
-                Text(shortfall > 0
-                     ? "It's \(Fmt.money(shortfall)) past its limit. Take that from somewhere with room to spare."
-                     : "Take some room from a category that isn't using it.")
-                    .appFont(12.5)
-                    .foregroundStyle(Palette.sub)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 8)
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Palette.label9)
-                    .frame(width: 30, height: 30)
-                    .background(Palette.chip, in: Circle())
-            }
-            .accessibilityLabel("Close")
-        }
-        .padding(.top, 6).padding(.bottom, 18)
     }
 
     private var amountField: some View {
@@ -105,97 +85,60 @@ struct MoveMoneySheet: View {
                 .keyboardType(.decimalPad)
                 .focused($amountFocused)
                 .multilineTextAlignment(.center)
-                .appFont(40, weight: .bold, design: .monospaced)
+                .appFont(40, weight: .semibold, design: .rounded)
+                .monospacedDigit()
                 .frame(maxWidth: 200)
                 .accessibilityLabel("Amount to move")
         }
         .frame(maxWidth: .infinity)
-        .padding(.bottom, 20)
+        .padding(.bottom, Space.lg)
     }
 
     private var sourcePicker: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            Text("Take it from")
-                .appFont(12, weight: .semibold)
-                .foregroundStyle(Palette.sub)
-
-            VStack(spacing: 8) {
-                ForEach(donors, id: \.bucket.id) { donor in
-                    let isSelected = source == donor.bucket.id
-                    let isEnough = Fmt.amount(from: amount).map { $0 <= donor.available } ?? true
-                    Button {
-                        Haptics.selected()
-                        source = donor.bucket.id
-                    } label: {
-                        HStack(spacing: 11) {
-                            Image(systemName: donor.bucket.symbol)
+        RowGroup(title: "Take it from") {
+            ForEach(donors, id: \.bucket.id) { donor in
+                let isSelected = source == donor.bucket.id
+                let isEnough = Fmt.amount(from: amount).map { $0 <= donor.available } ?? true
+                Button {
+                    Haptics.selected()
+                    source = donor.bucket.id
+                } label: {
+                    RowLabel(symbol: donor.bucket.symbol, color: donor.bucket.color,
+                             fill: donor.bucket.tint,
+                             title: Text(donor.bucket.label),
+                             subtitle: Text("\(Fmt.money(donor.available)) unspent"),
+                             subtitleColor: isEnough ? Palette.sub : Palette.over) {
+                        if isSelected {
+                            Image(systemName: "checkmark")
                                 .appFont(14, weight: .semibold)
-                                .foregroundStyle(donor.bucket.color)
-                                .frame(width: 32, height: 32)
-                                .background(donor.bucket.tint,
-                                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                            VStack(alignment: .leading, spacing: 1) {
-                                Text(donor.bucket.label).appFont(13.5, weight: .semibold)
-                                Text("\(Fmt.money(donor.available)) unspent")
-                                    .appFont(11.5)
-                                    .foregroundStyle(isEnough ? Palette.sub : Palette.over)
-                            }
-                            Spacer(minLength: 4)
-                            if isSelected {
-                                Image(systemName: "checkmark.circle.fill")
-                                    .appFont(16, weight: .semibold)
-                                    .foregroundStyle(Palette.teal)
-                            }
+                                .foregroundStyle(Palette.teal)
                         }
-                        .padding(.horizontal, 12).padding(.vertical, 10)
-                        .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
-                        .fieldBackground(isSelected ? AnyShapeStyle(Palette.teal.opacity(0.10))
-                                                    : AnyShapeStyle(Palette.card),
-                                         border: isSelected ? Palette.teal : Palette.cardBorder,
-                                         radius: 13)
                     }
-                    .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
+                .buttonStyle(.row)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
     }
 
     @ViewBuilder
-    private var confirmButton: some View {
-        let value = requested
-        let overdrawn = Fmt.amount(from: amount) != nil && value == nil && source != nil
+    private var moveFootnote: some View {
+        let overdrawn = Fmt.amount(from: amount) != nil && requested == nil && source != nil
 
-        VStack(spacing: 8) {
-            Button {
-                guard let value, let source else { return }
-                model.moveBudget(from: source, to: destination.id, amount: value)
-                dismiss()
-            } label: {
-                Text(value.map { "Move \(Fmt.money($0))" } ?? "Move")
-                    .appFont(15, weight: .bold)
-                    .frame(maxWidth: .infinity).padding(15)
-                    .foregroundStyle(value != nil ? Palette.tealInk : Palette.muted)
-                    .background {
-                        if value != nil { Palette.tealGradient } else { Palette.chip }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-            }
-            .disabled(value == nil)
-
+        Group {
             if overdrawn, let source {
                 Text("That's more than \(Bucket.named(source).label) has spare "
                    + "(\(Fmt.money(model.movableAmount(from: source)))).")
-                    .appFont(11.5)
                     .foregroundStyle(Palette.over)
-                    .fixedSize(horizontal: false, vertical: true)
             } else {
                 Text("Your plan total doesn't change — this just moves room between categories.")
-                    .appFont(11.5)
                     .foregroundStyle(Palette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.top, 20)
+        .appFont(11.5)
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(.top, Space.sm)
+        .padding(.horizontal, Space.md)
     }
 }
 

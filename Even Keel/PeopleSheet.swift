@@ -7,24 +7,22 @@ import SwiftUI
 
 struct PeopleSheet: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
 
     @State private var newName = ""
     @State private var pendingRemoval: Member?
     @State private var alertsOn = false
     @State private var mutedBuckets: Set<String> = []
     @State private var deniedBySystem = false
-    @State private var showData = false
     @FocusState private var newNameFocused: Bool
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
+        ModalPage(title: "People",
+                  subtitle: Fmt.count(model.members.count, "person", plural: "people") + " on this budget",
+                  detents: [.medium, .large]) {
             VStack(alignment: .leading, spacing: 0) {
-                header
-
                 whoAreYouPrompt
 
-                VStack(spacing: 8) {
+                RowGroup {
                     ForEach(model.members) { PersonRow(member: $0, remove: { pendingRemoval = $0 }) }
                 }
 
@@ -34,7 +32,8 @@ struct PeopleSheet: View {
                     .appFont(12)
                     .foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 14)
+                    .padding(.top, Space.sm)
+                    .padding(.horizontal, Space.md)
 
                 SharingSection()
                 BudgetSwitcher()
@@ -42,15 +41,7 @@ struct PeopleSheet: View {
                 appearanceSection
                 dataSection
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
         }
-        .sheet(isPresented: $showData) { DataSheet().environmentObject(model) }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
         .confirmationDialog(
             pendingRemoval.map { "Remove \($0.name)?" } ?? "",
             isPresented: Binding(get: { pendingRemoval != nil },
@@ -119,8 +110,7 @@ struct PeopleSheet: View {
                                 Spacer(minLength: 0)
                             }
                             .padding(.horizontal, 9).padding(.vertical, 7)
-                            .fieldBackground(AnyShapeStyle(Palette.card),
-                                             border: Palette.cardBorder, radius: 11)
+                            .fieldBackground(AnyShapeStyle(Palette.card))
                         }
                         .accessibilityLabel("I'm \(member.name)")
                     }
@@ -132,27 +122,6 @@ struct PeopleSheet: View {
         }
     }
 
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("People").appFont(17, weight: .bold)
-                Text("^[\(model.members.count) person](inflect: true) on this budget")
-                    .appFont(12.5, weight: .medium)
-                    .foregroundStyle(Palette.sub)
-            }
-            Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Palette.label9)
-                    .frame(width: 30, height: 30)
-                    .background(Palette.chip, in: Circle())
-            }
-            .accessibilityLabel("Close")
-        }
-        .padding(.top, 6).padding(.bottom, 16)
-    }
-
     /// Whether the budget is syncing, one tap from Home rather than three.
     ///
     /// Short on purpose — the full explanation lives on the data screen, and
@@ -162,27 +131,10 @@ struct PeopleSheet: View {
     /// no iCloud account that would be wrong.
     private var syncRow: some View {
         let status = model.cloudStatus
-        return Button { showData = true } label: {
-            HStack(spacing: 12) {
-                Image(systemName: status.symbol)
-                    .appFont(15, weight: .semibold)
-                    .foregroundStyle(status.tint)
-                    .frame(width: 34, height: 34)
-                    .background(status.tint.opacity(0.16),
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                Text(status.title)
-                    .appFont(14, weight: .semibold)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .multilineTextAlignment(.leading)
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .appFont(12, weight: .semibold)
-                    .foregroundStyle(Palette.muted)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .card(border: Palette.cardBorderSoft, radius: 15)
+        return NavigationLink { DataSheet() } label: {
+            RowLabel(symbol: status.symbol, color: status.tint, title: Text(status.title))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.row)
         .accessibilityHint("Opens your data, including what's synced")
         .task { await model.refreshCloudStatus() }
     }
@@ -191,43 +143,19 @@ struct PeopleSheet: View {
     /// app has, rather than behind a menu, because a promise about data you
     /// can't find the controls for isn't much of a promise.
     private var dataSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("YOUR DATA")
-                .appFont(10, weight: .bold).tracking(0.8)
-                .foregroundStyle(Palette.label9)
-
+        RowGroup(title: "Your data") {
             syncRow
 
-            Button { showData = true } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "lock.shield.fill")
-                        .appFont(15, weight: .semibold)
-                        .foregroundStyle(Palette.teal)
-                        .frame(width: 34, height: 34)
-                        .background(Palette.teal.opacity(0.16),
-                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    // Names the lock as well. It lives on the data screen, and
-                    // under a title that only mentioned exporting and deleting,
-                    // nobody looking for a Face ID switch would think to open it.
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Privacy and your data")
-                            .appFont(14, weight: .semibold)
-                        Text("Lock with \(AppLock.biometryName), take a copy, or wipe it all.")
-                            .appFont(11.5).foregroundStyle(Palette.sub)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .multilineTextAlignment(.leading)
-                    }
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.right")
-                        .appFont(12, weight: .semibold)
-                        .foregroundStyle(Palette.muted)
-                }
-                .padding(.horizontal, 14).padding(.vertical, 12)
-                .card(border: Palette.cardBorderSoft, radius: 15)
+            // Names the lock as well. It lives on the data screen, and
+            // under a title that only mentioned exporting and deleting,
+            // nobody looking for a Face ID switch would think to open it.
+            NavigationLink { DataSheet() } label: {
+                RowLabel(symbol: "lock.shield.fill", title: Text("Privacy and your data"),
+                         subtitle: Text("Lock with \(AppLock.biometryName), take a copy, or wipe it all."))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.row)
         }
-        .padding(.top, 22)
+        .padding(.top, Space.lg)
     }
 
     /// Limit alerts: off unless asked for, and silenceable per category.
@@ -238,24 +166,21 @@ struct PeopleSheet: View {
     /// never asked for it — and health and personal spending are precisely
     /// where an unsolicited buzz lands worst.
     private var alertsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("ALERTS")
-                .appFont(10, weight: .bold)
-                .tracking(0.8)
-                .foregroundStyle(Palette.label9)
+        VStack(alignment: .leading, spacing: Space.xs) {
+            SectionTitle("Alerts")
 
             Toggle(isOn: $alertsOn) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Tell me when a category is running low")
-                        .appFont(13.5, weight: .semibold)
+                        .appFont(13.5, weight: .medium)
                         .fixedSize(horizontal: false, vertical: true)
                     Text(alertsOn ? "A single nudge at 80% and again at the limit."
                                   : "Off. Nothing will interrupt you.")
                         .appFont(11.5).foregroundStyle(Palette.sub)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 11)
-            .card(border: Palette.cardBorderSoft, radius: 15)
+            .padding(Space.md)
+            .card()
             .onChange(of: alertsOn) { _, wantsOn in
                 guard wantsOn else {
                     Notifier.shared.limitAlertsEnabled = false
@@ -303,8 +228,7 @@ struct PeopleSheet: View {
                             .frame(maxWidth: .infinity)
                             .padding(.horizontal, 9).padding(.vertical, 8)
                             .foregroundStyle(muted ? Palette.muted : Palette.chipText)
-                            .fieldBackground(AnyShapeStyle(Palette.card),
-                                             border: Palette.cardBorder, radius: 12)
+                            .fieldBackground(AnyShapeStyle(Palette.card))
                         }
                         .accessibilityLabel("\(bucket.label) alerts")
                         .accessibilityValue(muted ? "Muted" : "On")
@@ -312,7 +236,7 @@ struct PeopleSheet: View {
                 }
             }
         }
-        .padding(.top, 22)
+        .padding(.top, Space.lg)
         .onAppear {
             alertsOn = Notifier.shared.limitAlertsEnabled
             mutedBuckets = Set(model.expenseCategories.map(\.id).filter(Notifier.shared.isMuted))
@@ -322,80 +246,49 @@ struct PeopleSheet: View {
     /// Appearance lives here rather than behind a settings screen the app
     /// doesn't have — People is already the "this device, these humans" sheet.
     private var appearanceSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("APPEARANCE")
-                .appFont(10, weight: .bold)
-                .tracking(0.8)
-                .foregroundStyle(Palette.label9)
+        VStack(alignment: .leading, spacing: Space.xs) {
+            SectionTitle("Appearance")
 
-            HStack(spacing: 6) {
+            // Not `appAnimation`: switching the scheme cross-fades colour and
+            // moves nothing, which is the case Reduce Motion leaves alone.
+            Picker("Appearance", selection: $model.appearance.animation(.easeInOut(duration: 0.2))) {
                 ForEach(Appearance.allCases) { option in
-                    appearanceOption(option)
+                    Label(option.label, systemImage: option.symbol).tag(option)
                 }
             }
+            .pickerStyle(.segmented)
 
             Text("Only on this phone — it won't change your partner's.")
                 .appFont(11.5)
                 .foregroundStyle(Palette.sub)
+                .padding(.horizontal, Space.md)
         }
-        .padding(.top, 22)
-    }
-
-    private func appearanceOption(_ option: Appearance) -> some View {
-        let isSelected = model.appearance == option
-        return Button {
-            // Not `withAppAnimation`: switching the scheme cross-fades colour
-            // and moves nothing, which is the case Reduce Motion leaves alone.
-            withAnimation(.easeInOut(duration: 0.2)) { model.appearance = option }
-        } label: {
-            VStack(spacing: 5) {
-                Image(systemName: option.symbol).appFont(15, weight: .semibold)
-                Text(option.label).appFont(11.5, weight: .semibold)
-            }
-            .foregroundStyle(isSelected ? Palette.tealInk : Palette.chipText)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 12)
-            .background {
-                if isSelected {
-                    Palette.tealGradient
-                } else {
-                    Palette.chip
-                }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel(option.label)
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : [.isButton])
+        .padding(.top, Space.lg)
     }
 
     private var addField: some View {
-        HStack(spacing: 9) {
+        HStack(spacing: Space.xs) {
             TextField("", text: $newName,
                       prompt: Text("Add someone — their name").foregroundStyle(Palette.muted))
                 .focused($newNameFocused)
                 .textFieldStyle(.plain)
-                .appFont(15, weight: .medium)
+                .appFont(15)
                 .submitLabel(.done)
                 .onSubmit(add)
-                .padding(.horizontal, 14).padding(.vertical, 13)
-                .fieldBackground(radius: 13)
+                .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                .fieldBackground()
 
             let canAdd = !newName.trimmingCharacters(in: .whitespaces).isEmpty
             Button(action: add) {
                 Image(systemName: "plus")
-                    .appFont(17, weight: .bold)
+                    .appFont(14, weight: .bold)
                     .foregroundStyle(canAdd ? Palette.tealInk : Palette.muted)
-                    .frame(width: 46, height: 46)
-                    .background {
-                        if canAdd { Palette.tealGradient } else { Palette.chip }
-                    }
-                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             }
+            .primaryButtonStyle()
             .disabled(!canAdd)
             .accessibilityLabel("Add person")
         }
-        .padding(.top, 14)
+        .padding(.top, Space.sm)
     }
 
     private func add() {
@@ -419,9 +312,17 @@ private struct PersonRow: View {
 
     var body: some View {
         let isMe = model.me?.id == member.id
-        HStack(spacing: 12) {
+        GroupedRow(separatorInset: Space.md + 32 + Space.sm) {
+            content(isMe: isMe)
+        }
+        .onAppear { draftName = member.name }
+        .onChange(of: member.name) { _, name in if !editing { draftName = name } }
+    }
+
+    private func content(isMe: Bool) -> some View {
+        HStack(spacing: Space.sm) {
             Button { model.cycleColor(member.id) } label: {
-                MemberAvatar(member: member, size: 36)
+                MemberAvatar(member: member, size: 32)
             }
             .accessibilityLabel("\(member.name) colour")
             .accessibilityHint("Changes the avatar colour")
@@ -429,7 +330,7 @@ private struct PersonRow: View {
             TextField("", text: $draftName, prompt: Text("Name").foregroundStyle(Palette.muted))
                 .focused($editing)
                 .textFieldStyle(.plain)
-                .appFont(14, weight: .semibold)
+                .appFont(14, weight: .medium)
                 .submitLabel(.done)
                 .onSubmit(commit)
                 .onChange(of: editing) { _, focused in if !focused { commit() } }
@@ -477,10 +378,6 @@ private struct PersonRow: View {
             }
             .accessibilityLabel("Options for \(member.name)")
         }
-        .padding(.horizontal, 13).padding(.vertical, 10)
-        .card(border: Palette.cardBorderSoft, radius: 15)
-        .onAppear { draftName = member.name }
-        .onChange(of: member.name) { _, name in if !editing { draftName = name } }
     }
 
     private func commit() {

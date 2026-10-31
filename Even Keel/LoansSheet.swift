@@ -8,81 +8,32 @@ import SwiftUI
 
 struct LoansSheet: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
 
     @State private var editing: Loan?
     @State private var isAdding = false
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-
+        Page(title: "Owed", subtitle: Fmt.count(model.loans.count, "balance"), displayMode: .inline) {
+            VStack(alignment: .leading, spacing: Space.md) {
                 if model.loans.isEmpty {
                     Text("Add a student loan, a card balance or anything else you're paying down, and you'll see how long it takes at your current payment.")
                         .appFont(13)
                         .foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.vertical, 22)
-                } else {
-                    totalCard.padding(.bottom, 12)
-                    VStack(spacing: 8) {
+                    } else {
+                    totalCard
+                    RowGroup(footer: "Payoff figures assume the payment and rate stay as entered. They're an estimate, not a statement from your lender.") {
                         ForEach(model.loans) { loan in
                             Button { editing = loan } label: { row(loan) }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.row)
                         }
                     }
                 }
-
-                Button { isAdding = true } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "plus").appFont(15, weight: .bold)
-                        Text("Add a balance").appFont(15, weight: .bold)
-                    }
-                    .frame(maxWidth: .infinity).padding(15)
-                    .foregroundStyle(Palette.tealInk)
-                    .background(Palette.tealGradient,
-                                in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-                }
-                .padding(.top, 16)
-
-                Text("Payoff figures assume the payment and rate stay as entered. They're an estimate, not a statement from your lender.")
-                    .appFont(11.5)
-                    .foregroundStyle(Palette.muted)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 12)
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
+        .toolbar { AddItem(label: "Add a balance") { isAdding = true } }
         .sheet(item: $editing) { loan in LoanForm(loan: loan).environmentObject(model) }
         .sheet(isPresented: $isAdding) { LoanForm(loan: nil).environmentObject(model) }
-    }
-
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Owed").appFont(17, weight: .bold)
-                Text("^[\(model.loans.count) balance](inflect: true)")
-                    .appFont(12.5, weight: .medium)
-                    .foregroundStyle(Palette.sub)
-            }
-            Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Palette.label9)
-                    .frame(width: 30, height: 30)
-                    .background(Palette.chip, in: Circle())
-            }
-            .accessibilityLabel("Close")
-        }
-        .padding(.top, 6).padding(.bottom, 16)
     }
 
     private var totalCard: some View {
@@ -94,37 +45,20 @@ struct LoansSheet: View {
                 .appFont(12).foregroundStyle(Palette.sub)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 17).padding(.vertical, 16)
+        .padding(Space.md)
         .card()
     }
 
     private func row(_ loan: Loan) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: "graduationcap.fill")
-                .appFont(15, weight: .semibold)
-                .foregroundStyle(Palette.purple)
-                .frame(width: 34, height: 34)
-                .background(Palette.purple.opacity(0.16),
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(loan.name).appFont(14, weight: .semibold).lineLimit(1)
-                Text(loan.payoffLabel)
-                    .appFont(11.5)
-                    .foregroundStyle(loan.monthsToClear == nil ? Palette.overText : Palette.sub)
-                    .lineLimit(1)
-            }
-
-            Spacer(minLength: 4)
-
+        RowLabel(symbol: "graduationcap.fill", color: Palette.purple,
+                 title: Text(loan.name), subtitle: Text(loan.payoffLabel),
+                 subtitleColor: loan.monthsToClear == nil ? Palette.overText : Palette.sub) {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(Fmt.money(loan.balance)).mono(13)
                 Text("\(Fmt.money(loan.monthlyPayment))/mo")
                     .appFont(10.5).foregroundStyle(Palette.sub)
             }
         }
-        .padding(.horizontal, 13).padding(.vertical, 11)
-        .card(border: Palette.cardBorderSoft, radius: 15)
     }
 }
 
@@ -148,23 +82,8 @@ struct LoanForm: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text(loan == nil ? "New balance" : "Edit balance")
-                        .appFont(17, weight: .bold)
-                    Spacer()
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .appFont(14, weight: .semibold)
-                            .foregroundStyle(Palette.label9)
-                            .frame(width: 30, height: 30)
-                            .background(Palette.chip, in: Circle())
-                    }
-                    .accessibilityLabel("Close")
-                }
-                .padding(.top, 6)
-
+        ModalPage(title: loan == nil ? "New balance" : "Edit balance") {
+            VStack(alignment: .leading, spacing: Space.md) {
                 field("Name", text: $name, prompt: "e.g. Student loan")
                 money("Balance owed", text: $balance)
                 money("Payment a month", text: $payment)
@@ -172,13 +91,13 @@ struct LoanForm: View {
                       suffix: "% a year")
 
                 if let preview = previewLoan {
-                    HStack(spacing: 10) {
+                    HStack(spacing: Space.sm) {
                         Image(systemName: preview.monthsToClear == nil
                               ? "exclamationmark.triangle.fill" : "clock.fill")
                             .appFont(13, weight: .semibold)
                             .foregroundStyle(preview.monthsToClear == nil ? Palette.over : Palette.teal)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(preview.payoffLabel).appFont(13, weight: .semibold)
+                            Text(preview.payoffLabel).appFont(13, weight: .medium)
                             if let interest = preview.projectedInterest, interest > 0 {
                                 Text("\(Fmt.money(interest)) of interest along the way")
                                     .appFont(11.5).foregroundStyle(Palette.sub)
@@ -186,43 +105,21 @@ struct LoanForm: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 12)
-                    .card(border: Palette.cardBorderSoft, radius: 13)
+                    .padding(Space.md)
+                    .card()
                 }
-
-                let canSave = draft != nil
-                Button(action: save) {
-                    Text(loan == nil ? "Add" : "Save changes")
-                        .appFont(15, weight: .bold)
-                        .frame(maxWidth: .infinity).padding(15)
-                        .foregroundStyle(canSave ? Palette.tealInk : Palette.muted)
-                        .background {
-                            if canSave { Palette.tealGradient } else { Palette.chip }
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                }
-                .disabled(!canSave)
 
                 if let loan {
-                    Button {
+                    SecondaryButton(title: "Delete", color: Palette.over) {
                         model.deleteLoan(loan.id)
                         dismiss()
-                    } label: {
-                        Text("Delete")
-                            .appFont(14, weight: .semibold)
-                            .foregroundStyle(Palette.over)
-                            .frame(maxWidth: .infinity).padding(13)
                     }
                 }
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
+            .toolbar {
+                ConfirmItem(title: loan == nil ? "Add" : "Save", isEnabled: draft != nil, action: save)
+            }
         }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
         .onAppear(perform: load)
     }
 
@@ -239,34 +136,35 @@ struct LoanForm: View {
                        keyboard: UIKeyboardType = .default,
                        suffix: String? = nil) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title).appFont(12, weight: .semibold).foregroundStyle(Palette.sub)
+            Text(title).appFont(12, weight: .medium).foregroundStyle(Palette.sub)
             HStack(spacing: 6) {
                 TextField("", text: text,
                           prompt: Text(prompt).foregroundStyle(Palette.muted))
                     .textFieldStyle(.plain)
                     .keyboardType(keyboard)
-                    .appFont(15, weight: .medium)
+                    .appFont(15)
                 if let suffix {
                     Text(suffix).appFont(12).foregroundStyle(Palette.muted)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 13)
-            .fieldBackground(radius: 13)
+            .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+            .fieldBackground()
         }
         .accessibilityElement(children: .contain)
     }
 
     private func money(_ title: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title).appFont(12, weight: .semibold).foregroundStyle(Palette.sub)
+            Text(title).appFont(12, weight: .medium).foregroundStyle(Palette.sub)
             HStack(spacing: 2) {
                 Text(Fmt.currencySymbol).mono(14, weight: .regular).foregroundStyle(Palette.muted)
                 TextField("0", text: text)
                     .keyboardType(.decimalPad)
-                    .appFont(15, weight: .bold, design: .monospaced)
+                    .appFont(15, weight: .medium)
+                    .monospacedDigit()
             }
-            .padding(.horizontal, 14).padding(.vertical, 13)
-            .fieldBackground(radius: 13)
+            .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+            .fieldBackground()
         }
         .accessibilityElement(children: .contain)
     }
@@ -294,7 +192,5 @@ struct LoanForm: View {
 }
 
 #Preview {
-    LoansSheet()
-        .environmentObject(AppModel.preview)
-        .preferredColorScheme(.dark)
+    PreviewShell { LoansSheet() }
 }

@@ -65,6 +65,10 @@ struct AddSheet: View {
         let day: Date
     }
 
+    /// Narrowest a one-tap shortcut may be. Scaled, so larger text gets fewer
+    /// columns rather than "Monthl…" and "Gym m…".
+    @ScaledMetric(relativeTo: .subheadline) private var shortcutWidth: CGFloat = 150
+
     /// Adaptive rather than a fixed four, so the labels still fit when Dynamic
     /// Type grows them.
     private static let columns = [GridItem(.adaptive(minimum: 76), spacing: 8)]
@@ -85,23 +89,29 @@ struct AddSheet: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 0) {
-                header
-                if let saved {
-                    receipt(saved)
-                } else {
-                    form
+        NavigationStack {
+            Page(title: title, displayMode: .inline, surface: .sheet) {
+                VStack(spacing: 0) {
+                    if let saved {
+                        receipt(saved)
+                    } else {
+                        form
+                    }
                 }
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { CloseButton(action: close) }
+                if saved == nil {
+                    // In the bar, not at the end of the form. The keypad opens
+                    // over everything below the fold, so the one button that
+                    // finishes the job was sitting half hidden behind it.
+                    ConfirmItem(title: editing == nil ? "Add to log" : "Save",
+                                isEnabled: draft != nil, action: save)
+                }
+            }
         }
         .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
+        .modalSurface()
         .sheet(isPresented: $showPeople) { PeopleSheet().environmentObject(model) }
         .onAppear(perform: load)
         .onDisappear { voice.stop() }
@@ -154,7 +164,6 @@ struct AddSheet: View {
         } else {
             guessSummary
         }
-        saveButton
         if editing != nil { deleteButton }
     }
 
@@ -231,7 +240,7 @@ struct AddSheet: View {
                     }
             }
         }
-        .padding(.bottom, 14)
+        .padding(.bottom, Space.sm)
     }
 
     private func pick(_ newDay: Date) {
@@ -252,8 +261,7 @@ struct AddSheet: View {
             .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
             .fieldBackground(isSelected ? AnyShapeStyle(tint.opacity(0.14))
                                         : AnyShapeStyle(Palette.card),
-                             border: isSelected ? tint : Palette.cardBorder,
-                             radius: 14)
+                             border: isSelected ? tint : nil)
         }
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
@@ -269,7 +277,7 @@ struct AddSheet: View {
                 Text(kind == .income ? "Usual sources" : "Usual suspects")
                     .appFont(12, weight: .semibold)
                     .foregroundStyle(Palette.sub)
-                LazyVGrid(columns: [GridItem(.adaptive(minimum: 118), spacing: 8)], spacing: 8) {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: shortcutWidth), spacing: 8)], spacing: 8) {
                     ForEach(suggestions) { shortcut in
                         Button { apply(shortcut) } label: {
                             HStack(spacing: 7) {
@@ -289,15 +297,14 @@ struct AddSheet: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 10).padding(.vertical, 8)
                             .foregroundStyle(Palette.chipText)
-                            .fieldBackground(AnyShapeStyle(Palette.card),
-                                             border: Palette.cardBorder, radius: 12)
+                            .fieldBackground(AnyShapeStyle(Palette.card))
                         }
                         .accessibilityLabel("\(shortcut.place), usually \(Fmt.money(shortcut.typicalAmount))")
                         .accessibilityHint("Fills the form in")
                     }
                 }
             }
-            .padding(.top, 14)
+            .padding(.top, Space.sm)
         }
     }
 
@@ -338,8 +345,8 @@ struct AddSheet: View {
                 .textFieldStyle(.plain)
                 .lineLimit(1...4)
                 .appFont(14)
-                .padding(.horizontal, 14).padding(.vertical, 12)
-                .fieldBackground(radius: 13)
+                .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                .fieldBackground()
                 .accessibilityLabel("Note")
             if model.members.count > 1 {
                 Text("Everyone on the budget sees this. It's the cheapest way to answer "
@@ -349,24 +356,7 @@ struct AddSheet: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(.top, 14)
-    }
-
-    private var header: some View {
-        HStack {
-            Text(title)
-                .appFont(17, weight: .bold)
-            Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Palette.label9)
-                    .frame(width: 30, height: 30)
-                    .background(Palette.chip, in: Circle())
-            }
-            .accessibilityLabel("Close")
-        }
-        .padding(.top, 6).padding(.bottom, 16)
+        .padding(.top, Space.sm)
     }
 
     private var title: String {
@@ -425,8 +415,8 @@ struct AddSheet: View {
                 .foregroundStyle(Palette.sub)
             }
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 22).padding(.horizontal, 16)
-            .card(border: Palette.cardBorderSoft, radius: 18)
+            .padding(.vertical, Space.lg).padding(.horizontal, Space.md)
+            .card()
             // One announcement, rather than five fragments read in a row.
             .accessibilityElement(children: .combine)
 
@@ -436,52 +426,21 @@ struct AddSheet: View {
                     .foregroundStyle(Palette.muted)
             }
 
-            Button(action: addAnother) {
-                HStack(spacing: 8) {
-                    Image(systemName: "plus").appFont(16, weight: .bold)
-                    Text("Add another").appFont(15, weight: .bold)
-                }
-                .frame(maxWidth: .infinity).padding(15)
-                .foregroundStyle(Palette.tealInk)
-                .background(Palette.tealGradient)
-                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-            }
-            .padding(.top, 6)
+            PrimaryButton(title: "Add another", symbol: "plus", action: addAnother)
+                .padding(.top, Space.xxs)
 
-            Button { dismiss() } label: {
-                Text("Done")
-                    .appFont(14.5, weight: .semibold)
-                    .foregroundStyle(Palette.chipText)
-                    .frame(maxWidth: .infinity).padding(13)
-                    .fieldBackground(radius: 14)
-            }
+            SecondaryButton(title: "Done", action: close)
         }
-        .padding(.top, 4)
     }
 
     /// Money out or money in. Everything downstream — categories, totals,
     /// charts — keys off this.
     private var kindPicker: some View {
-        HStack(spacing: 8) {
-            ForEach(EntryKind.allCases, id: \.self) { candidate in
-                let isSelected = kind == candidate
-                Button { kind = candidate } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: candidate == .income ? "arrow.down.left" : "arrow.up.right")
-                            .appFont(11, weight: .bold)
-                        Text(candidate.label).appFont(13, weight: .semibold)
-                    }
-                    .frame(maxWidth: .infinity).padding(9)
-                    .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
-                    .fieldBackground(isSelected ? AnyShapeStyle(tint.opacity(0.14))
-                                                : AnyShapeStyle(Palette.card),
-                                     border: isSelected ? tint : Palette.cardBorder,
-                                     radius: 14)
-                }
-                .accessibilityAddTraits(isSelected ? .isSelected : [])
-            }
+        Picker("Direction", selection: $kind) {
+            ForEach(EntryKind.allCases, id: \.self) { Text($0.label).tag($0) }
         }
-        .padding(.bottom, 14)
+        .pickerStyle(.segmented)
+        .padding(.bottom, Space.md)
     }
 
     /// Accent for the current direction — green for money in.
@@ -499,7 +458,8 @@ struct AddSheet: View {
                 TextField("0", text: $amount)
                     .keyboardType(.decimalPad)
                     .focused($amountFocused)
-                    .appFont(amountSize, weight: .bold, design: .monospaced)
+                    .appFont(amountSize, weight: .semibold, design: .rounded)
+                    .monospacedDigit()
                     .foregroundStyle(kind == .income ? Palette.green : Palette.text)
                     .fixedSize()
                     .accessibilityLabel("Amount")
@@ -511,7 +471,7 @@ struct AddSheet: View {
             .onTapGesture { amountFocused = true }
             voiceButton
         }
-        .padding(.bottom, 6)
+        .padding(.bottom, Space.md)
         .onChange(of: amount) { _, new in
             if new.count > Self.maxAmountLength { amount = String(new.prefix(Self.maxAmountLength)) }
         }
@@ -539,19 +499,12 @@ struct AddSheet: View {
                 Button {
                     if voice.isListening { finishListening() } else { beginListening() }
                 } label: {
-                    HStack(spacing: 7) {
-                        Image(systemName: voice.isListening ? "stop.circle.fill" : "mic.fill")
-                            .appFont(12, weight: .semibold)
-                        Text(voice.isListening ? "Listening — tap to stop" : "Say it instead")
-                            .appFont(12.5, weight: .semibold)
-                    }
-                    .foregroundStyle(voice.isListening ? Palette.over : Palette.teal)
-                    .padding(.horizontal, 13).padding(.vertical, 8)
-                    .background(
-                        (voice.isListening ? Palette.over : Palette.teal).opacity(0.14),
-                        in: Capsule()
-                    )
+                    Label(voice.isListening ? "Listening — tap to stop" : "Say it instead",
+                          systemImage: voice.isListening ? "stop.circle.fill" : "mic.fill")
+                        .appFont(12.5, weight: .medium)
                 }
+                .inlineActionStyle()
+                .tint(voice.isListening ? Palette.over : Palette.teal)
                 .accessibilityLabel(voice.isListening ? "Stop listening" : "Say the amount")
 
                 if voice.isListening, !voice.transcript.isEmpty {
@@ -604,11 +557,10 @@ struct AddSheet: View {
                                                : "Where? (optional)")
                     .foregroundStyle(Palette.muted))
             .textFieldStyle(.plain)
-            .appFont(15, weight: .medium)
-            .padding(.horizontal, 14).padding(.vertical, 13)
-            .fieldBackground(radius: 13)
+            .appFont(15)
+            .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+            .fieldBackground()
             .accessibilityLabel("Where")
-            .padding(.bottom, 12)
     }
 
     private var personPicker: some View {
@@ -625,8 +577,8 @@ struct AddSheet: View {
         }
         // Clear of the "Hide details" toggle above it, which it otherwise
         // butts right up against.
-        .padding(.top, 14)
-        .padding(.bottom, 14)
+        .padding(.top, Space.sm)
+        .padding(.bottom, Space.sm)
     }
 
     private var categoryPicker: some View {
@@ -678,15 +630,14 @@ struct AddSheet: View {
                         .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
                         .fieldBackground(isSelected ? AnyShapeStyle(candidate.color.opacity(0.14))
                                                     : AnyShapeStyle(Palette.card),
-                                         border: isSelected ? candidate.color : Palette.cardBorder,
-                                         radius: 14)
+                                         border: isSelected ? candidate.color : nil)
                     }
                     .accessibilityLabel(candidate.label)
                     .accessibilityAddTraits(isSelected ? .isSelected : [])
                 }
             }
         }
-        .padding(.top, 14)
+        .padding(.top, Space.sm)
     }
 
     /// Sets a purchase aside from the plan.
@@ -706,9 +657,9 @@ struct AddSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 11)
-            .fieldBackground(radius: 13)
-            .padding(.top, 14)
+            .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+            .fieldBackground()
+            .padding(.top, Space.sm)
         }
     }
 
@@ -737,9 +688,9 @@ struct AddSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 11)
-            .fieldBackground(radius: 13)
-            .padding(.top, 14)
+            .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+            .fieldBackground()
+            .padding(.top, Space.sm)
 
             if repeats {
                 // Capped at 28 so the day exists in every month, February included.
@@ -751,7 +702,7 @@ struct AddSheet: View {
                     }
                 }
                 .padding(.horizontal, 14).padding(.vertical, 8)
-                .fieldBackground(radius: 13)
+                .fieldBackground()
                 .padding(.top, 8)
                 .accessibilityLabel("Day of month")
             }
@@ -773,43 +724,18 @@ struct AddSheet: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.horizontal, 14).padding(.vertical, 11)
-            .fieldBackground(radius: 13)
-            .padding(.top, 14)
+            .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+            .fieldBackground()
+            .padding(.top, Space.sm)
         }
-    }
-
-    private var saveButton: some View {
-        let canSave = draft != nil
-        return Button(action: save) {
-            HStack(spacing: 8) {
-                Image(systemName: editing == nil ? "plus" : "checkmark")
-                    .appFont(16, weight: .bold)
-                Text(editing == nil ? "Add to log" : "Save changes")
-                    .appFont(15, weight: .bold)
-            }
-            .frame(maxWidth: .infinity).padding(15)
-            .foregroundStyle(canSave ? Palette.tealInk : Palette.muted)
-            .background {
-                if canSave { Palette.tealGradient } else { Palette.chip }
-            }
-            .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-        }
-        .disabled(!canSave)
-        .padding(.top, 18)
     }
 
     private var deleteButton: some View {
-        Button {
+        SecondaryButton(title: "Delete transaction", color: Palette.over) {
             if let editing { model.delete(editing.id) }
-            dismiss()
-        } label: {
-            Text("Delete transaction")
-                .appFont(14, weight: .semibold)
-                .foregroundStyle(Palette.over)
-                .frame(maxWidth: .infinity).padding(13)
+            close()
         }
-        .padding(.top, 4)
+        .padding(.top, Space.lg)
     }
 
     // MARK: - Chips
@@ -827,8 +753,7 @@ struct AddSheet: View {
             .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
             .fieldBackground(isSelected ? AnyShapeStyle(candidate.color.opacity(0.14))
                                         : AnyShapeStyle(Palette.card),
-                             border: isSelected ? candidate.color : Palette.cardBorder,
-                             radius: 14)
+                             border: isSelected ? candidate.color : nil)
         }
         .accessibilityLabel(candidate.name)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -846,8 +771,7 @@ struct AddSheet: View {
             }
             .frame(maxWidth: .infinity).padding(9)
             .foregroundStyle(Palette.chipText)
-            .fieldBackground(AnyShapeStyle(Palette.card),
-                             border: Palette.cardBorder, radius: 14)
+            .fieldBackground(AnyShapeStyle(Palette.card))
         }
         .accessibilityLabel("Add someone")
     }
@@ -871,14 +795,19 @@ struct AddSheet: View {
             .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
             .fieldBackground(isSelected ? AnyShapeStyle(candidate.tint)
                                         : AnyShapeStyle(Palette.card),
-                             border: isSelected ? candidate.color : Palette.cardBorder,
-                             radius: 14)
+                             border: isSelected ? candidate.color : nil)
         }
         .accessibilityLabel(candidate.label)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     // MARK: - Actions
+
+    /// Pinned beside the screen there's no sheet for `dismiss` to dismiss, and
+    /// what's keeping the panel open is the model's flag.
+    private func close() {
+        if editing == nil { model.isAddingEntry = false } else { dismiss() }
+    }
 
     private func selectDefaultMember() {
         memberID = model.defaultMemberID ?? ""
@@ -950,7 +879,7 @@ struct AddSheet: View {
                               belowTheLine: kind == .expense && belowTheLine,
                               isPrivate: isPrivate, on: day)
             // An edit is one finished job — there's no "another" to offer.
-            dismiss()
+            close()
             return
         }
         model.addEntry(place: draft.place, amount: draft.amount,

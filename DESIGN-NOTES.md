@@ -399,7 +399,9 @@ mechanics that shipped without ever being written down, and what's still open.
 
 ### Settled
 
-**Month navigation.** `MonthStepper` (`RootView.swift:134`) sits in the header of
+**Month navigation.** *(Since 31 October 2026 this is `MonthControls` in the
+navigation bar rather than `MonthStepper` in the header; see §7. The selection
+model below is unchanged.)* `MonthStepper` (`RootView.swift:134`) sits in the header of
 all four tabs and drives a single selection for the whole app —
 `AppModel.selectedMonth`, stepped by `stepMonth(_:)` and reset by
 `goToCurrentMonth()`. Forward stops at the current month, since there's nothing
@@ -888,6 +890,86 @@ backgrounds to solid colours would reclaim most of it and cost little — the
 gradients read as texture, not as information. Worth doing if binary size ever
 becomes a question; not worth doing on its own.
 
+## 7. The native pass
+
+Written 31 October 2026, on the complaint that the app felt like the flat-UI era
+and like an Android port. Both were accurate, and both had specific causes.
+
+**What made it read as a port.** A square floating action button centred in an
+opaque bottom bar is Material's layout, not iOS's. There were no navigation bars,
+so titles scrolled away and nothing collapsed. Nearly every destination was a
+bottom sheet, so there was no push and no swipe back; on iOS a sheet means "finish
+this and come back", and using it for places taught the app the wrong grammar.
+Rows were outlined cards rather than grouped rows, filters were Material chips,
+and each log row carried its own ✕ where iOS would have a swipe. Money was set in
+SF Mono, which read as a terminal, and body text sat at 12–14pt beside a system
+that uses 15–17pt.
+
+**Principle: stop drawing what the system draws.** The system's versions come with
+behaviour no hand-built copy would keep up with. Replacing `BottomBar`, `SideBar`
+and `VerticalBarEdgeReader` with `TabView` was the clearest proof: on iPhone Duo's
+outer display iOS now stands the whole bar on its end, Add included, with no code
+here at all. Custom glass is used nowhere on content. Apple's adoption guide
+(`technologyoverviews/adopting-liquid-glass`) is explicit that Liquid Glass is the
+navigation layer and that custom uses should be rare, so cards stay solid and
+glass only appears on bars, sheets and the buttons floating over them.
+
+**Add.** `TabRole.prominent` on iOS 27 sets one tab apart as its own round control
+at the end of the bar, and it stays when the bar shrinks on scroll. iOS 26 only
+gives that treatment to `.search`, so that's the fallback there. The tab is never
+selected: `TabSlot.add` opens the add panel and leaves the selection alone.
+
+**Places push, jobs are modal.** `Route` lists the places: wins, insights,
+challenges, repeating, goals, owed, categories. Each tab owns a `NavigationStack`,
+so leaving one mid-scroll or three screens deep and coming back finds it unchanged.
+Forms stay modal, with save in the bar as `ConfirmItem`. At the bottom of the form
+the keypad used to cover it. The type names still say `Sheet` for the ones that
+now push, because this document and the code's history use those names.
+
+**The scales.** Everything comes off `Space` and `Radius` in `Theme.swift`.
+`appFont` keeps its call shape but lands every nominal size on an Apple text style
+a step up, which brought the whole app onto one type ramp without touching call
+sites. `mono` keeps its name but uses SF's tabular digits, with the rounded design
+for hero figures. Hairlines around cards are gone: at 1.09–1.38:1 they were never
+contributing as an accessible boundary, and outlines were much of the flat look.
+
+**Adaptive means measured, not size classes.** `CardFlow` lays cards out in as many
+columns as the width it was actually given can hold, packing each into the shortest
+column. A size class can't do this: a sidebar, a pinned panel or a resized window
+can leave a "regular" scene with a phone's width of content. On a phone it's a
+`VStack`.
+
+**Panels.** A list of panel-framework features (PanelKit's, archived in 2019,
+iOS 10 and UIKit) prompted this question, and most of what it offered is now
+built in, so nothing was added. Pinned and resizable with limits: `.inspector`
+with `inspectorColumnWidth(min:ideal:max:)`, which is how Add appears on wide
+displays. Floating over content: sheets at `.medium`. Keyboard avoidance and
+popovers: the system. Restoring the arrangement: `@SceneStorage` for the tab, and
+iOS itself for the column. Free dragging of panels was deliberately left out. It
+suits a canvas tool, and on a phone it would be the opposite of the brief.
+
+**Things that bit, worth keeping.**
+
+- `minimumScaleFactor` reads height as well as width. `CardFlow` originally placed
+  subviews with the exact height it had measured, which turned that height into a
+  constraint, and figures across the app shrank to half size to "fit". It now
+  proposes the width and leaves height open.
+- iOS writes `true` into an inspector's `isPresented` binding while setting a scene
+  up, if it remembers the column being open. A two-way binding opened the add panel,
+  keyboard included, on launch. `AddPanel`'s binding only ever closes.
+- `contentMargins` on a `List` loses its trailing side beside a pinned inspector.
+  `listColumn` uses `safeAreaPadding` at regular width for that reason.
+- `tabViewBottomAccessory(isEnabled:)` needs 26.1, so `ClassicTabs` covers 26.0 too.
+- Toolbar content renders with vibrancy, which blends overlapping views. The avatar
+  stack needs `drawingGroup`, not `compositingGroup`.
+
+**Not done.** The trend chart on Stats is still hand-drawn rather than Swift Charts.
+iPad isn't a shipping target, though the layouts are ready for it: see the
+accessibility statement's "iPhone only". `UICloudSharingController` and the export
+share sheet would need checking there first. The `ClassicTabs` path has been run on
+iOS 27 with the check forced off, not on a real iOS 17 or 18 system, because no such
+runtime is installed.
+
 ## Suggested order of work
 
 1. ~~Fix `Palette.muted` and `Palette.sub` contrast in the dark scheme.~~ Done —
@@ -901,5 +983,6 @@ becomes a question; not worth doing on its own.
    Partly done 22 September 2026: the fill no longer turns to `over`, and past
    the limit carries an icon and words. Marker and tail still to build.
 5. Rebuild Home to lead with pace and safe-to-spend; move bubbles to Stats.
-6. Replace the donut with the sorted stacked bar.
+6. ~~Replace the donut with the sorted stacked bar.~~ Done — `CategoryCard` on
+   Stats. See §7.
 7. Then the pace line chart, once the fixed vs variable question is settled.

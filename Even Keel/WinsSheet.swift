@@ -7,7 +7,6 @@ import SwiftUI
 
 struct WinsSheet: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
     /// The badges that were new when the sheet opened. Held here because
     /// opening the sheet is what marks them seen — without a copy, the "New"
     /// tags would vanish in the same frame they were due to appear in.
@@ -15,88 +14,55 @@ struct WinsSheet: View {
 
     var body: some View {
         let wins = model.wins
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                header
+        Page(title: "Wins",
+             subtitle: "\(model.wins.earned.count) of \(Fmt.count(model.wins.badges.count, "badge")) earned",
+             displayMode: .inline) {
+            VStack(alignment: .leading, spacing: Space.lg) {
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    StreakCard(streak: wins.streak, best: wins.bestStreak,
+                               allowance: model.dailyAllowance, hasPlan: model.hasPlan)
 
-                StreakCard(streak: wins.streak, best: wins.bestStreak,
-                           allowance: model.dailyAllowance, hasPlan: model.hasPlan)
-                    .padding(.bottom, 8)
-
-                if wins.monthsUnderBudget > 0 {
-                    HStack(spacing: 10) {
-                        Image(systemName: "checkmark.seal.fill")
-                            .appFont(15, weight: .semibold)
-                            .foregroundStyle(Palette.teal)
-                        Text("^[\(wins.monthsUnderBudget) month](inflect: true) running inside the plan")
-                            .appFont(13, weight: .semibold)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
+                    if wins.monthsUnderBudget > 0 {
+                        HStack(spacing: Space.sm) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .appFont(15, weight: .semibold)
+                                .foregroundStyle(Palette.teal)
+                            Text("^[\(wins.monthsUnderBudget) month](inflect: true) running inside the plan")
+                                .appFont(13, weight: .medium)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(Space.md)
+                        .card()
                     }
-                    .padding(.horizontal, 15).padding(.vertical, 13)
-                    .card(border: Palette.cardBorderSoft, radius: 15)
                 }
 
                 // Grouped by what they're about. Sixteen in one undivided list
                 // read as a wall of locks; four short lists read as four
                 // things a person might care about, one of which is usually
                 // already going well.
-                ForEach(Badge.Group.allCases) { group in
-                    let badges = wins.badges(in: group)
-                    if !badges.isEmpty {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(group.title).appFont(13, weight: .semibold)
-                            Spacer(minLength: 8)
-                            Text("\(badges.filter(\.isEarned).count) of \(badges.count)")
-                                .appFont(11.5, weight: .medium)
-                                .foregroundStyle(Palette.sub)
-                        }
-                        .accessibilityElement(children: .combine)
-                        .accessibilityAddTraits(.isHeader)
-                        .padding(.top, 18).padding(.bottom, 10)
-
-                        VStack(spacing: 8) {
-                            ForEach(badges) { badge in
-                                BadgeRow(badge: badge, isNew: fresh.contains(badge.id))
+                AdaptiveCards {
+                    ForEach(Badge.Group.allCases) { group in
+                        let badges = wins.badges(in: group)
+                        if !badges.isEmpty {
+                            RowGroup(title: "\(group.title) · \(badges.filter(\.isEarned).count) of \(badges.count)") {
+                                ForEach(badges) { badge in
+                                    GroupedRow(separatorInset: Space.md + 32 + Space.sm) {
+                                        BadgeRow(badge: badge, isNew: fresh.contains(badge.id))
+                                    }
+                                }
                             }
                         }
                     }
                 }
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
         .onAppear {
             fresh = model.newBadgeIDs
             model.markBadgesSeen()
         }
     }
 
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Wins").appFont(17, weight: .bold)
-                Text("\(model.wins.earned.count) of \(Fmt.count(model.wins.badges.count, "badge")) earned")
-                    .appFont(12.5, weight: .medium)
-                    .foregroundStyle(Palette.sub)
-            }
-            Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Palette.label9)
-                    .frame(width: 30, height: 30)
-                    .background(Palette.chip, in: Circle())
-            }
-            .accessibilityLabel("Close")
-        }
-        .padding(.top, 6).padding(.bottom, 16)
-    }
 }
 
 /// One badge. Earned ones are stated; locked ones say what would earn them and,
@@ -110,19 +76,19 @@ private struct BadgeRow: View {
     private var progress: Badge.Progress? { badge.isEarned ? nil : badge.progress }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 12) {
+        HStack(alignment: .top, spacing: Space.sm) {
             Image(systemName: badge.isEarned ? badge.symbol : "lock.fill")
-                .appFont(15, weight: .semibold)
+                .appFont(13, weight: .semibold)
                 .foregroundStyle(badge.isEarned ? Palette.tealInk : Palette.muted)
-                .frame(width: 36, height: 36)
+                .frame(width: 32, height: 32)
                 .background {
                     if badge.isEarned { Palette.tealGradient } else { Palette.chip }
                 }
-                .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
 
             VStack(alignment: .leading, spacing: 2) {
                 HStack(alignment: .firstTextBaseline, spacing: 7) {
-                    Text(badge.title).appFont(14, weight: .semibold)
+                    Text(badge.title).appFont(14, weight: .medium)
                         .fixedSize(horizontal: false, vertical: true)
                     if isNew {
                         Text("New")
@@ -154,8 +120,6 @@ private struct BadgeRow: View {
         // line from 5.3:1 down to 2.8:1 (2.65:1 in light) — under the floor,
         // on the one line that says how to earn the thing. The lock and the
         // grey tile already say "not yet"; the words stay at full strength.
-        .padding(.horizontal, 13).padding(.vertical, 11)
-        .card(border: isNew ? Palette.teal.opacity(0.55) : Palette.cardBorderSoft, radius: 15)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(spoken)
     }
@@ -205,14 +169,14 @@ struct StreakCard: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 Text(streak > 0 ? "^[\(streak) day](inflect: true) in a row" : "No streak yet")
-                    .appFont(16, weight: .bold)
+                    .appFont(16, weight: .semibold)
                 Text(detail)
                     .appFont(12).foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 15).padding(.vertical, 14)
+        .padding(Space.md)
         .card()
         .accessibilityElement(children: .combine)
     }

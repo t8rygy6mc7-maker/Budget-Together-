@@ -8,10 +8,7 @@ struct StatsView: View {
         let spent = model.spent
         let people = model.memberTotals
 
-        VStack(alignment: .leading, spacing: 0) {
-            ScreenHeader(title: "Stats")
-                .padding(.bottom, 16)
-
+        Page(title: "Stats") {
             if items.isEmpty {
                 EmptyState(
                     symbol: "chart.pie",
@@ -25,96 +22,59 @@ struct StatsView: View {
                     action: model.isCurrentMonth ? { model.isAddingEntry = true } : nil
                 )
             } else {
-                charts(items: items, spent: spent, people: people)
+                AdaptiveCards {
+                    TrendChart(points: model.history)
+                    CategoryCard(items: items, total: spent)
+
+                    // Only when there's a split to show. For a budget of one this was
+                    // a bar in a single colour over "You — 100%".
+                    if people.count > 1 {
+                        VStack(alignment: .leading, spacing: Space.sm) {
+                            Text("Who spent what").appFont(13, weight: .semibold)
+                            SplitBar(shares: people).frame(height: 14)
+                            // One row per person: with more than two, a single line of
+                            // legends runs out of width and the shares stop comparing.
+                            VStack(spacing: Space.xs) {
+                                ForEach(people) { person in
+                                    legend(person, share: spent > 0 ? person.total / spent * 100 : 0)
+                                }
+                            }
+                        }
+                        .padding(Space.md)
+                        .card()
+                    }
+
+                    MoodCard(totals: model.month.byMood,
+                             tagged: model.month.moodTagged,
+                             spent: spent)
+
+                    if !model.month.incomeRanked.isEmpty { incomeCard }
+                }
             }
         }
+        .monthControls()
     }
 
-    @ViewBuilder
-    private func charts(items: [BucketTotal], spent: Double,
-                        people: [MemberTotal]) -> some View {
-        Group {
-            TrendChart(points: model.history)
-                .padding(.bottom, 18)
-
-            DonutChart(items: items, total: spent)
-
-            // Only when there's a split to show. For a budget of one this was
-            // a bar in a single colour over "You — 100%".
-            if people.count > 1 {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Who spent what").appFont(13, weight: .semibold)
-                    SplitBar(shares: people).frame(height: 14)
-                    // One row per person: with more than two, a single line of
-                    // legends runs out of width and the shares stop comparing.
-                    VStack(spacing: 9) {
-                        ForEach(people) { person in
-                            legend(person, share: spent > 0 ? person.total / spent * 100 : 0)
-                        }
-                    }
-                }
-                .padding(.horizontal, 17).padding(.vertical, 16)
-                .card()
-                .padding(.top, 18)
+    private var incomeCard: some View {
+        VStack(alignment: .leading, spacing: Space.sm) {
+            HStack {
+                Text("Where it came from").appFont(13, weight: .semibold)
+                Spacer()
+                Text("+" + Fmt.money(model.earned)).mono(13)
+                    .foregroundStyle(Palette.green)
             }
-
-            MoodCard(totals: model.month.byMood,
-                     tagged: model.month.moodTagged,
-                     spent: spent)
-                .padding(.vertical, 18)
-
-            if !model.month.incomeRanked.isEmpty {
-                VStack(alignment: .leading, spacing: 11) {
-                    HStack {
-                        Text("Where it came from").appFont(13, weight: .semibold)
-                        Spacer()
-                        Text("+" + Fmt.money(model.earned)).mono(13)
-                            .foregroundStyle(Palette.green)
-                    }
-                    ForEach(model.month.incomeRanked) { item in
-                        HStack(spacing: 9) {
-                            Image(systemName: item.bucket.symbol)
-                                .appFont(12, weight: .semibold)
-                                .foregroundStyle(item.bucket.color)
-                                .frame(width: 26, height: 26)
-                                .background(item.bucket.tint,
-                                            in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                            Text(item.bucket.label).appFont(13, weight: .medium)
-                            Spacer(minLength: 4)
-                            Text("+" + Fmt.money(item.total)).mono(13)
-                        }
-                    }
-                }
-                .padding(.horizontal, 17).padding(.vertical, 16)
-                .card()
-                .padding(.bottom, 18)
-            }
-
-            Text("By category").appFont(13, weight: .semibold).padding(.bottom, 10)
-            VStack(spacing: 11) {
-                ForEach(items) { item in
-                    let pct = item.total / max(spent, 1) * 100
-                    VStack(spacing: 6) {
-                        AdaptiveRow(spacing: 9) {
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(item.bucket.color).frame(width: 9, height: 9)
-                            Text(item.bucket.label).appFont(13, weight: .medium)
-                        } figures: {
-                            Text(Fmt.money(item.total)).mono(13)
-                            Text(Fmt.share(pct))
-                                .appFont(11.5).foregroundStyle(Palette.sub)
-                                .figureColumn(width: 38)
-                        }
-                        // Floored like Home's rows, so a small category still
-                        // shows a mark beside its amount.
-                        ProgressBar(pct: max(pct, 1.5), fill: item.bucket.color, height: 7)
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(item.bucket.label), \(Fmt.money(item.total)), "
-                                      + "\(Fmt.share(pct, spoken: true)) of spending")
+            ForEach(model.month.incomeRanked) { item in
+                HStack(spacing: Space.xs) {
+                    IconTile(symbol: item.bucket.symbol, color: item.bucket.color,
+                             fill: item.bucket.tint)
+                    Text(item.bucket.label).appFont(13, weight: .medium)
+                    Spacer(minLength: Space.xxs)
+                    Text("+" + Fmt.money(item.total)).mono(13)
                 }
             }
         }
+        .padding(Space.md)
+        .card()
     }
 
     private func legend(_ person: MemberTotal, share: Double) -> some View {
@@ -176,7 +136,7 @@ struct MoodCard: View {
 
     var body: some View {
         let count = totals.reduce(0) { $0 + $1.count }
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: Space.sm) {
             Text("What drove it").appFont(13, weight: .semibold)
 
             if count < Self.minimumEntries {
@@ -195,12 +155,7 @@ struct MoodCard: View {
                 ForEach(totals) { item in
                     VStack(spacing: 6) {
                         AdaptiveRow(spacing: 9) {
-                            Image(systemName: item.mood.symbol)
-                                .appFont(11, weight: .semibold)
-                                .foregroundStyle(item.mood.color)
-                                .frame(width: 22, height: 22)
-                                .background(item.mood.color.opacity(0.16),
-                                            in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                            IconTile(symbol: item.mood.symbol, color: item.mood.color)
                             Text(item.mood.label).appFont(13, weight: .medium)
                         } figures: {
                             Text(Fmt.money(item.total)).mono(13)
@@ -218,7 +173,7 @@ struct MoodCard: View {
                     .appFont(11).foregroundStyle(Palette.muted)
             }
         }
-        .padding(.horizontal, 17).padding(.vertical, 16)
+        .padding(Space.md)
         .card()
     }
 
@@ -294,7 +249,7 @@ struct TrendChart: View {
                 }
             }
         }
-        .padding(.horizontal, 17).padding(.vertical, 16)
+        .padding(Space.md)
         .card()
     }
 
@@ -312,51 +267,70 @@ struct TrendChart: View {
     }
 }
 
-struct DonutChart: View {
+/// The month by category: one bar of everything, biggest first, with the rows
+/// that say what each piece is underneath.
+///
+/// This retired the eight-slice donut, as DESIGN-NOTES §3 asked. Reading a donut
+/// meant cross-referencing a legend for every slice, and slices under about 5%
+/// were invisible slivers. It's the same one-bar-many-colours shape iOS uses to
+/// show what's filling a phone's storage.
+struct CategoryCard: View {
     let items: [BucketTotal]
     let total: Double
 
-    private static let diameter: CGFloat = 168
-    private static let holeDiameter: CGFloat = 108
+    /// Hairline gap between pieces, so neighbours stay apart without an outline.
+    private static let gap: CGFloat = 2
 
     var body: some View {
-        ZStack {
-            Canvas { context, size in
-                let sum = items.reduce(0) { $0 + $1.total }
-                guard sum > 0 else { return }
+        VStack(alignment: .leading, spacing: Space.sm) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("By category").appFont(13, weight: .semibold)
+                Spacer()
+                Text(Fmt.money(total)).mono(13)
+            }
 
-                let radius = min(size.width, size.height) / 2
-                let center = CGPoint(x: size.width / 2, y: size.height / 2)
-                var start = -90.0
+            bar
 
-                for item in items {
-                    let end = start + item.total / sum * 360
-                    var path = Path()
-                    path.move(to: center)
-                    path.addArc(center: center, radius: radius,
-                                startAngle: .degrees(start), endAngle: .degrees(end),
-                                clockwise: false)
-                    path.closeSubpath()
-                    context.fill(path, with: .color(item.bucket.color))
-                    start = end
+            VStack(spacing: Space.xs) {
+                ForEach(items) { item in
+                    let pct = item.total / max(total, 1) * 100
+                    AdaptiveRow(spacing: Space.xs) {
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(item.bucket.color).frame(width: 10, height: 10)
+                        Text(item.bucket.label).appFont(13, weight: .medium).lineLimit(1)
+                    } figures: {
+                        Text(Fmt.money(item.total)).mono(13)
+                        Text(Fmt.share(pct))
+                            .appFont(11.5).foregroundStyle(Palette.sub)
+                            .figureColumn(width: 40)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel("\(item.bucket.label), \(Fmt.money(item.total)), "
+                                      + "\(Fmt.share(pct, spoken: true)) of spending")
                 }
             }
-            .frame(width: Self.diameter, height: Self.diameter)
-
-            Circle().fill(Palette.screen)
-                .frame(width: Self.holeDiameter, height: Self.holeDiameter)
-
-            VStack(spacing: 2) {
-                Text("Total").appFont(11, weight: .medium).foregroundStyle(Palette.sub)
-                Text(Fmt.money(total)).mono(22)
-            }
-            // Kept inside the hole. The ring doesn't grow with the text, so at
-            // the larger sizes the total used to run out across the slices.
-            .frame(maxWidth: Self.holeDiameter - 14)
         }
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("Total spent \(Fmt.money(total))")
+        .padding(Space.md)
+        .card()
+    }
+
+    private var bar: some View {
+        GeometryReader { geo in
+            let sum = max(items.reduce(0) { $0 + $1.total }, 1)
+            let room = geo.size.width - Self.gap * CGFloat(max(items.count - 1, 0))
+            HStack(spacing: Self.gap) {
+                ForEach(items) { item in
+                    // Floored like every other bar here, so a small category
+                    // still shows a mark beside its amount.
+                    Rectangle()
+                        .fill(item.bucket.color)
+                        .frame(width: max(room * item.total / sum, 3))
+                }
+            }
+        }
+        .frame(height: 14)
+        .clipShape(Capsule())
+        .accessibilityHidden(true)
     }
 }
 

@@ -7,41 +7,52 @@ import SwiftUI
 // it, and a small physical acknowledgement when something lands.
 //
 // Every font in this app was a hardcoded `.system(size:)`, which silently
-// ignores Dynamic Type. `appFont` is the drop-in replacement: same call shape,
-// but the size is scaled by `@ScaledMetric` against a text style chosen to suit
-// its role, so a 10pt label grows faster than a 44pt hero number and the layout
-// keeps its hierarchy instead of collapsing into one size.
+// ignores Dynamic Type. `appFont` is the drop-in replacement, and it has become
+// the type scale as well. Twenty-seven nominal sizes had accumulated, most of
+// them a point or two under anything iOS uses — 11.5 and 12.5 and 13.5 — which is
+// a large part of why the app read as small and foreign beside the system. Each
+// one now lands on Apple's nearest text style, a step up, so a 10pt label still
+// grows faster than a 44pt hero number and the layout keeps its hierarchy.
 
 private struct ScaledFont: ViewModifier {
-    @ScaledMetric private var size: CGFloat
+    @ScaledMetric private var displaySize: CGFloat
+    private let style: Font.TextStyle?
     private let weight: Font.Weight
     private let design: Font.Design
 
     init(size: CGFloat, weight: Font.Weight, design: Font.Design) {
-        _size = ScaledMetric(wrappedValue: size, relativeTo: Self.style(for: size))
+        // Only reads for display sizes, which have no text style of their own.
+        _displaySize = ScaledMetric(wrappedValue: size, relativeTo: .largeTitle)
+        self.style = Self.style(for: size)
         self.weight = weight
         self.design = design
     }
 
     func body(content: Content) -> some View {
-        content.font(.system(size: size, weight: weight, design: design))
+        if let style {
+            content.font(.system(style, design: design, weight: weight))
+        } else {
+            content.font(.system(size: displaySize, weight: weight, design: design))
+        }
     }
 
-    /// Which text style a nominal size should track. Small type scales hardest
-    /// — it's the type that's actually illegible at default settings — while
-    /// display numbers track `.largeTitle`, which grows most gently. Picking one
-    /// style for everything would scale a 9.5pt tab label and a 52pt balance by
-    /// the same factor and blow the layout apart at the top of the range.
-    static func style(for size: CGFloat) -> Font.TextStyle {
+    /// The text style a nominal size lands on, or nil for display figures
+    /// larger than any of them. Small type scales hardest — it's the type that's
+    /// actually illegible at default settings — while display numbers grow most
+    /// gently. Picking one style for everything would scale a tab label and a
+    /// 52pt balance by the same factor and blow the layout apart.
+    static func style(for size: CGFloat) -> Font.TextStyle? {
         switch size {
-        case ..<11:  .caption2
-        case ..<13:  .caption
-        case ..<15:  .footnote
-        case ..<17:  .subheadline
-        case ..<20:  .body
-        case ..<26:  .title3
-        case ..<34:  .title2
-        default:     .largeTitle
+        case ..<10.5: .caption2     // 11
+        case ..<11.5: .caption      // 12
+        case ..<13:   .footnote     // 13
+        case ..<14:   .subheadline  // 15
+        case ..<15:   .callout      // 16
+        case ..<19:   .body         // 17
+        case ..<21:   .title3       // 20
+        case ..<26:   .title2       // 22
+        case ..<32:   .title        // 28
+        default:      nil
         }
     }
 }
@@ -99,6 +110,82 @@ extension View {
     }
 }
 
+// MARK: - Card flow
+//
+// A column of one on a phone, and as many as fit on anything wider. It measures
+// the width it was actually given rather than asking for a size class, because
+// the two disagree often: a sidebar, a pinned panel or a resized window can leave
+// a "regular" scene with a phone's width of content, and the other way round on
+// iPhone Duo's inner display.
+//
+// Each card goes in whichever column is currently shortest, so cards of
+// different heights pack together instead of leaving the holes a grid's rows
+// would. With one column that's plain reading order, identical to a `VStack`.
+
+struct CardFlow: Layout {
+    var minimumColumnWidth: CGFloat
+    var maximumColumns = 2
+    var spacing: CGFloat
+
+    private func columnCount(in width: CGFloat) -> Int {
+        let fitting = Int((width + spacing) / (minimumColumnWidth + spacing))
+        return min(max(fitting, 1), maximumColumns)
+    }
+
+    /// Where each subview goes, and how tall the result is.
+    private func arrange(_ subviews: Subviews, width: CGFloat) -> (frames: [CGRect], height: CGFloat) {
+        let columns = columnCount(in: width)
+        let columnWidth = (width - spacing * CGFloat(columns - 1)) / CGFloat(columns)
+        var heights = [CGFloat](repeating: 0, count: columns)
+        var frames: [CGRect] = []
+
+        for subview in subviews {
+            let size = subview.sizeThatFits(ProposedViewSize(width: columnWidth, height: nil))
+            // An empty card — a conditional that came out false — takes no
+            // gap, or a phone would show it as a double space.
+            guard size.height > 0 else {
+                frames.append(.zero)
+                continue
+            }
+            let column = heights.indices.min { heights[$0] < heights[$1] } ?? 0
+            let y = heights[column]
+            frames.append(CGRect(x: CGFloat(column) * (columnWidth + spacing), y: y,
+                                 width: columnWidth, height: size.height))
+            heights[column] = y + size.height + spacing
+        }
+        return (frames, max((heights.max() ?? 0) - spacing, 0))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? minimumColumnWidth
+        return CGSize(width: width, height: arrange(subviews, width: width).height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews,
+                       cache: inout ()) {
+        let frames = arrange(subviews, width: bounds.width).frames
+        for (subview, frame) in zip(subviews, frames) {
+            // The height stays open. Proposing the exact figure that was just
+            // measured turns it into a constraint, and `minimumScaleFactor` reads
+            // height as well as width: figures shrank to half size to "fit".
+            subview.place(at: CGPoint(x: bounds.minX + frame.minX, y: bounds.minY + frame.minY),
+                          proposal: ProposedViewSize(width: frame.width, height: nil))
+        }
+    }
+}
+
+/// `CardFlow` with its column width scaled to the text, so larger type gets
+/// fewer, wider columns rather than cramped ones.
+struct AdaptiveCards<Content: View>: View {
+    @ScaledMetric(relativeTo: .body) private var minimumColumnWidth: CGFloat = 340
+    var spacing: CGFloat = Space.md
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        CardFlow(minimumColumnWidth: minimumColumnWidth, spacing: spacing) { content }
+    }
+}
+
 // MARK: - Stat row
 
 /// One labelled figure in a `StatRow`.
@@ -133,14 +220,14 @@ struct StatRow: View {
                 }
             }
         }
-        .padding(.horizontal, 17).padding(.vertical, 15)
+        .padding(Space.md)
         .card()
     }
 
     private func cell(_ stat: Stat) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        VStack(alignment: .leading, spacing: Space.xxs) {
             Text(stat.title).appFont(12, weight: .medium).foregroundStyle(Palette.sub)
-            Text(stat.value).mono(20).foregroundStyle(stat.color)
+            Text(stat.value).mono(19).foregroundStyle(stat.color)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)

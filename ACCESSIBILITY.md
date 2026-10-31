@@ -137,8 +137,9 @@ rest of the app works normally if you would rather not grant them.
 
 If you have Reduce Motion switched on in iOS Settings, the app stops moving
 things. Panels that would expand, rows that would slide into place, the add
-screen's details section, and the tab bar gaining a tab all simply appear in
-their new state instead.
+screen's details section, and figures that roll to a new value when you change
+month all simply appear in their new state instead. The tab bar, navigation and
+sheets are the system's own, so they follow the setting the way any iOS app does.
 
 Two things deliberately keep animating, because neither of them moves anything.
 The full-screen overlays fade in rather than slide, and switching between the
@@ -185,11 +186,6 @@ either one rather than following the system.
 
 We would rather list these than let you discover them.
 
-- **The donut chart on Stats speaks only its total.** VoiceOver announces the
-  total spent but not the individual slices, so the breakdown it shows is not
-  available through it. The same figures *are* fully readable in the category
-  breakdown on Home, which is labelled properly — so the information is
-  reachable, but not from the donut itself.
 - **Portrait only.** The app does not rotate to landscape. If you mount your
   phone, or find landscape easier with an external keyboard, that is not
   available.

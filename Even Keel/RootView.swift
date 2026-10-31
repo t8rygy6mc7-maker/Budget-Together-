@@ -123,64 +123,10 @@ struct RootView: View {
     }
 
     private var main: some View {
-        // Where iOS would stand a bar on its end right now, or nil where bars
-        // run along the bottom as on any other iPhone. See `SideBar`.
-        VerticalBarEdgeReader { barEdge in
-            GeometryReader { proxy in
-                // The strip iOS keeps down that side for the status bar and its
-                // own vertical bars. The rail moves into it, as a system tab bar
-                // does, rather than taking a second column out of the content.
-                let strip = barEdge.map { $0 == .leading ? proxy.safeAreaInsets.leading
-                                                         : proxy.safeAreaInsets.trailing } ?? 0
-                let railWidth = max(strip, SideBar.minWidth)
-
-                ZStack(alignment: barEdge == .leading ? Alignment.leading : .trailing) {
-                    ScrollView(showsIndicators: false) {
-                        Group {
-                            switch model.tab {
-                            case .home:   HomeView()
-                            case .log:    LogView()
-                            case .budget: BudgetView()
-                            case .stats:  StatsView()
-                            }
-                        }
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 24)
-                        .padding(.top, 8)
-                        // Inside the scroll view rather than around it, so a wide window
-                        // still scrolls from its margins. See `readableColumn`.
-                        .readableColumn()
-                    }
-                    // The toast rides in the bottom inset with the tab bar rather than in an
-                    // overlay. As an overlay it rendered correctly but never took the tap —
-                    // touches fell straight through to the row behind it, which meant
-                    // "Undo" opened whatever entry happened to be underneath. Living in the
-                    // layout also means it pushes the list up instead of covering it.
-                    .safeAreaInset(edge: .bottom, spacing: 0) {
-                        VStack(spacing: 0) {
-                            UndoToast()
-                            if barEdge == nil { BottomBar() }
-                        }
-                    }
-                    .safeAreaInset(edge: .top, spacing: 0) { SampleDataBar() }
-                    // Only takes room where the strip is narrower than the rail:
-                    // the content gives up the difference rather than sit under it.
-                    .safeAreaInset(edge: barEdge ?? .trailing, spacing: 0) {
-                        Color.clear.frame(width: barEdge == nil ? 0 : railWidth - strip)
-                    }
-
-                    if let barEdge {
-                        SideBar(edge: barEdge)
-                            .frame(width: railWidth)
-                            .padding(barEdge == .leading ? Edge.Set.leading : .trailing, -strip)
-                    }
-                }
-            }
-        }
-        .sheet(isPresented: $model.isAddingEntry) { AddSheet().environmentObject(model) }
-        // Asked once the user is actually in a household — permission prompts
-        // before there's anything to alert about get declined.
-        .onAppear { Notifier.shared.start() }
+        MainTabs()
+            // Asked once the user is actually in a household — permission prompts
+            // before there's anything to alert about get declined.
+            .onAppear { Notifier.shared.start() }
     }
 }
 
@@ -221,284 +167,200 @@ struct PrivacyCover: View {
     }
 }
 
-// MARK: - Bottom navigation
+// MARK: - Navigation
 
-struct BottomBar: View {
-    @EnvironmentObject var model: AppModel
+/// Places you go, as opposed to jobs you finish. These push, so they come with a
+/// back button, a swipe from the edge and a title that collapses as you scroll.
+/// Every one of them used to be a bottom sheet, which is the habit that made the
+/// app feel like a port: on iOS, a sheet means "deal with this and come back".
+enum Route: Hashable {
+    case wins, insights, challenges, recurring, goals, loans, categories
 
-    /// The add button, and the gap the row of tabs leaves for it. The gap is
-    /// deliberately wider than the button: shoulder to shoulder with a tab on
-    /// either side, the one control that starts everything in this app read as
-    /// the fifth item in a row of five.
-    private static let addSize: CGFloat = 60
-    private static let addGap: CGFloat = 78
-    /// How far the button rides above the bar. `offset` moves it when it draws
-    /// but not when it lays out, so the same figure has to be reserved as
-    /// padding or the overhang covers whatever scrolled up behind it.
-    private static let addLift: CGFloat = 24
+    @ViewBuilder
+    var destination: some View {
+        switch self {
+        case .wins:       WinsSheet()
+        case .insights:   InsightsSheet()
+        case .challenges: ChallengesSheet()
+        case .recurring:  RecurringSheet()
+        case .goals:      GoalsSheet()
+        case .loans:      LoansSheet()
+        case .categories: CategoriesSheet()
+        }
+    }
+}
+
+/// What a tab bar item does. Add sits in the bar so it's a thumb away from every
+/// screen, but it opens the add panel rather than being somewhere to go, so it's
+/// never actually selected.
+private enum TabSlot: Hashable {
+    case page(Tab)
+    case add
+}
+
+/// The app's top level. Which bar that means is the system's call: along the
+/// bottom on a phone, floating along the top or as a sidebar on a wide display,
+/// and on its end in the poses where iPhone Duo moves its own bars to the side.
+struct MainTabs: View {
+    @EnvironmentObject private var model: AppModel
+    /// Where the app was left, so reopening it goes back there.
+    @SceneStorage("selectedTab") private var savedTab = Tab.home.rawValue
+
+    var body: some View {
+        Group {
+            if #available(iOS 26.1, *) {
+                GlassTabs(selection: selection)
+            } else {
+                ClassicTabs(selection: selection)
+            }
+        }
+        .modifier(AddPanel())
+        .onAppear {
+            // `visibleTabs` because a tab that hasn't been earned yet can't be
+            // landed on, whatever was saved.
+            if model.tab == .home, let tab = Tab(rawValue: savedTab),
+               model.visibleTabs.contains(tab) {
+                model.tab = tab
+            }
+        }
+        .onChange(of: model.tab) { _, tab in savedTab = tab.rawValue }
+    }
+
+    private var selection: Binding<TabSlot> {
+        Binding(get: { .page(model.tab) }, set: { slot in
+            switch slot {
+            case .page(let tab):
+                model.tab = tab
+            case .add:
+                Haptics.selected()
+                model.isAddingEntry = true
+            }
+        })
+    }
+}
+
+@available(iOS 26.1, *)
+private struct GlassTabs: View {
+    @EnvironmentObject private var model: AppModel
+    @Binding var selection: TabSlot
 
     var body: some View {
         // Budget and Stats only appear once there's something in them to look
         // at. Four tabs on a first launch is four rooms to check, three of them
         // empty; the app earns them as the data arrives.
-        let tabs = model.visibleTabs
-        let split = (tabs.count + 1) / 2
-
-        ZStack {
-            // Every tab takes an equal share of what's left after the gap, so
-            // the row reads evenly and the gap lands dead centre — but only
-            // because `visibleTabs` never hands back an odd number. Split three
-            // tabs around a centred gap and one of them ends up stranded
-            // against the edge; that's why the pair is all-or-nothing there.
-            HStack(spacing: 0) {
-                ForEach(tabs.prefix(split), id: \.self) { TabButton(tab: $0) }
-                Spacer().frame(width: Self.addGap)   // gap for the floating add button
-                ForEach(tabs.dropFirst(split), id: \.self) { TabButton(tab: $0) }
+        TabView(selection: $selection) {
+            page(.home)
+            page(.log)
+            if model.visibleTabs.contains(.budget) { page(.budget) }
+            if model.visibleTabs.contains(.stats) { page(.stats) }
+            SwiftUI.Tab("Add", systemImage: "plus", value: TabSlot.add, role: addRole) {
+                Color.clear
             }
-            .padding(.horizontal, 26)
-            // The tabs share out the row's width, so on a wide display they
-            // would drift a hand-span apart. The bar itself still spans it.
-            .readableColumn()
-            .padding(.vertical, 11)
-            // Never shorter than the add button. The ZStack takes the taller of
-            // the two, and at the smallest text sizes the button won: the bar
-            // sat centred in a taller box, lifted off the bottom edge, and its
-            // background stopped short of the home-indicator strip — which then
-            // showed the list scrolling underneath the tab bar.
-            .frame(minHeight: Self.addSize)
-            .background(Palette.navBar)
-            .overlay(alignment: .top) {
-                Rectangle().fill(Palette.navBorder).frame(height: 1)
-            }
-            // Revealing a tab shifts every button in the row along, so this one
-            // yields to Reduce Motion — unlike the two overlay fades above,
-            // which are already the accommodation. See `Comfort.swift`.
-            .appAnimation(.easeInOut(duration: 0.25), value: tabs)
-            // Navigational chrome, not content: four labels have to share one
-            // row whatever the text size, and letting "Budget" wrap to "Budg/et"
-            // helps nobody. The icons carry the meaning past this point.
-            .dynamicTypeSize(...DynamicTypeSize.xLarge)
-
-            AddEntryButton(size: Self.addSize)
-                .offset(y: -Self.addLift)
         }
-        // Reserving the overhang keeps the raised half of the button off
-        // whatever content has scrolled to the bottom of the screen.
-        .padding(.top, Self.addLift + 2)
+        .tabViewStyle(.sidebarAdaptable)
+        .tabBarMinimizeBehavior(.onScrollDown)
+        .tabViewBottomAccessory(isEnabled: model.undoPrompt != nil || model.isSampleHousehold) {
+            BarAccessory()
+        }
+    }
+
+    /// What sets Add apart as its own control at the end of the bar, and keeps
+    /// it there when the bar shrinks on scroll. iOS 27 has a role for exactly
+    /// this; iOS 26 only gives that treatment to search.
+    private var addRole: TabRole {
+        if #available(iOS 27, *) { .prominent } else { .search }
+    }
+
+    private func page(_ tab: Tab) -> some TabContent<TabSlot> {
+        SwiftUI.Tab(tab.title, systemImage: tab.symbol, value: TabSlot.page(tab)) {
+            TabRoot(tab: tab)
+        }
     }
 }
 
-/// The button that starts everything. Shared by both bars.
-struct AddEntryButton: View {
-    @EnvironmentObject var model: AppModel
-    let size: CGFloat
+/// The same shape on systems without the bar accessory, which arrived in 26.1.
+/// Add is a plain item at the end of the bar.
+private struct ClassicTabs: View {
+    @EnvironmentObject private var model: AppModel
+    @Binding var selection: TabSlot
 
     var body: some View {
-        Button {
-            Haptics.selected()
-            model.isAddingEntry = true
-        } label: {
-            Image(systemName: "plus")
-                .appFont(27, weight: .bold)
-                .foregroundStyle(Palette.tealInk)
-                .frame(width: size, height: size)
-                .background(Palette.tealGradient,
-                            in: RoundedRectangle(cornerRadius: 20, style: .continuous))
-                .shadow(color: Palette.addGlow, radius: 17, x: 0, y: 11)
+        TabView(selection: $selection) {
+            ForEach(model.visibleTabs, id: \.self) { tab in
+                TabRoot(tab: tab, carriesBanners: true)
+                    .tabItem { Label(tab.title, systemImage: tab.symbol) }
+                    .tag(TabSlot.page(tab))
+            }
+            Color.clear
+                .tabItem { Label("Add", systemImage: "plus.circle.fill") }
+                .tag(TabSlot.add)
         }
-        .accessibilityLabel("Add something")
     }
 }
 
-/// One tab in either bar.
-struct TabButton: View {
-    @EnvironmentObject var model: AppModel
+/// One tab's navigation stack. Each tab has its own, so leaving one mid-scroll or
+/// three screens deep and coming back finds it exactly where it was.
+private struct TabRoot: View {
     let tab: Tab
-    /// Extra height for the tap target. The bottom bar gets its height from
-    /// the bar itself; stacked down the side, each tab has to bring its own.
-    var verticalPadding: CGFloat = 0
+    /// Whether the sample banner and undo offer live here, for systems without
+    /// the bar accessory that otherwise carries them.
+    var carriesBanners = false
 
     var body: some View {
-        let isSelected = model.tab == tab
-        Button {
-            Haptics.selected()
-            model.tab = tab
-        } label: {
-            VStack(spacing: 3) {
-                Image(systemName: tab.symbol).appFont(20, weight: .medium)
-                Text(tab.title)
-                    .appFont(9.5, weight: .semibold)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.85)
+        NavigationStack {
+            Group {
+                switch tab {
+                case .home:   HomeView()
+                case .log:    LogView()
+                case .budget: BudgetView()
+                case .stats:  StatsView()
+                }
             }
-            // The selected tab used to be teal, which is also the add button's
-            // colour, two inches away. Navigation and the primary action were
-            // shouting the same word. Selection is carried by contrast instead
-            // — `text` against `muted` is a wider gap than teal ever was — and
-            // teal now means "this is the thing to press".
-            .foregroundStyle(isSelected ? Palette.text : Palette.muted)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, verticalPadding)
-            .contentShape(Rectangle())
+            .navigationDestination(for: Route.self) { $0.destination }
+            // In the layout rather than an overlay: as an overlay the undo offer
+            // drew correctly but never took the tap, so touches fell through and
+            // "Undo" opened the row underneath.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                if carriesBanners {
+                    VStack(spacing: 0) {
+                        UndoToast()
+                        SampleDataBar()
+                    }
+                }
+            }
         }
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 }
 
-// MARK: - Side navigation
+/// Logging something. A sheet on a phone. On anything wide enough, a panel pinned
+/// beside the screen instead, which the user can resize, so several entries can
+/// go in while the ledger they're being copied from stays in view.
+private struct AddPanel: ViewModifier {
+    @EnvironmentObject private var model: AppModel
+    @Environment(\.horizontalSizeClass) private var sizeClass
 
-/// The same bar stood on its end, for the poses where iOS moves its own bars
-/// to the side: iPhone Duo's outer display, and the inner one held sideways.
-/// There the display is wide for its height, so a bar along the bottom spends
-/// the scarcer dimension, and down the side it's where a thumb already is.
-///
-/// System tab bars make that move by themselves; a hand-built one has to be
-/// told. Rather than guess at poses, this follows the system: it appears
-/// exactly when `toolbarVerticalEdge` says a system bar would be vertical, on
-/// the side that names, in the strip iOS keeps there for the status bar and
-/// its own bars.
-///
-/// Same order as `BottomBar` — half the tabs, the add button, the other half —
-/// so turning the phone moves the bar without reshuffling it, and the add
-/// button keeps its place in the middle of the group. Pinned to the bottom of
-/// the strip, as the system's own tab bar is: the top of it belongs to the clock.
-struct SideBar: View {
-    @EnvironmentObject var model: AppModel
-    let edge: HorizontalEdge
-
-    /// The add button with a margin either side. The system's strip is wider
-    /// than this wherever there is one.
-    static let minWidth: CGFloat = 76
-    private static let addSize: CGFloat = 56
-
-    var body: some View {
-        // Same all-or-nothing pairs as `BottomBar`; see the note there.
-        let tabs = model.visibleTabs
-        let split = (tabs.count + 1) / 2
-
-        VStack(spacing: 2) {
-            Spacer(minLength: 0)
-            ForEach(tabs.prefix(split), id: \.self) { TabButton(tab: $0, verticalPadding: 8) }
-            AddEntryButton(size: Self.addSize).padding(.vertical, 14)
-            ForEach(tabs.dropFirst(split), id: \.self) { TabButton(tab: $0, verticalPadding: 8) }
-        }
-        .padding(.bottom, 4)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Palette.navBar.ignoresSafeArea())
-        // The border faces the content, as the bottom bar's does.
-        .overlay(alignment: edge == .leading ? .trailing : .leading) {
-            Rectangle().fill(Palette.navBorder).frame(width: 1).ignoresSafeArea()
-        }
-        .appAnimation(.easeInOut(duration: 0.25), value: tabs)
-        // As in `BottomBar`: chrome, not content. The rail is narrow, and the
-        // icons carry the meaning past this size.
-        .dynamicTypeSize(...DynamicTypeSize.xLarge)
-        // Stays put under the keyboard, as a system tab bar does. Pushed up
-        // above it, the rail ran into the clock at the top of the strip.
-        .ignoresSafeArea(.keyboard)
-    }
-}
-
-/// Hands its content the edge iOS would put a vertical bar on right now, or
-/// nil where bars run horizontally — always nil before iOS 27.1, which never
-/// stands one up.
-///
-/// The edge is reported whether or not a system bar is on screen, which is
-/// what lets a hand-built bar follow it.
-struct VerticalBarEdgeReader<Content: View>: View {
-    @ViewBuilder let content: (HorizontalEdge?) -> Content
-
-    var body: some View {
-        if #available(iOS 27.1, *) {
-            Reader(content: content)
-        } else {
-            content(nil)
-        }
+    func body(content: Content) -> some View {
+        content
+            .sheet(isPresented: presented(pinned: false)) {
+                AddSheet().environmentObject(model)
+            }
+            .inspector(isPresented: presented(pinned: true)) {
+                AddSheet()
+                    .environmentObject(model)
+                    .inspectorColumnWidth(min: 320, ideal: 380, max: 480)
+            }
     }
 
-    @available(iOS 27.1, *)
-    private struct Reader: View {
-        @Environment(\.toolbarVerticalEdge) private var edge
-        let content: (HorizontalEdge?) -> Content
-
-        var body: some View { content(edge) }
+    /// Only ever closes. iOS remembers an inspector column and writes `true`
+    /// here while it sets the scene up, which opened the panel, keyboard and all,
+    /// on launch. Opening it is the user's decision alone.
+    private func presented(pinned: Bool) -> Binding<Bool> {
+        Binding(get: { model.isAddingEntry && (sizeClass == .regular) == pinned },
+                set: { if !$0 { model.isAddingEntry = false } })
     }
 }
 
 // MARK: - Shared rows
-
-/// Steps the whole app between months. Forward stops at the current month,
-/// since there's nothing to show past it; tapping the label jumps back to today.
-struct MonthStepper: View {
-    @EnvironmentObject var model: AppModel
-
-    var body: some View {
-        HStack(spacing: 10) {
-            arrow("chevron.left", enabled: true) { model.stepMonth(-1) }
-            Button { model.goToCurrentMonth() } label: {
-                // One line, always. Beside a title it was being handed less
-                // than its width and wrapped to "September / 2026" — and, at
-                // the accessibility sizes, broke inside the word. Where the
-                // whole name won't fit, the short one ("Sep 2026") says the
-                // same thing, which beats "September…" losing the year.
-                ViewThatFits(in: .horizontal) {
-                    Text(model.monthTitle)
-                    Text(model.shortMonthTitle)
-                }
-                .appFont(13, weight: .semibold)
-                .lineLimit(1)
-                .minimumScaleFactor(0.75)
-                .foregroundStyle(model.isCurrentMonth ? Palette.sub : Palette.teal)
-                .frame(minWidth: 96)
-            }
-            .accessibilityLabel(model.isCurrentMonth ? model.monthTitle
-                                                     : "\(model.monthTitle), back to this month")
-            arrow("chevron.right", enabled: model.canGoForward) { model.stepMonth(1) }
-        }
-    }
-
-    private func arrow(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .appFont(12, weight: .bold)
-                .foregroundStyle(enabled ? Palette.chipText : Palette.muted.opacity(0.4))
-                .frame(width: 26, height: 26)
-                .background(Palette.chip, in: Circle())
-        }
-        .disabled(!enabled)
-        .accessibilityLabel(symbol == "chevron.left" ? "Previous month" : "Next month")
-    }
-}
-
-/// A tab's title with the month stepper beside it — or under it, once the text
-/// is large enough that the two can't share a line without one of them
-/// breaking. Home already stacks them; the other three tabs now follow it there
-/// rather than squeezing the stepper until its label wraps.
-struct ScreenHeader: View {
-    @Environment(\.dynamicTypeSize) private var typeSize
-    let title: String
-
-    var body: some View {
-        if typeSize.prefersStackedLayout {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title).appFont(22, weight: .bold)
-                MonthStepper()
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-        } else {
-            HStack(spacing: 12) {
-                Text(title)
-                    .appFont(22, weight: .bold)
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.8)
-                Spacer(minLength: 0)
-                // First claim on the row, so the stepper gets its natural
-                // width and the title does any giving way.
-                MonthStepper().layoutPriority(1)
-            }
-        }
-    }
-}
 
 /// A member's initial on their colour. `ring` draws the separating outline used
 /// where avatars overlap in a stack.
@@ -533,7 +395,6 @@ struct MemberAvatar: View {
 struct EntryRow: View {
     @EnvironmentObject var model: AppModel
     let entry: Entry
-    var showDelete = false
     /// Whether the note and the reaction controls are shown. Off on Home, where
     /// the list is a glance; on in the log, where it's the shared space.
     var showsSocial = false
@@ -582,30 +443,23 @@ struct EntryRow: View {
                         .padding(.horizontal, 10).padding(.vertical, 8)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .background(Palette.field,
-                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .padding(.top, 9)
+                                    in: RoundedRectangle(cornerRadius: Radius.tile, style: .continuous))
+                        .padding(.top, Space.xs)
                 }
                 reactionBar
             }
         }
-        .padding(.horizontal, 13).padding(.vertical, 11)
-        .card(border: Palette.cardBorderSoft, radius: 15)
     }
 
     private func icon(_ bucket: Bucket) -> some View {
-        Image(systemName: bucket.symbol)
-            .appFont(16, weight: .semibold)
-            .foregroundStyle(bucket.color)
-            .frame(width: 36, height: 36)
-            .background(bucket.tint,
-                        in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        IconTile(symbol: bucket.symbol, color: bucket.color, fill: bucket.tint)
     }
 
     /// The place, then its category and whatever's worth flagging about it.
     private var titles: some View {
         VStack(alignment: .leading, spacing: 1) {
             Text(entry.place)
-                .appFont(14, weight: .semibold)
+                .appFont(14, weight: .medium)
                 .lineLimit(typeSize.prefersStackedLayout ? 2 : 1)
             HStack(spacing: 5) {
                 if let subtitle = entry.categorySubtitle {
@@ -668,6 +522,8 @@ struct EntryRow: View {
                     .foregroundStyle(model.myReaction(to: entry.id) == nil
                                      ? Palette.muted : Palette.teal)
             }
+            // Its own target inside a row that's tappable as a whole.
+            .buttonStyle(.borderless)
             .accessibilityLabel("React to \(entry.place)")
             .popover(isPresented: $pickingReaction) {
                 ReactionPicker(entryID: entry.id)
@@ -681,15 +537,6 @@ struct EntryRow: View {
             Image(systemName: "face.smiling")
                 .appFont(13, weight: .semibold)
                 .hidden()
-        }
-
-        if showDelete {
-            Button { model.delete(entry.id) } label: {
-                Image(systemName: "xmark")
-                    .appFont(13, weight: .semibold)
-                    .foregroundStyle(Palette.muted)
-            }
-            .accessibilityLabel("Delete \(entry.place)")
         }
     }
 
@@ -732,7 +579,7 @@ struct EntryRow: View {
                 }
                 Spacer(minLength: 0)
             }
-            .padding(.top, 9)
+            .padding(.top, Space.xs)
         }
     }
 }
@@ -762,8 +609,7 @@ struct ReactionPicker: View {
                 .accessibilityAddTraits(isMine ? .isSelected : [])
             }
         }
-        .padding(8)
-        .background(Palette.card)
+        .padding(Space.xs)
     }
 }
 
@@ -796,13 +642,9 @@ struct PreviewShell<Content: View>: View {
     @StateObject private var model = AppModel.preview
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            content
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.horizontal, 24)
-                .padding(.top, 8)
+        NavigationStack {
+            content.navigationDestination(for: Route.self) { $0.destination }
         }
-        .background(Palette.screen.ignoresSafeArea())
         .environmentObject(model)
         .foregroundStyle(Palette.text)
         .tint(Palette.teal)

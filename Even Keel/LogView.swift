@@ -13,9 +13,6 @@ struct LogView: View {
     /// the user, from the offer in the empty state — widening silently would
     /// put March's dinners under a July heading with no explanation.
     @State private var allMonths = false
-    @FocusState private var searching: Bool
-    /// Narrowest a person chip may be. Scaled with its own label's text style.
-    @ScaledMetric(relativeTo: .caption) private var personChipWidth: CGFloat = 96
 
     /// One day's entries with its running totals, kept apart by direction so a
     /// day's spending isn't quietly netted against a paycheque.
@@ -40,48 +37,108 @@ struct LogView: View {
 
     var body: some View {
         let entries = filtered(model.search(query, monthOnly: !searchesEverything))
-        VStack(alignment: .leading, spacing: 0) {
-            ScreenHeader(title: "Daily log")
-            countLine(entries.count)
-                .padding(.top, 2).padding(.bottom, 14)
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: Space.sm) {
+                    presenceLine
+                    searchSummary(entries.count)
+                    kindPicker
+                }
+                .listRowInsets(EdgeInsets())
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
 
-            presenceLine
-            searchField
-            filters
-
-            if entries.isEmpty { emptyState }
+            if entries.isEmpty {
+                emptyState
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
 
             ForEach(groups(of: entries)) { group in
-                VStack(alignment: .leading, spacing: 8) {
-                    HStack(spacing: 8) {
-                        // Across months a weekday alone is ambiguous, so the
-                        // heading carries the full date instead.
-                        Text(searchesEverything ? Fmt.dayTitle(group.date)
-                                                : Fmt.dateLabel(group.date, today: model.today))
-                            .appFont(12.5, weight: .semibold)
-                            .foregroundStyle(Palette.label9)
-                        Spacer()
-                        if group.earned > 0 {
-                            Text("+" + Fmt.money2(group.earned))
-                                .mono(12.5).foregroundStyle(Palette.green)
-                        }
-                        if group.spent > 0 {
-                            Text(Fmt.money2(group.spent))
-                                .mono(12.5).foregroundStyle(Palette.sub)
-                        }
-                    }
-                    ForEach(group.items) { entry in
-                        Button { editing = entry } label: {
-                            EntryRow(entry: entry, showDelete: true, showsSocial: true)
-                        }
-                        .buttonStyle(.plain)
-                    }
+                Section {
+                    ForEach(group.items) { row($0) }
+                } header: {
+                    dayHeader(group)
                 }
-                .padding(.bottom, 20)
             }
+        }
+        .listStyle(.insetGrouped)
+        .listSectionSpacing(Space.md)
+        .listColumn()
+        .navigationTitle("Daily log")
+        .monthControls(detail: isSearching ? nil : Fmt.count(model.month.entries.count, "entry",
+                                                             plural: "entries"))
+        .toolbar {
+            // Nobody to filter by on a budget of one.
+            if model.members.count > 1 {
+                ToolbarItem(placement: .topBarLeading) { personFilter }
+            }
+        }
+        // Kept open. Pulling a list down to find its search is the system default,
+        // but finding a past purchase is half of what a ledger is for.
+        .searchable(text: $query,
+                    placement: .navigationBarDrawer(displayMode: .always),
+                    prompt: "Search places, notes, people")
+        .autocorrectionDisabled()
+        .textInputAutocapitalization(.never)
+        .onChange(of: query) { _, new in
+            // Clearing the box drops the wider scope with it, rather than
+            // leaving one the user can no longer see the effect of.
+            if new.isEmpty { allMonths = false }
         }
         .sheet(item: $editing) { entry in
             AddSheet(editing: entry).environmentObject(model)
+        }
+    }
+
+    private func dayHeader(_ group: DayGroup) -> some View {
+        HStack(spacing: Space.xs) {
+            // Across months a weekday alone is ambiguous, so the
+            // heading carries the full date instead.
+            Text(searchesEverything ? Fmt.dayTitle(group.date)
+                                    : Fmt.dateLabel(group.date, today: model.today))
+                .appFont(13, weight: .semibold)
+                .foregroundStyle(Palette.sub)
+            Spacer()
+            if group.earned > 0 {
+                Text("+" + Fmt.money2(group.earned))
+                    .mono(12.5).foregroundStyle(Palette.green)
+            }
+            if group.spent > 0 {
+                Text(Fmt.money2(group.spent))
+                    .mono(12.5, weight: .medium).foregroundStyle(Palette.sub)
+            }
+        }
+        .textCase(nil)
+    }
+
+    /// One entry. Tap to edit, swipe to delete, and everything again on a long
+    /// press. Each row used to carry its own small ✕, a tap away from anything
+    /// else on the row. A swipe can't happen by accident, and the undo offer is
+    /// still there if it does.
+    private func row(_ entry: Entry) -> some View {
+        Button { editing = entry } label: {
+            EntryRow(entry: entry, showsSocial: true)
+                .contentShape(Rectangle())
+                // Under the title on every row. Left alone it follows the first
+                // text it finds, which a note pulls out of line.
+                .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] + 44 }
+        }
+        .buttonStyle(.plain)
+        .listRowBackground(Palette.card)
+        .listRowSeparatorTint(Palette.cardBorderSoft)
+        .swipeActions(edge: .trailing) {
+            Button(role: .destructive) { model.delete(entry.id) } label: {
+                Label("Delete", systemImage: "trash")
+            }
+        }
+        .contextMenu {
+            Button { editing = entry } label: { Label("Edit", systemImage: "pencil") }
+            Divider()
+            Button(role: .destructive) { model.delete(entry.id) } label: {
+                Label("Delete", systemImage: "trash")
+            }
         }
     }
 
@@ -105,83 +162,32 @@ struct LogView: View {
                     .foregroundStyle(Palette.sub)
                 Spacer(minLength: 0)
             }
-            .padding(.bottom, 12)
             .accessibilityElement(children: .combine)
         }
     }
 
     // MARK: - Search
 
-    /// What the count under the title says. Searching changes the question
-    /// from "how big is this month" to "how many did I find", and the answer
-    /// has to name the scope or a number from every month reads as a number
-    /// from this one.
+    /// What a search found. It changes the question from "how big is this
+    /// month" to "how many did I find", and the answer has to name the scope or
+    /// a number from every month reads as a number from this one.
     @ViewBuilder
-    private func countLine(_ count: Int) -> some View {
+    private func searchSummary(_ count: Int) -> some View {
         if isSearching {
             Text(Fmt.count(count, "match", plural: "matches")
                + (searchesEverything ? " across every month" : " in \(model.monthTitle)"))
                 .appFont(13, weight: .medium)
                 .foregroundStyle(Palette.sub)
-        } else {
-            Text("^[\(count) entry](inflect: true)")
-                .appFont(13, weight: .medium)
-                .foregroundStyle(Palette.sub)
         }
-    }
-
-    private var searchField: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 9) {
-                Image(systemName: "magnifyingglass")
-                    .appFont(13, weight: .semibold)
-                    .foregroundStyle(Palette.muted)
-                TextField("", text: $query,
-                          prompt: Text("Search places, notes, people")
-                            .foregroundStyle(Palette.muted))
-                    .textFieldStyle(.plain)
-                    .appFont(14, weight: .medium)
-                    .autocorrectionDisabled()
-                    .textInputAutocapitalization(.never)
-                    .submitLabel(.search)
-                    .focused($searching)
-                    .accessibilityLabel("Search the log")
-                if !query.isEmpty {
-                    Button {
-                        query = ""
-                        allMonths = false
-                        searching = false
-                    } label: {
-                        Image(systemName: "xmark.circle.fill")
-                            .appFont(14)
-                            .foregroundStyle(Palette.muted)
-                    }
-                    .accessibilityLabel("Clear search")
-                }
+        if searchesEverything {
+            Button {
+                withAppAnimation(.easeOut(duration: 0.18)) { allMonths = false }
+            } label: {
+                Label("Back to \(model.monthTitle)", systemImage: "calendar.badge.minus")
+                    .appFont(11.5, weight: .semibold)
             }
-            .padding(.horizontal, 13).padding(.vertical, 11)
-            .fieldBackground(radius: 13)
-
-            if searchesEverything {
-                Button {
-                    withAppAnimation(.easeOut(duration: 0.18)) { allMonths = false }
-                } label: {
-                    HStack(spacing: 6) {
-                        Image(systemName: "calendar.badge.minus")
-                            .appFont(10, weight: .bold)
-                        Text("Searching every month — back to \(model.monthTitle)")
-                            .appFont(11.5, weight: .semibold)
-                            .lineLimit(1)
-                        Spacer(minLength: 0)
-                    }
-                    .foregroundStyle(Palette.teal)
-                    .padding(.horizontal, 11).padding(.vertical, 8)
-                    .background(Palette.teal.opacity(0.14),
-                                in: RoundedRectangle(cornerRadius: 11, style: .continuous))
-                }
-            }
+            .inlineActionStyle()
         }
-        .padding(.bottom, 12)
     }
 
     // MARK: - Nothing to show
@@ -246,55 +252,27 @@ struct LogView: View {
 
     // MARK: - Filters
 
-    private var filters: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                kindChip(nil, label: "All")
-                ForEach(EntryKind.allCases, id: \.self) { kindChip($0, label: $0.label) }
-            }
-            // People wrap rather than scroll, so nobody hides off-screen — and
-            // the columns widen with the text, so a name isn't cut to
-            // "Everyo…" to keep three to a row.
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: personChipWidth), spacing: 8)],
-                      spacing: 8) {
-                personChip(nil, label: "Everyone")
-                ForEach(model.members) { personChip($0.id, label: $0.name, color: $0.color) }
-            }
+    private var kindPicker: some View {
+        Picker("Show", selection: $kindFilter) {
+            Text("All").tag(EntryKind?.none)
+            ForEach(EntryKind.allCases, id: \.self) { Text($0.label).tag(EntryKind?.some($0)) }
         }
-        .padding(.bottom, 18)
+        .pickerStyle(.segmented)
     }
 
-    private func kindChip(_ candidate: EntryKind?, label: String) -> some View {
-        let isSelected = kindFilter == candidate
-        let color = candidate?.color ?? Palette.teal
-        return Button { kindFilter = candidate } label: {
-            Text(label)
-                .appFont(12.5, weight: .semibold)
-                .frame(maxWidth: .infinity).padding(.vertical, 8)
-                .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
-                .fieldBackground(isSelected ? AnyShapeStyle(color.opacity(0.14))
-                                            : AnyShapeStyle(Palette.card),
-                                 border: isSelected ? color : Palette.cardBorder,
-                                 radius: 12)
-        }
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
-    }
-
-    private func personChip(_ id: String?, label: String, color: Color = Palette.teal) -> some View {
-        let isSelected = memberFilter == id
-        return Button { memberFilter = id } label: {
-            HStack(spacing: 6) {
-                Circle().fill(color).frame(width: 7, height: 7)
-                Text(label).appFont(12.5, weight: .semibold).lineLimit(1)
+    /// Lives in the bar, so it costs the list nothing until it's wanted. Filled
+    /// in while it's narrowing anything, because a list quietly missing someone's
+    /// entries is the one thing a filter mustn't be able to do.
+    private var personFilter: some View {
+        Menu {
+            Picker("Show", selection: $memberFilter) {
+                Text("Everyone").tag(String?.none)
+                ForEach(model.members) { Text($0.name).tag(String?.some($0.id)) }
             }
-            .frame(maxWidth: .infinity).padding(.vertical, 8)
-            .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
-            .fieldBackground(isSelected ? AnyShapeStyle(color.opacity(0.14))
-                                        : AnyShapeStyle(Palette.card),
-                             border: isSelected ? color : Palette.cardBorder,
-                             radius: 12)
+        } label: {
+            Label("Filter by person", systemImage: memberFilter == nil
+                  ? "line.3.horizontal.decrease" : "line.3.horizontal.decrease.circle.fill")
         }
-        .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
 
     private func filtered(_ entries: [Entry]) -> [Entry] {

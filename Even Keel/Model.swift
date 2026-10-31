@@ -694,7 +694,7 @@ struct Goal: Identifiable, Hashable {
 
 // MARK: - Navigation
 
-enum Tab: CaseIterable {
+enum Tab: String, CaseIterable {
     case home, log, budget, stats
 
     var title: String {

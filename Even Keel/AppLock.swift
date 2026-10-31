@@ -320,7 +320,7 @@ struct LockScreen: View {
 
                 Text("Locked")
                     .appFont(19, weight: .bold)
-                    .padding(.top, 18)
+                    .padding(.top, Space.md)
 
                 Text("This budget opens with \(AppLock.biometryName).")
                     .appFont(12.5)
@@ -335,31 +335,29 @@ struct LockScreen: View {
                         .foregroundStyle(Palette.over)
                         .multilineTextAlignment(.center)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 10)
-                        .padding(.horizontal, 30)
+                        .padding(.top, Space.xs)
+                        .padding(.horizontal, Space.xl)
                 }
 
                 Button {
                     Task { await lock.unlock() }
                 } label: {
                     Text("Unlock")
-                        .appFont(14, weight: .bold)
+                        .appFont(14, weight: .semibold)
                         .foregroundStyle(Palette.tealInk)
-                        .padding(.horizontal, 30).padding(.vertical, 13)
-                        .background(Palette.tealGradient,
-                                    in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+                        .padding(.horizontal, Space.md)
                 }
-                .buttonStyle(.plain)
+                .primaryButtonStyle()
                 .disabled(lock.isAuthenticating)
-                .opacity(lock.isAuthenticating ? 0.5 : 1)
-                .padding(.top, 24)
+                .padding(.top, Space.lg)
 
                 Spacer()
                 Spacer()
             }
             .frame(maxWidth: .infinity)
-            .padding(.horizontal, 24)
+            .padding(.horizontal, Space.md)
         }
+        .tint(Palette.teal)
         // Raises the prompt on arrival, so the ordinary path is open-and-glance
         // rather than open-tap-glance. A return from the background is handled
         // separately by `didBecomeActive` — this view is already on screen by

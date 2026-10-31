@@ -19,14 +19,13 @@ import SwiftUI
 
 struct CategoriesSheet: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
 
     @State private var kind: EntryKind = .expense
     @State private var editing: Bucket?
     @State private var pendingDeletion: Bucket?
 
     var body: some View {
-        NavigationStack {
+        Group {
             List {
                 Section {
                     ForEach(model.categories(for: kind)) { row($0) }
@@ -43,20 +42,14 @@ struct CategoriesSheet: View {
                 addSection
             }
             .listStyle(.insetGrouped)
-            .scrollContentBackground(.hidden)
-            .background(Palette.sheetBg)
+            .listColumn()
             .environment(\.editMode, .constant(.active))
             .navigationTitle("Categories")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) { directionPicker }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Done") { dismiss() }
-                }
             }
         }
-        .presentationBackground(Palette.sheetBg)
-        .tint(Palette.teal)
         .sheet(item: $editing) { bucket in
             CategoryEditor(bucket: bucket).environmentObject(model)
         }
@@ -117,16 +110,11 @@ struct CategoriesSheet: View {
 
     private func row(_ bucket: Bucket) -> some View {
         HStack(spacing: 12) {
-            Image(systemName: bucket.symbol)
-                .appFont(15, weight: .semibold)
-                .foregroundStyle(bucket.color)
-                .frame(width: 34, height: 34)
-                .background(bucket.tint,
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            IconTile(symbol: bucket.symbol, color: bucket.color, fill: bucket.tint)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(bucket.label)
-                    .appFont(14, weight: .semibold)
+                    .appFont(14, weight: .medium)
                     .foregroundStyle(bucket.isHidden ? Palette.sub : Palette.text)
                 Text(subtitle(for: bucket))
                     .appFont(11.5)
@@ -210,32 +198,24 @@ struct CategoryEditor: View {
 
     var body: some View {
         NavigationStack {
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 22) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: Space.lg) {
                     preview
                     nameField
                     colorPicker
                     symbolPicker
                     if bucket.kind == .expense { cadencePicker }
                 }
-                .padding(.horizontal, 22)
-                .padding(.vertical, 18)
+                .padding(Space.md)
             }
-            .background(Palette.sheetBg)
             .navigationTitle(isNew ? "New category" : bucket.label)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-                ToolbarItem(placement: .cancellationAction) {
-                    Button("Cancel") { dismiss() }
-                }
-                ToolbarItem(placement: .confirmationAction) {
-                    Button("Save") { save() }.disabled(!canSave)
-                }
+                ToolbarItem(placement: .cancellationAction) { CloseButton() }
+                ConfirmItem(isEnabled: canSave, action: save)
             }
         }
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
+        .modalSurface()
         .onAppear {
             label = bucket.label
             symbol = bucket.symbol
@@ -268,7 +248,7 @@ struct CategoryEditor: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .card(border: Palette.cardBorderSoft, radius: 16)
+        .card()
         .accessibilityHidden(true)
     }
 
@@ -282,8 +262,8 @@ struct CategoryEditor: View {
                 .focused($nameFocused)
                 .textFieldStyle(.plain)
                 .appFont(15, weight: .medium)
-                .padding(.horizontal, 14).padding(.vertical, 13)
-                .fieldBackground(radius: 13)
+                .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                .fieldBackground()
                 .accessibilityLabel("Category name")
         }
     }
@@ -351,8 +331,7 @@ struct CategoryEditor: View {
                                     .fieldBackground(
                                         isSelected ? AnyShapeStyle(chosen.color.opacity(0.16))
                                                    : AnyShapeStyle(Palette.card),
-                                        border: isSelected ? chosen.color : Palette.cardBorder,
-                                        radius: 11)
+                                        border: isSelected ? chosen.color : nil)
                             }
                             .accessibilityLabel(candidate)
                             .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -396,8 +375,7 @@ struct CategoryEditor: View {
                     .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
                     .fieldBackground(isSelected ? AnyShapeStyle(Palette.teal.opacity(0.10))
                                                 : AnyShapeStyle(Palette.card),
-                                     border: isSelected ? Palette.teal : Palette.cardBorder,
-                                     radius: 13)
+                                     border: isSelected ? Palette.teal : nil)
                 }
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }

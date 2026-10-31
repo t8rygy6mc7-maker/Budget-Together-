@@ -13,17 +13,14 @@ import SwiftUI
 
 struct GoalsSheet: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
 
     @State private var editing: Goal?
     @State private var isAdding = false
     @State private var toppingUp: Goal?
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-
+        Page(title: "Saving for", subtitle: Fmt.count(model.goals.count, "goal"), displayMode: .inline) {
+            VStack(alignment: .leading, spacing: Space.md) {
                 if model.goals.isEmpty {
                     Text("An emergency fund, a deposit, a trip — put a number on "
                        + "it and you'll see how far along you are and what it "
@@ -31,67 +28,26 @@ struct GoalsSheet: View {
                         .appFont(13)
                         .foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.vertical, 22)
-                } else {
-                    totalCard.padding(.bottom, 12)
-                    VStack(spacing: 8) {
+                    } else {
+                    totalCard
+                    AdaptiveCards(spacing: Space.sm) {
                         ForEach(model.goals) { goal in
                             row(goal)
                         }
                     }
                 }
 
-                Button { isAdding = true } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "plus").appFont(15, weight: .bold)
-                        Text("Add a goal").appFont(15, weight: .bold)
-                    }
-                    .frame(maxWidth: .infinity).padding(15)
-                    .foregroundStyle(Palette.tealInk)
-                    .background(Palette.tealGradient,
-                                in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-                }
-                .padding(.top, 16)
-
                 Text("Nothing here is read from a bank. What's put by is whatever "
                    + "you've told the app you've put by.")
                     .appFont(11.5)
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 12)
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
+        .toolbar { AddItem(label: "Add a goal") { isAdding = true } }
         .sheet(item: $editing) { goal in GoalForm(goal: goal).environmentObject(model) }
         .sheet(isPresented: $isAdding) { GoalForm(goal: nil).environmentObject(model) }
         .sheet(item: $toppingUp) { goal in TopUpSheet(goal: goal).environmentObject(model) }
-    }
-
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Saving for").appFont(17, weight: .bold)
-                Text("^[\(model.goals.count) goal](inflect: true)")
-                    .appFont(12.5, weight: .medium)
-                    .foregroundStyle(Palette.sub)
-            }
-            Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Palette.label9)
-                    .frame(width: 30, height: 30)
-                    .background(Palette.chip, in: Circle())
-            }
-            .accessibilityLabel("Close")
-        }
-        .padding(.top, 6).padding(.bottom, 16)
     }
 
     private var totalCard: some View {
@@ -125,7 +81,7 @@ struct GoalsSheet: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 17).padding(.vertical, 16)
+        .padding(Space.md)
         .card()
     }
 
@@ -135,17 +91,13 @@ struct GoalsSheet: View {
     private func row(_ goal: Goal) -> some View {
         let today = Date()
         let behind = goal.isBehind(on: today) || goal.isOverdue(on: today)
-        return VStack(spacing: 9) {
-            HStack(spacing: 12) {
-                Image(systemName: goal.isComplete ? "checkmark.seal.fill" : "target")
-                    .appFont(15, weight: .semibold)
-                    .foregroundStyle(goal.isComplete ? Palette.green : Palette.teal)
-                    .frame(width: 34, height: 34)
-                    .background((goal.isComplete ? Palette.green : Palette.teal).opacity(0.16),
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        return VStack(spacing: Space.xs) {
+            HStack(spacing: Space.sm) {
+                IconTile(symbol: goal.isComplete ? "checkmark.seal.fill" : "target",
+                         color: goal.isComplete ? Palette.green : Palette.teal)
 
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(goal.name).appFont(14, weight: .semibold).lineLimit(1)
+                    Text(goal.name).appFont(14, weight: .medium).lineLimit(1)
                     Text(goal.paceLabel(on: today))
                         .appFont(11.5)
                         .foregroundStyle(goal.isComplete ? Palette.green
@@ -180,19 +132,15 @@ struct GoalsSheet: View {
                 Spacer(minLength: 4)
 
                 Button { toppingUp = goal } label: {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus").appFont(9.5, weight: .bold)
-                        Text("Add to this").appFont(11, weight: .bold)
-                    }
-                    .foregroundStyle(Palette.teal)
-                    .padding(.horizontal, 9).padding(.vertical, 5)
-                    .background(Palette.teal.opacity(0.14), in: Capsule())
+                    Label("Add to this", systemImage: "plus")
+                        .appFont(11, weight: .semibold)
                 }
+                .inlineActionStyle()
                 .accessibilityHint("Records money you've put aside for \(goal.name)")
             }
         }
-        .padding(.horizontal, 13).padding(.vertical, 11)
-        .card(border: Palette.cardBorderSoft, radius: 15)
+        .padding(Space.md)
+        .card()
         .contentShape(Rectangle())
         .onTapGesture { editing = goal }
         .accessibilityElement(children: .contain)
@@ -217,45 +165,28 @@ struct TopUpSheet: View {
     private var parsed: Double? { Fmt.amount(from: amount) }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Add to \(goal.name)").appFont(17, weight: .bold)
-                            .lineLimit(2).fixedSize(horizontal: false, vertical: true)
-                        Text("\(Fmt.money(goal.saved)) put by so far")
-                            .appFont(12.5, weight: .medium)
-                            .foregroundStyle(Palette.sub)
-                    }
-                    Spacer(minLength: 8)
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .appFont(14, weight: .semibold)
-                            .foregroundStyle(Palette.label9)
-                            .frame(width: 30, height: 30)
-                            .background(Palette.chip, in: Circle())
-                    }
-                    .accessibilityLabel("Close")
-                }
-                .padding(.top, 6)
-
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("Amount").appFont(12, weight: .semibold).foregroundStyle(Palette.sub)
+        ModalPage(title: "Add to \(goal.name)",
+                  subtitle: "\(Fmt.money(goal.saved)) put by so far",
+                  detents: [.medium]) {
+            VStack(alignment: .leading, spacing: Space.md) {
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    Text("Amount").appFont(12, weight: .medium).foregroundStyle(Palette.sub)
                     HStack(spacing: 2) {
                         Text(Fmt.currencySymbol).mono(18, weight: .regular)
                             .foregroundStyle(Palette.muted)
                         TextField("0", text: $amount)
                             .keyboardType(.decimalPad)
-                            .appFont(22, weight: .bold, design: .monospaced)
+                            .appFont(22, weight: .semibold)
+                            .monospacedDigit()
                             .focused($focused)
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 13)
-                    .fieldBackground(radius: 13)
+                    .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                    .fieldBackground()
                 }
 
                 if let parsed {
                     let after = goal.saved + parsed
-                    HStack(spacing: 10) {
+                    HStack(spacing: Space.sm) {
                         Image(systemName: after >= goal.target && goal.target > 0
                               ? "checkmark.seal.fill" : "arrow.up.right")
                             .appFont(13, weight: .semibold)
@@ -264,29 +195,13 @@ struct TopUpSheet: View {
                         Text(after >= goal.target && goal.target > 0
                              ? "That finishes it — \(Fmt.money(after)) saved"
                              : "\(Fmt.money(after)) put by, \(Fmt.money(max(0, goal.target - after))) to go")
-                            .appFont(13, weight: .semibold)
+                            .appFont(13, weight: .medium)
                             .fixedSize(horizontal: false, vertical: true)
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 12)
-                    .card(border: Palette.cardBorderSoft, radius: 13)
+                    .padding(Space.md)
+                    .card()
                 }
-
-                Button {
-                    guard let parsed else { return }
-                    model.addToGoal(goal.id, amount: parsed)
-                    dismiss()
-                } label: {
-                    Text("Add")
-                        .appFont(15, weight: .bold)
-                        .frame(maxWidth: .infinity).padding(15)
-                        .foregroundStyle(parsed != nil ? Palette.tealInk : Palette.muted)
-                        .background {
-                            if parsed != nil { Palette.tealGradient } else { Palette.chip }
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                }
-                .disabled(parsed == nil)
 
                 Text("This records what you've set aside. It doesn't move any "
                    + "money, and it isn't logged as spending.")
@@ -294,14 +209,14 @@ struct TopUpSheet: View {
                     .foregroundStyle(Palette.muted)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
+            .toolbar {
+                ConfirmItem(title: "Add", isEnabled: parsed != nil) {
+                    guard let parsed else { return }
+                    model.addToGoal(goal.id, amount: parsed)
+                    dismiss()
+                }
+            }
         }
-        .presentationDetents([.medium])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
         .onAppear { focused = true }
     }
 }
@@ -344,23 +259,8 @@ struct GoalForm: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text(goal == nil ? "New goal" : "Edit goal")
-                        .appFont(17, weight: .bold)
-                    Spacer()
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .appFont(14, weight: .semibold)
-                            .foregroundStyle(Palette.label9)
-                            .frame(width: 30, height: 30)
-                            .background(Palette.chip, in: Circle())
-                    }
-                    .accessibilityLabel("Close")
-                }
-                .padding(.top, 6)
-
+        ModalPage(title: goal == nil ? "New goal" : "Edit goal") {
+            VStack(alignment: .leading, spacing: Space.md) {
                 field("Name", text: $name, prompt: "e.g. Emergency fund")
                 money("Target", text: $target)
                 money("Put by already", text: $saved)
@@ -369,13 +269,13 @@ struct GoalForm: View {
                 deadlineSection
 
                 if let preview = previewGoal {
-                    HStack(spacing: 10) {
+                    HStack(spacing: Space.sm) {
                         Image(systemName: previewSymbol(preview))
                             .appFont(13, weight: .semibold)
                             .foregroundStyle(previewTint(preview))
                         VStack(alignment: .leading, spacing: 2) {
                             Text(preview.paceLabel(on: Date()))
-                                .appFont(13, weight: .semibold)
+                                .appFont(13, weight: .medium)
                                 .fixedSize(horizontal: false, vertical: true)
                             if let shortfall = shortfallLine(preview) {
                                 Text(shortfall)
@@ -385,43 +285,21 @@ struct GoalForm: View {
                         }
                         Spacer(minLength: 0)
                     }
-                    .padding(.horizontal, 14).padding(.vertical, 12)
-                    .card(border: Palette.cardBorderSoft, radius: 13)
+                    .padding(Space.md)
+                    .card()
                 }
-
-                let canSave = draft != nil
-                Button(action: save) {
-                    Text(goal == nil ? "Add" : "Save changes")
-                        .appFont(15, weight: .bold)
-                        .frame(maxWidth: .infinity).padding(15)
-                        .foregroundStyle(canSave ? Palette.tealInk : Palette.muted)
-                        .background {
-                            if canSave { Palette.tealGradient } else { Palette.chip }
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                }
-                .disabled(!canSave)
 
                 if let goal {
-                    Button {
+                    SecondaryButton(title: "Delete", color: Palette.over) {
                         model.deleteGoal(goal.id)
                         dismiss()
-                    } label: {
-                        Text("Delete")
-                            .appFont(14, weight: .semibold)
-                            .foregroundStyle(Palette.over)
-                            .frame(maxWidth: .infinity).padding(13)
                     }
                 }
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
+            .toolbar {
+                ConfirmItem(title: goal == nil ? "Add" : "Save", isEnabled: draft != nil, action: save)
+            }
         }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
         .onAppear(perform: load)
     }
 
@@ -432,7 +310,7 @@ struct GoalForm: View {
         VStack(alignment: .leading, spacing: 10) {
             Toggle(isOn: $hasDeadline.appAnimation(.easeOut(duration: 0.18))) {
                 VStack(alignment: .leading, spacing: 2) {
-                    Text("Want it by a date").appFont(13.5, weight: .semibold)
+                    Text("Want it by a date").appFont(13.5, weight: .medium)
                     Text(hasDeadline
                          ? "You'll see what has to go in each month."
                          : "Optional — leave it off if there's no rush.")
@@ -448,8 +326,8 @@ struct GoalForm: View {
                     .appFont(13, weight: .medium)
             }
         }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .card(border: Palette.cardBorderSoft, radius: 13)
+        .padding(Space.md)
+        .card()
     }
 
     private static var latestDeadline: Date {
@@ -492,28 +370,29 @@ struct GoalForm: View {
 
     private func field(_ title: String, text: Binding<String>, prompt: String) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title).appFont(12, weight: .semibold).foregroundStyle(Palette.sub)
+            Text(title).appFont(12, weight: .medium).foregroundStyle(Palette.sub)
             TextField("", text: text,
                       prompt: Text(prompt).foregroundStyle(Palette.muted))
                 .textFieldStyle(.plain)
-                .appFont(15, weight: .medium)
-                .padding(.horizontal, 14).padding(.vertical, 13)
-                .fieldBackground(radius: 13)
+                .appFont(15)
+                .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                .fieldBackground()
         }
         .accessibilityElement(children: .contain)
     }
 
     private func money(_ title: String, text: Binding<String>) -> some View {
         VStack(alignment: .leading, spacing: 7) {
-            Text(title).appFont(12, weight: .semibold).foregroundStyle(Palette.sub)
+            Text(title).appFont(12, weight: .medium).foregroundStyle(Palette.sub)
             HStack(spacing: 2) {
                 Text(Fmt.currencySymbol).mono(14, weight: .regular).foregroundStyle(Palette.muted)
                 TextField("0", text: text)
                     .keyboardType(.decimalPad)
-                    .appFont(15, weight: .bold, design: .monospaced)
+                    .appFont(15, weight: .medium)
+                    .monospacedDigit()
             }
-            .padding(.horizontal, 14).padding(.vertical, 13)
-            .fieldBackground(radius: 13)
+            .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+            .fieldBackground()
         }
         .accessibilityElement(children: .contain)
     }
@@ -547,13 +426,9 @@ struct GoalForm: View {
 }
 
 #Preview {
-    GoalsSheet()
-        .environmentObject(AppModel.preview)
-        .preferredColorScheme(.dark)
+    PreviewShell { GoalsSheet() }
 }
 
 #Preview("Goals — light") {
-    GoalsSheet()
-        .environmentObject(AppModel.preview)
-        .preferredColorScheme(.light)
+    PreviewShell(scheme: .light) { GoalsSheet() }
 }

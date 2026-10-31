@@ -24,57 +24,29 @@ struct AskSheet: View {
     ]
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                header
+        ModalPage(title: "Ask", subtitle: "Answered from your own entries, on this device") {
+            VStack(alignment: .leading, spacing: Space.md) {
                 askField
 
                 if let answer {
-                    answerCard(answer).padding(.top, 18)
+                    answerCard(answer)
                     if !answer.entries.isEmpty {
-                        Text("Behind that number")
-                            .appFont(13, weight: .semibold)
-                            .padding(.top, 20).padding(.bottom, 10)
-                        VStack(spacing: 8) {
-                            ForEach(answer.entries.prefix(8)) { EntryRow(entry: $0) }
+                        RowGroup(title: "Behind that number") {
+                            ForEach(answer.entries.prefix(8)) { entry in
+                                GroupedRow(separatorInset: Space.md + 32 + Space.sm) {
+                                    EntryRow(entry: entry)
+                                }
+                            }
                         }
                     }
                 } else if missed {
-                    notUnderstood.padding(.top, 18)
+                    notUnderstood
                 } else {
-                    examplesList.padding(.top, 18)
+                    examplesList
                 }
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
         }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
         .onAppear { focused = true }
-    }
-
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Ask").appFont(17, weight: .bold)
-                Text("Answered from your own entries, on this device")
-                    .appFont(12.5, weight: .medium)
-                    .foregroundStyle(Palette.sub)
-            }
-            Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Palette.label9)
-                    .frame(width: 30, height: 30)
-                    .background(Palette.chip, in: Circle())
-            }
-            .accessibilityLabel("Close")
-        }
-        .padding(.top, 6).padding(.bottom, 16)
     }
 
     private var askField: some View {
@@ -83,21 +55,19 @@ struct AskSheet: View {
                       prompt: Text("Ask about your spending").foregroundStyle(Palette.muted))
                 .focused($focused)
                 .textFieldStyle(.plain)
-                .appFont(15, weight: .medium)
+                .appFont(15)
                 .submitLabel(.search)
                 .onSubmit(run)
-                .padding(.horizontal, 14).padding(.vertical, 13)
-                .fieldBackground(radius: 13)
+                .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                .fieldBackground()
 
             let canAsk = !question.trimmingCharacters(in: .whitespaces).isEmpty
             Button(action: run) {
                 Image(systemName: "arrow.up")
-                    .appFont(16, weight: .bold)
+                    .appFont(14, weight: .bold)
                     .foregroundStyle(canAsk ? Palette.tealInk : Palette.muted)
-                    .frame(width: 46, height: 46)
-                    .background { if canAsk { Palette.tealGradient } else { Palette.chip } }
-                    .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
             }
+            .primaryButtonStyle()
             .disabled(!canAsk)
             .accessibilityLabel("Ask")
         }
@@ -113,56 +83,52 @@ struct AskSheet: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 17).padding(.vertical, 16)
+        .padding(Space.md)
         .card()
     }
 
     /// No guessing. Say what it can do instead.
     private var notUnderstood: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 9) {
-                Image(systemName: "questionmark.circle.fill")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Palette.moodRoutine)
-                Text("I didn't follow that one")
-                    .appFont(14, weight: .semibold)
+        VStack(alignment: .leading, spacing: Space.md) {
+            VStack(alignment: .leading, spacing: Space.xs) {
+                HStack(spacing: Space.xs) {
+                    Image(systemName: "questionmark.circle.fill")
+                        .appFont(14, weight: .semibold)
+                        .foregroundStyle(Palette.moodRoutine)
+                    Text("I didn't follow that one")
+                        .appFont(14, weight: .medium)
+                }
+                Text("I can answer questions about totals, what's left, and who spent what — over today, this week, this month or last month. Try one of these:")
+                    .appFont(12.5).foregroundStyle(Palette.sub)
+                    .fixedSize(horizontal: false, vertical: true)
             }
-            Text("I can answer questions about totals, what's left, and who spent what — over today, this week, this month or last month. Try one of these:")
-                .appFont(12.5).foregroundStyle(Palette.sub)
-                .fixedSize(horizontal: false, vertical: true)
-            exampleButtons
-        }
-        .padding(.horizontal, 17).padding(.vertical, 16)
-        .card()
-    }
-
-    private var examplesList: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("Try asking").appFont(13, weight: .semibold)
-            exampleButtons
+            exampleRows(title: nil)
         }
     }
 
-    private var exampleButtons: some View {
-        VStack(spacing: 8) {
+    private var examplesList: some View { exampleRows(title: "Try asking") }
+
+    private func exampleRows(title: String?) -> some View {
+        RowGroup(title: title) {
             ForEach(Self.examples, id: \.self) { example in
                 Button {
                     question = example
                     run()
                 } label: {
-                    HStack(spacing: 9) {
-                        Text(example)
-                            .appFont(13, weight: .medium)
-                            .multilineTextAlignment(.leading)
-                        Spacer(minLength: 0)
-                        Image(systemName: "arrow.up.right")
-                            .appFont(11, weight: .semibold)
-                            .foregroundStyle(Palette.muted)
+                    GroupedRow {
+                        HStack(spacing: Space.xs) {
+                            Text(example)
+                                .appFont(13)
+                                .foregroundStyle(Palette.text)
+                                .multilineTextAlignment(.leading)
+                            Spacer(minLength: 0)
+                            Image(systemName: "arrow.up.right")
+                                .appFont(11, weight: .semibold)
+                                .foregroundStyle(Palette.muted)
+                        }
                     }
-                    .padding(.horizontal, 13).padding(.vertical, 11)
-                    .card(border: Palette.cardBorderSoft, radius: 13)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(.row)
             }
         }
     }

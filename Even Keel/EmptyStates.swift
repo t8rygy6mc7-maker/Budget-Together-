@@ -38,17 +38,15 @@ struct EmptyState: View {
             if let actionTitle, let action {
                 Button(action: action) {
                     Text(actionTitle)
-                        .appFont(13.5, weight: .bold)
+                        .appFont(13.5, weight: .semibold)
                         .foregroundStyle(Palette.tealInk)
-                        .padding(.horizontal, 18).padding(.vertical, 11)
-                        .background(Palette.tealGradient,
-                                    in: RoundedRectangle(cornerRadius: 13, style: .continuous))
                 }
-                .padding(.top, 4)
+                .primaryButtonStyle()
+                .padding(.top, Space.xxs)
             }
         }
         .frame(maxWidth: .infinity)
-        .padding(.horizontal, 20).padding(.vertical, 28)
+        .padding(.horizontal, Space.lg).padding(.vertical, Space.xl)
     }
 }
 
@@ -67,8 +65,6 @@ struct EmptySpendPrompt: View {
             actionTitle: "Add the first one",
             action: { model.isAddingEntry = true }
         )
-        .card(border: Palette.cardBorderSoft, radius: 18)
-        .padding(.top, 12).padding(.bottom, 4)
     }
 
     /// A payday on the 1st is something logged, so "Nothing logged yet" under

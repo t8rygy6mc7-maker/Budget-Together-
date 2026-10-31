@@ -2,49 +2,64 @@ import SwiftUI
 
 struct HomeView: View {
     @EnvironmentObject var model: AppModel
+    @Environment(\.horizontalSizeClass) private var sizeClass
     @State private var showPeople = false
-    @State private var showWins = false
-    @State private var showInsights = false
     @State private var showAsk = false
-    @State private var showChallenges = false
+    /// Ties the People sheet to the button it opens from, so it grows out of the
+    /// glass rather than sliding up from the bottom of the screen.
+    @Namespace private var morph
 
     /// Avatars shown before the stack collapses into a "+N" badge.
-    private static let maxAvatars = 4
+    private static let maxAvatars = 3
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            HStack {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text("Even Keel")
-                        .appFont(22, weight: .bold)
-                        .lineLimit(1)
-                        .minimumScaleFactor(0.7)
-                    MonthStepper()
+        Page(title: "Even Keel") {
+            VStack(alignment: .leading, spacing: Space.lg) {
+                summaryLine
+
+                // Anti-budget mode is entirely "what's left of the fun money",
+                // which is a limits calculation. With no limits set it would report
+                // a confident $0, so the mode simply isn't available until there's
+                // a plan for it to subtract from.
+                if model.isSimplified, model.hasPlan {
+                    simplified
+                } else {
+                    full
                 }
-                Spacer()
-                Button { showPeople = true } label: { avatarStack }
-                    .accessibilityLabel("^[\(model.members.count) person](inflect: true) on this budget")
-                    .accessibilityHint("Opens people and settings")
-            }
-            .padding(.bottom, 18)
-
-            summaryLine.padding(.bottom, 18)
-
-            // Anti-budget mode is entirely "what's left of the fun money",
-            // which is a limits calculation. With no limits set it would report
-            // a confident $0, so the mode simply isn't available until there's
-            // a plan for it to subtract from.
-            if model.isSimplified, model.hasPlan {
-                simplified
-            } else {
-                full
             }
         }
-        .sheet(isPresented: $showPeople) { PeopleSheet() }
-        .sheet(isPresented: $showWins) { WinsSheet() }
-        .sheet(isPresented: $showInsights) { InsightsSheet() }
+        .toolbar {
+            if #available(iOS 26, *) {
+                ToolbarSpacer(.fixed, placement: .topBarTrailing)
+                peopleButton.matchedTransitionSource(id: Self.peopleMorph, in: morph)
+            } else {
+                peopleButton
+            }
+        }
+        // After the people button in the chain, which puts it first in the bar.
+        .monthControls()
+        .sheet(isPresented: $showPeople) {
+            PeopleSheet().morphs(from: Self.peopleMorph, in: morph)
+        }
         .sheet(isPresented: $showAsk) { AskSheet() }
-        .sheet(isPresented: $showChallenges) { ChallengesSheet() }
+    }
+
+    private static let peopleMorph = "people"
+
+    private var peopleButton: some ToolbarContent {
+        ToolbarItem(placement: .topBarTrailing) {
+            Button { showPeople = true } label: {
+                // A wide display's floating tab bar leaves the trailing end short
+                // of room, and the stack of faces fell into the overflow menu.
+                if sizeClass == .regular {
+                    Image(systemName: "person.2.fill")
+                } else {
+                    avatarStack
+                }
+            }
+                .accessibilityLabel("^[\(model.members.count) person](inflect: true) on this budget")
+                .accessibilityHint("Opens people and settings")
+        }
     }
 
     /// How the month is going, in a sentence, above everything else.
@@ -78,9 +93,9 @@ struct HomeView: View {
             name: model.me?.name
         )
         let leftForWeek = fun ? model.funLeft : model.left
-        return VStack(alignment: .leading, spacing: 3) {
+        return VStack(alignment: .leading, spacing: Space.xxs) {
             Text(summary.headline)
-                .appFont(19, weight: .bold)
+                .appFont(19, weight: .semibold)
                 .foregroundStyle(Palette.text)
                 .fixedSize(horizontal: false, vertical: true)
             Text(summary.detail)
@@ -91,7 +106,7 @@ struct HomeView: View {
             if model.hasPlan, leftForWeek > 0, model.weeklyFramingIsUseful {
                 weeklyLine(allowance: fun ? model.funWeeklyAllowance : model.weeklyAllowance,
                            spent: model.spentThisWeek(discretionaryOnly: fun))
-                    .padding(.top, 7)
+                    .padding(.top, Space.xxs)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -121,32 +136,14 @@ struct HomeView: View {
     /// starts quietly disagreeing with somebody's bank balance. So it gets a
     /// line of its own, stated as a deliberate choice rather than a warning.
     @ViewBuilder
-    private var oneOffStrip: some View {
+    private var oneOffRow: some View {
         if model.month.belowTheLine > 0 {
             Button { model.tab = .log } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "minus.diamond.fill")
-                        .appFont(14, weight: .semibold)
-                        .foregroundStyle(Palette.moodJoy)
-                        .frame(width: 32, height: 32)
-                        .background(Palette.moodJoy.opacity(0.16),
-                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("\(Fmt.money(model.month.belowTheLine)) in one-offs")
-                            .appFont(13, weight: .semibold).lineLimit(1)
-                        Text("^[\(model.month.belowTheLineCount) thing](inflect: true) you set aside — not counted above")
-                            .appFont(11.5).foregroundStyle(Palette.sub)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.right")
-                        .appFont(12, weight: .semibold)
-                        .foregroundStyle(Palette.muted)
-                }
-                .padding(.horizontal, 14).padding(.vertical, 12)
-                .card(border: Palette.cardBorderSoft, radius: 15)
+                RowLabel(symbol: "minus.diamond.fill", color: Palette.moodJoy,
+                         title: Text("\(Fmt.money(model.month.belowTheLine)) in one-offs"),
+                         subtitle: Text("^[\(model.month.belowTheLineCount) thing](inflect: true) you set aside — not counted above"))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.row)
         }
     }
 
@@ -160,122 +157,72 @@ struct HomeView: View {
     /// setting limits no longer puts Budget in the bar by itself, and this is
     /// the only door to them until it does.
     @ViewBuilder
-    private var planStrip: some View {
+    private var planRow: some View {
         if model.isCurrentMonth,
            !model.hasPlan || !model.visibleTabs.contains(.budget) {
             Button { model.reveal(.budget) } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: "slider.horizontal.3")
-                        .appFont(14, weight: .semibold)
-                        .foregroundStyle(Palette.teal)
-                        .frame(width: 32, height: 32)
-                        .background(Palette.teal.opacity(0.16),
-                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(model.hasPlan ? "Your spending limits"
-                             : model.canSuggestPlan ? "Ready to set some limits?"
-                             : "Want to set spending limits?")
-                            .appFont(13, weight: .semibold).lineLimit(1)
-                        Text(model.hasPlan
-                             ? "Change them whenever they stop fitting."
-                             : model.canSuggestPlan
-                             ? "There's enough here now to suggest some."
-                             : "Optional — tracking works fine without them.")
-                            .appFont(11.5).foregroundStyle(Palette.sub)
-                            .lineLimit(2)
-                            .multilineTextAlignment(.leading)
-                    }
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.right")
-                        .appFont(12, weight: .semibold)
-                        .foregroundStyle(Palette.muted)
-                }
-                .padding(.horizontal, 14).padding(.vertical, 12)
-                .card(border: Palette.cardBorderSoft, radius: 15)
+                RowLabel(symbol: "slider.horizontal.3",
+                         title: Text(model.hasPlan ? "Your spending limits"
+                                     : model.canSuggestPlan ? "Ready to set some limits?"
+                                     : "Want to set spending limits?"),
+                         subtitle: Text(model.hasPlan
+                                        ? "Change them whenever they stop fitting."
+                                        : model.canSuggestPlan
+                                        ? "There's enough here now to suggest some."
+                                        : "Optional — tracking works fine without them."))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.row)
         }
     }
 
     /// A running challenge, or an invitation to start one.
-    private var challengeStrip: some View {
-        Button { showChallenges = true } label: {
-            HStack(spacing: 12) {
-                let running = model.featuredChallenge
-                Image(systemName: running?.isBroken == true ? "xmark.circle.fill" : "flag.fill")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(running?.isBroken == true ? Palette.over : Palette.moodSocial)
-                    .frame(width: 32, height: 32)
-                    .background((running?.isBroken == true ? Palette.over : Palette.moodSocial)
-                        .opacity(0.16),
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(running?.challenge.title ?? "Take on a challenge")
-                        .appFont(13, weight: .semibold).lineLimit(1)
-                    Text(running?.detail ?? "No-Spend Weekend and others, together")
-                        .appFont(11.5).foregroundStyle(Palette.sub)
-                        .lineLimit(1)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .appFont(12, weight: .semibold)
-                    .foregroundStyle(Palette.muted)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .card(border: Palette.cardBorderSoft, radius: 15)
+    private var challengeRow: some View {
+        let running = model.featuredChallenge
+        return NavigationLink(value: Route.challenges) {
+            RowLabel(symbol: running?.isBroken == true ? "xmark.circle.fill" : "flag.fill",
+                     color: running?.isBroken == true ? Palette.over : Palette.moodSocial,
+                     title: Text(running?.challenge.title ?? "Take on a challenge"),
+                     subtitle: Text(running?.detail ?? "No-Spend Weekend and others, together"))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.row)
     }
 
-    private var askButton: some View {
+    private var askRow: some View {
         Button { showAsk = true } label: {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkle.magnifyingglass")
-                    .appFont(13, weight: .semibold)
-                Text("Ask about your spending")
-                    .appFont(13, weight: .medium)
-                Spacer(minLength: 0)
-            }
-            .foregroundStyle(Palette.chipText)
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .fieldBackground(radius: 14)
+            RowLabel(symbol: "sparkle.magnifyingglass", color: Palette.moodRoutine,
+                     title: Text("Ask about your spending"))
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.row)
         .accessibilityLabel("Ask a question about your spending")
     }
 
     /// The forecast in one line, as a way into the full breakdown. Hidden until
     /// there's enough of the month behind it to mean anything.
     @ViewBuilder
-    private var forecastStrip: some View {
+    private var forecastRow: some View {
         if model.isCurrentMonth, model.forecast.isReliable {
             let over = model.forecast.isOverPlan
-            Button { showInsights = true } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: over ? "chart.line.uptrend.xyaxis" : "chart.line.flattrend.xyaxis")
-                        .appFont(14, weight: .semibold)
-                        .foregroundStyle(over ? Palette.over : Palette.teal)
-                        .frame(width: 32, height: 32)
-                        .background((over ? Palette.over : Palette.teal).opacity(0.16),
-                                    in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("Heading for \(Fmt.money(model.forecast.projected))")
-                            .appFont(13, weight: .semibold).lineLimit(1)
-                        Text(over
-                             ? "\(Fmt.money(model.forecast.overBy)) over plan at this rate"
-                             : "\(Fmt.money(model.forecast.underBy)) under plan at this rate")
-                            .appFont(11.5).foregroundStyle(Palette.sub)
-                            .lineLimit(1)
-                    }
-                    Spacer(minLength: 4)
-                    Image(systemName: "chevron.right")
-                        .appFont(12, weight: .semibold)
-                        .foregroundStyle(Palette.muted)
-                }
-                .padding(.horizontal, 14).padding(.vertical, 12)
-                .card(border: Palette.cardBorderSoft, radius: 15)
+            NavigationLink(value: Route.insights) {
+                RowLabel(symbol: over ? "chart.line.uptrend.xyaxis" : "chart.line.flattrend.xyaxis",
+                         color: over ? Palette.over : Palette.teal,
+                         title: Text("Heading for \(Fmt.money(model.forecast.projected))"),
+                         subtitle: Text(over
+                                        ? "\(Fmt.money(model.forecast.overBy)) over plan at this rate"
+                                        : "\(Fmt.money(model.forecast.underBy)) under plan at this rate"))
             }
-            .buttonStyle(.plain)
+            .buttonStyle(.row)
+        }
+    }
+
+    /// Everything that leads somewhere else, as one group of rows.
+    private var linkRows: some View {
+        RowGroup {
+            oneOffRow
+            planRow
+            forecastRow
+            winsRow
+            challengeRow
+            askRow
         }
     }
 
@@ -284,71 +231,63 @@ struct HomeView: View {
     /// One number: what's left to spend freely. Obligations are stated as
     /// handled rather than itemised, which is the entire point of the mode.
     private var simplified: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Nothing in a finished month is free to spend any more; what the
-            // same figure means by then is what went unspent.
-            Text(model.isCurrentMonth ? "Free to spend" : "Left over in \(model.monthTitle)")
-                .appFont(13, weight: .medium)
-                .foregroundStyle(Palette.sub)
-            Text(Fmt.money(max(0, model.funLeft)))
-                .mono(52, weight: .semibold)
-                .foregroundStyle(model.funLeft < 0 ? Palette.over : Palette.text)
-                .padding(.bottom, 4)
+        VStack(alignment: .leading, spacing: Space.md) {
+            AdaptiveCards {
+                VStack(alignment: .leading, spacing: 0) {
+                    // Nothing in a finished month is free to spend any more; what the
+                    // same figure means by then is what went unspent.
+                    Text(model.isCurrentMonth ? "Free to spend" : "Left over in \(model.monthTitle)")
+                        .appFont(13, weight: .medium)
+                        .foregroundStyle(Palette.sub)
+                    Text(Fmt.money(max(0, model.funLeft)))
+                        .mono(52)
+                        .foregroundStyle(model.funLeft < 0 ? Palette.over : Palette.text)
+                        .padding(.bottom, Space.xs)
 
-            ProgressBar(pct: min(100, model.funSpent / max(model.funMoney, 1) * 100),
-                        fill: Palette.tealGradient, height: 10)
-                .padding(.bottom, 10)
+                    ProgressBar(pct: min(100, model.funSpent / max(model.funMoney, 1) * 100),
+                                fill: Palette.tealGradient, height: 10)
+                        .padding(.bottom, Space.xs)
 
-            Text("\(Fmt.money(model.funSpent)) of \(Fmt.money(model.funMoney)) used")
-                .appFont(12.5, weight: .medium)
-                .foregroundStyle(Palette.sub)
-                .padding(.bottom, 20)
-
-            // Live month only, as in the full view. On a closed one this said
-            // "Days left 9" about January, and a per-day figure that divided
-            // January's leftovers by the days left in September.
-            if model.isCurrentMonth {
-                VStack(alignment: .leading, spacing: 8) {
-                    StatRow([
-                        Stat(title: "A day from here",
-                             value: Fmt.money(model.funDaily), color: Palette.teal),
-                        Stat(title: "Days left", value: "\(model.daysLeft)"),
-                    ])
-                    billsLine(discretionaryOnly: true)
+                    Text("\(Fmt.money(model.funSpent)) of \(Fmt.money(model.funMoney)) used")
+                        .appFont(12.5, weight: .medium)
+                        .foregroundStyle(Palette.sub)
                 }
-                .padding(.bottom, 12)
-            }
+                .padding(Space.md)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .card()
 
-            HStack(spacing: 12) {
-                Image(systemName: "checkmark.circle.fill")
-                    .appFont(15, weight: .semibold)
-                    .foregroundStyle(Palette.green)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("The fixed stuff is taken care of").appFont(13, weight: .semibold)
-                    Text("\(Fmt.money(model.committed)) of rent, subscriptions and savings is already set aside.")
-                        .appFont(11.5).foregroundStyle(Palette.sub)
-                        .fixedSize(horizontal: false, vertical: true)
+                // Live month only, as in the full view. On a closed one this said
+                // "Days left 9" about January, and a per-day figure that divided
+                // January's leftovers by the days left in September.
+                if model.isCurrentMonth {
+                    VStack(alignment: .leading, spacing: Space.xs) {
+                        StatRow([
+                            Stat(title: "A day from here",
+                                 value: Fmt.money(model.funDaily), color: Palette.teal),
+                            Stat(title: "Days left", value: "\(model.daysLeft)"),
+                        ])
+                        billsLine(discretionaryOnly: true)
+                    }
                 }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .card(border: Palette.cardBorderSoft, radius: 15)
 
-            // `hasPlan` as well as the promise: the strip exists to relate the
-            // promise to what's free to spend, and with no limits set there is
-            // no such figure — `funMoney` computes to zero, and "more than the
-            // $0 free to spend" reads as a verdict on someone who has simply
-            // not filled anything in yet.
-            if model.hasPlan, model.hasGoalPromise {
-                goalPromiseStrip.padding(.top, 9)
-            }
+                RowGroup {
+                    RowLabel(symbol: "checkmark.circle.fill", color: Palette.green,
+                             title: Text("The fixed stuff is taken care of"),
+                             subtitle: Text("\(Fmt.money(model.committed)) of rent, subscriptions and savings is already set aside.")) {
+                        EmptyView()
+                    }
+                    // `hasPlan` as well as the promise: the row exists to relate the
+                    // promise to what's free to spend, and with no limits set there is
+                    // no such figure — `funMoney` computes to zero, and "more than the
+                    // $0 free to spend" reads as a verdict on someone who has simply
+                    // not filled anything in yet.
+                    if model.hasPlan, model.hasGoalPromise {
+                        goalPromiseRow
+                    }
+                }
 
-            oneOffStrip.padding(.top, 9)
-            planStrip.padding(.top, 9)
-            forecastStrip.padding(.top, 9)
-            winsStrip.padding(.top, 9)
-            challengeStrip.padding(.top, 9)
-            askButton.padding(.top, 9)
+                linkRows
+            }
 
             modeToggle
         }
@@ -360,27 +299,16 @@ struct HomeView: View {
     /// The last clause is the important one: it says plainly that the app has
     /// not moved the money, which is what earns it the right not to subtract
     /// it. See `AppModel.funLeftAfterGoals` for the reasoning.
-    private var goalPromiseStrip: some View {
+    private var goalPromiseRow: some View {
         let short = model.funLeftAfterGoals < 0
-        return HStack(spacing: 12) {
-            Image(systemName: "target")
-                .appFont(15, weight: .semibold)
-                .foregroundStyle(short ? Palette.over : Palette.teal)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("\(Fmt.money(model.promisedToGoals)) a month is promised to goals")
-                    .appFont(13, weight: .semibold)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(short
-                     ? "That's more than the \(Fmt.money(max(0, model.funLeft))) free to spend. Nothing moves until you move it."
-                     : "Setting it aside would leave \(Fmt.money(model.funLeftAfterGoals)). Nothing moves until you move it.")
-                    .appFont(11.5)
-                    .foregroundStyle(short ? Palette.overText : Palette.sub)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
+        return RowLabel(symbol: "target", color: short ? Palette.over : Palette.teal,
+                        title: Text("\(Fmt.money(model.promisedToGoals)) a month is promised to goals"),
+                        subtitle: Text(short
+                                       ? "That's more than the \(Fmt.money(max(0, model.funLeft))) free to spend. Nothing moves until you move it."
+                                       : "Setting it aside would leave \(Fmt.money(model.funLeftAfterGoals)). Nothing moves until you move it."),
+                        subtitleColor: short ? Palette.overText : Palette.sub) {
+            EmptyView()
         }
-        .padding(.horizontal, 14).padding(.vertical, 12)
-        .card(border: Palette.cardBorderSoft, radius: 15)
         .accessibilityElement(children: .combine)
     }
 
@@ -398,6 +326,7 @@ struct HomeView: View {
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
+            .padding(.horizontal, Space.md)
             .foregroundStyle(Palette.sub)
             .accessibilityElement(children: .combine)
         }
@@ -418,6 +347,7 @@ struct HomeView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
+        .padding(.horizontal, Space.md)
         .foregroundStyle(short ? Palette.over : Palette.teal)
         .accessibilityElement(children: .combine)
     }
@@ -425,8 +355,20 @@ struct HomeView: View {
     // MARK: - Full view
 
     private var full: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        VStack(alignment: .leading, spacing: Space.md) {
+            AdaptiveCards {
+                spendingCard
+                figures
+                linkRows
+                recent
+            }
 
+            modeToggle
+        }
+    }
+
+    private var spendingCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
             Text(model.isCurrentMonth ? "Spent this month" : "Spent in \(model.monthTitle)")
                 .appFont(13, weight: .medium).foregroundStyle(Palette.sub)
 
@@ -434,23 +376,16 @@ struct HomeView: View {
             // above it and the breakdown below it, not a headline in its own
             // right — at 44 it was the loudest thing on a screen whose actual
             // job is to say how the month is going.
-            HStack(alignment: .bottom, spacing: 10) {
-                Text(Fmt.money(model.spent)).mono(34, weight: .medium)
-                if let change = model.monthOverMonth {
-                    HStack(spacing: 3) {
-                        Image(systemName: change.isDown ? "arrow.down.right" : "arrow.up.right")
-                            .appFont(13, weight: .bold)
-                        Text("\(change.percent)% vs \(model.previousMonthName)")
-                            .appFont(13, weight: .semibold)
-                    }
-                    .foregroundStyle(change.isDown ? Palette.teal : Palette.over)
-                    .padding(.bottom, 6)
-                    // The badge is short to sit beside the total; the spoken
-                    // form can afford to say what it's actually comparing.
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel("\(change.percent)% \(change.isDown ? "less" : "more") than "
-                        + (model.isCurrentMonth ? "by this point in \(model.previousMonthName)"
-                                                : model.previousMonthName))
+            // Stacked once the badge can't sit beside the total and still be read:
+            // cut to "19% vs Sep…" it no longer said what it was comparing.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: Space.xs) {
+                    Text(Fmt.money(model.spent)).mono(34)
+                    changeBadge
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(Fmt.money(model.spent)).mono(34)
+                    changeBadge
                 }
             }
 
@@ -462,11 +397,41 @@ struct HomeView: View {
                     .appFont(12.5)
                     .foregroundStyle(Palette.sub)
                     .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 5)
+                    .padding(.top, Space.xxs)
             }
 
             SpendBreakdown()
+        }
+        .padding(.horizontal, Space.md).padding(.top, Space.md)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card()
+    }
 
+    @ViewBuilder
+    private var changeBadge: some View {
+        if let change = model.monthOverMonth {
+            HStack(spacing: 3) {
+                Image(systemName: change.isDown ? "arrow.down.right" : "arrow.up.right")
+                    .appFont(11, weight: .bold)
+                Text("\(change.percent)% vs \(model.previousMonthName)")
+                    .appFont(12, weight: .semibold)
+                    .lineLimit(1)
+            }
+            .fixedSize()
+            .foregroundStyle(change.isDown ? Palette.teal : Palette.over)
+            // The badge is short to sit beside the total; the spoken
+            // form can afford to say what it's actually comparing.
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("\(change.percent)% \(change.isDown ? "less" : "more") than "
+                + (model.isCurrentMonth ? "by this point in \(model.previousMonthName)"
+                                        : model.previousMonthName))
+        }
+    }
+
+    /// The month's working figures. Which ones depends on whether it's still
+    /// running: what's left and what a day can take, or how it finished.
+    private var figures: some View {
+        VStack(alignment: .leading, spacing: Space.xs) {
             if model.isCurrentMonth {
                 // Both of these are derived from limits. With none set they
                 // compute to zero, and a card announcing "Left to spend $0" to
@@ -479,10 +444,8 @@ struct HomeView: View {
                         Stat(title: "A day from here", value: Fmt.money(model.safeDaily)),
                         Stat(title: "Days left", value: "\(model.daysLeft)"),
                     ])
-                    billsLine(discretionaryOnly: false).padding(.top, 8)
-                    if model.hasGoalPromise {
-                        goalPromiseLine.padding(.top, 8)
-                    }
+                    billsLine(discretionaryOnly: false)
+                    if model.hasGoalPromise { goalPromiseLine }
                 }
             } else {
                 // Safe-daily and days-left are meaningless once the month is
@@ -502,72 +465,49 @@ struct HomeView: View {
                     Stat(title: "Kept", value: signed(model.net),
                          color: model.net < 0 ? Palette.over : Palette.text),
                 ])
-                .padding(.top, 8)
             }
+        }
+    }
 
-            oneOffStrip.padding(.top, 12)
-            planStrip.padding(.top, 9)
-            forecastStrip.padding(.top, 9)
-            winsStrip.padding(.top, 9)
-            challengeStrip.padding(.top, 9)
-            askButton.padding(.top, 9)
+    @ViewBuilder
+    private var recent: some View {
+        if !model.month.entries.isEmpty {
+            VStack(alignment: .leading, spacing: Space.xs) {
+                HStack {
+                    SectionTitle("Recent")
+                    Spacer()
+                    Button("See all") { model.tab = .log }
+                        .appFont(12.5, weight: .semibold)
+                        .foregroundStyle(Palette.teal)
+                        .padding(.horizontal, Space.md)
+                }
 
-            HStack {
-                Text("Recent").appFont(15, weight: .bold)
-                Spacer()
-                Button("See all") { model.tab = .log }
-                    .appFont(12.5, weight: .semibold)
-                    .foregroundStyle(Palette.teal)
+                RowGroup {
+                    ForEach(model.month.entries.prefix(4)) { entry in
+                        GroupedRow(separatorInset: Space.md + 32 + Space.sm) {
+                            EntryRow(entry: entry)
+                        }
+                    }
+                }
             }
-            .padding(.horizontal, 2)
-            .padding(.top, 24).padding(.bottom, 12)
-
-            VStack(spacing: 8) {
-                ForEach(model.month.entries.prefix(4)) { EntryRow(entry: $0) }
-            }
-
-            modeToggle
         }
     }
 
     // MARK: - Shared pieces
 
-    /// Streak and latest badge, as a way into the full wins sheet.
-    private var winsStrip: some View {
-        Button { showWins = true } label: {
-            HStack(spacing: 12) {
-                Image(systemName: "flame.fill")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(model.wins.streak > 0 ? Palette.teal : Palette.muted)
-                    .frame(width: 32, height: 32)
-                    .background(model.wins.streak > 0 ? Palette.teal.opacity(0.16) : Palette.chip,
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-                VStack(alignment: .leading, spacing: 2) {
-                    // Two lines, not one. "…daily allowance — one slip
-                    // forgiven" doesn't fit one at the default size, and at one
-                    // line the part cut off was the forgiveness, which is the
-                    // part that explains the number.
-                    Text(Copy.streakLine(days: model.wins.streak,
-                                         graceUsed: model.wins.graceUsed,
-                                         hasPlan: model.hasPlan))
-                        .appFont(13, weight: .semibold)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                    Text(Copy.badgeLine(wins: model.wins, new: model.newBadgeIDs))
-                        .appFont(11.5, weight: model.newBadgeIDs.isEmpty ? .regular : .semibold)
-                        .foregroundStyle(model.newBadgeIDs.isEmpty ? Palette.sub : Palette.teal)
-                        .lineLimit(2)
-                        .multilineTextAlignment(.leading)
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .appFont(12, weight: .semibold)
-                    .foregroundStyle(Palette.muted)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .card(border: Palette.cardBorderSoft, radius: 15)
+    /// Streak and latest badge, as a way into the full wins screen.
+    private var winsRow: some View {
+        NavigationLink(value: Route.wins) {
+            RowLabel(symbol: "flame.fill",
+                     color: model.wins.streak > 0 ? Palette.teal : Palette.muted,
+                     fill: model.wins.streak > 0 ? nil : Palette.chip,
+                     title: Text(Copy.streakLine(days: model.wins.streak,
+                                                 graceUsed: model.wins.graceUsed,
+                                                 hasPlan: model.hasPlan)),
+                     subtitle: Text(Copy.badgeLine(wins: model.wins, new: model.newBadgeIDs)),
+                     subtitleColor: model.newBadgeIDs.isEmpty ? Palette.sub : Palette.teal)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(.row)
     }
 
     @ViewBuilder
@@ -590,9 +530,8 @@ struct HomeView: View {
             }
             .foregroundStyle(Palette.teal)
             .frame(maxWidth: .infinity)
-            .padding(.vertical, 14)
+            .padding(.vertical, Space.sm)
         }
-        .padding(.top, 8)
     }
 
     /// Overlapping avatars, capped so a big household doesn't push the title
@@ -600,19 +539,20 @@ struct HomeView: View {
     private var avatarStack: some View {
         let shown = model.members.prefix(Self.maxAvatars)
         let overflow = model.members.count - shown.count
-        return HStack(spacing: -9) {
+        return HStack(spacing: -7) {
             ForEach(shown) { member in
-                MemberAvatar(member: member, ring: Palette.screen)
+                MemberAvatar(member: member, size: 28)
             }
             if overflow > 0 {
                 Text("+\(overflow)")
-                    .appFont(11, weight: .bold)
+                    .appFont(10, weight: .bold)
                     .foregroundStyle(Palette.chipText)
-                    .frame(width: 32, height: 32)
+                    .frame(width: 28, height: 28)
                     .background(Palette.chip, in: Circle())
-                    .overlay(Circle().strokeBorder(Palette.screen, lineWidth: 2))
             }
         }
+        // Flattened, or the bar's vibrancy blends the overlapping circles.
+        .drawingGroup()
     }
 
     /// "+$420" / "−$120" — the sign carries the meaning, so it's never dropped.
@@ -656,7 +596,7 @@ struct SpendBreakdown: View {
                 let spent = max(model.spent, 0.01)
                 let rest = items.dropFirst(Self.visibleRows)
 
-                VStack(spacing: 11) {
+                VStack(spacing: Space.sm) {
                     ForEach(items.prefix(Self.visibleRows)) { item in
                         row(label: item.bucket.label, symbol: item.bucket.symbol,
                             color: item.bucket.color, tint: item.bucket.tint,
@@ -673,7 +613,7 @@ struct SpendBreakdown: View {
                             amount: tail, share: tail / spent * 100)
                     }
                 }
-                .padding(.top, 14)
+                .padding(.top, Space.md)
 
                 seeSpending
             }
@@ -688,21 +628,16 @@ struct SpendBreakdown: View {
             Haptics.selected()
             model.reveal(.stats)
         } label: {
-            VStack(alignment: .leading, spacing: 6) {
+            VStack(alignment: .leading, spacing: Space.xs) {
                 AdaptiveRow {
-                    Image(systemName: symbol)
-                        .appFont(12, weight: .semibold)
-                        .foregroundStyle(color)
-                        .frame(width: 28, height: 28)
-                        .background(tint,
-                                    in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                    Text(label).appFont(13, weight: .semibold).lineLimit(1)
+                    IconTile(symbol: symbol, color: color, fill: tint)
+                    Text(label).appFont(13, weight: .medium).lineLimit(1)
                 } figures: {
                     Text(Fmt.money(amount)).mono(13)
                     Text(Fmt.share(share))
                         .appFont(11.5, weight: .medium)
                         .foregroundStyle(Palette.sub)
-                        .figureColumn(width: 38)
+                        .figureColumn(width: 40)
                 }
                 // Floored, like the trend chart's columns: a $5 category next
                 // to a $1,200 one draws about a pixel of bar, and a row with
@@ -725,13 +660,13 @@ struct SpendBreakdown: View {
             Haptics.selected()
             model.reveal(.stats)
         } label: {
-            HStack(spacing: 5) {
-                Text("See spending").appFont(13, weight: .semibold)
-                Image(systemName: "chevron.right").appFont(11, weight: .bold)
+            HStack(spacing: Space.xxs) {
+                Text("See spending").appFont(13, weight: .medium)
+                Image(systemName: "chevron.forward").appFont(11, weight: .semibold)
                 Spacer(minLength: 0)
             }
             .foregroundStyle(Palette.teal)
-            .padding(.vertical, 14)
+            .padding(.vertical, Space.md)
         }
         .buttonStyle(.plain)
         .accessibilityHint("Opens the spending charts")

@@ -8,83 +8,46 @@ import SwiftUI
 
 struct ChallengesSheet: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
 
     @State private var templates: [Challenge] = []
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-
+        Page(title: "Challenges", subtitle: "Everyone on the budget counts", displayMode: .inline) {
+            VStack(alignment: .leading, spacing: Space.lg) {
                 if !model.activeChallenges.isEmpty {
-                    Text("Running now").appFont(13, weight: .semibold)
-                        .padding(.bottom, 10)
-                    VStack(spacing: 8) {
-                        ForEach(model.activeChallenges, id: \.challenge.id) { progress in
-                            ChallengeCard(progress: progress) {
-                                model.abandonChallenge(progress.challenge.id)
-                            }
-                        }
-                    }
-                    .padding(.bottom, 20)
+                    cards(model.activeChallenges, title: "Running now")
                 }
 
-                Text("Start one").appFont(13, weight: .semibold)
-                    .padding(.bottom, 10)
-                VStack(spacing: 8) {
+                RowGroup(title: "Start one") {
                     ForEach(templates) { template in
                         Button { model.startChallenge(template) } label: {
                             templateRow(template)
                         }
-                        .buttonStyle(.plain)
+                        .buttonStyle(.row)
                         .disabled(isRunning(template))
                         .opacity(isRunning(template) ? 0.5 : 1)
                     }
                 }
 
                 if !model.finishedChallenges.isEmpty {
-                    Text("Finished").appFont(13, weight: .semibold)
-                        .padding(.top, 20).padding(.bottom, 10)
-                    VStack(spacing: 8) {
-                        ForEach(model.finishedChallenges, id: \.challenge.id) { progress in
-                            ChallengeCard(progress: progress) {
-                                model.abandonChallenge(progress.challenge.id)
-                            }
-                        }
-                    }
+                    cards(model.finishedChallenges, title: "Finished")
                 }
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
         .onAppear { templates = Challenge.templates(from: Date()) }
     }
 
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Challenges").appFont(17, weight: .bold)
-                Text("Everyone on the budget counts")
-                    .appFont(12.5, weight: .medium)
-                    .foregroundStyle(Palette.sub)
+    private func cards(_ challenges: [ChallengeProgress], title: String) -> some View {
+        VStack(alignment: .leading, spacing: Space.xs) {
+            SectionTitle(title)
+            AdaptiveCards(spacing: Space.sm) {
+                ForEach(challenges, id: \.challenge.id) { progress in
+                    ChallengeCard(progress: progress) {
+                        model.abandonChallenge(progress.challenge.id)
+                    }
+                }
             }
-            Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Palette.label9)
-                    .frame(width: 30, height: 30)
-                    .background(Palette.chip, in: Circle())
-            }
-            .accessibilityLabel("Close")
         }
-        .padding(.top, 6).padding(.bottom, 16)
     }
 
     /// A template counts as running if something with the same title covers the
@@ -96,24 +59,12 @@ struct ChallengesSheet: View {
     }
 
     private func templateRow(_ template: Challenge) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: template.kind == .noSpend ? "moon.zzz.fill" : "target")
-                .appFont(15, weight: .semibold)
-                .foregroundStyle(Palette.teal)
-                .frame(width: 34, height: 34)
-                .background(Palette.teal.opacity(0.16),
-                            in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(template.title).appFont(14, weight: .semibold)
-                Text(window(template)).appFont(11.5).foregroundStyle(Palette.sub)
-            }
-            Spacer(minLength: 4)
+        RowLabel(symbol: template.kind == .noSpend ? "moon.zzz.fill" : "target",
+                 title: Text(template.title), subtitle: Text(window(template))) {
             Text(isRunning(template) ? "Running" : "Start")
-                .appFont(12, weight: .bold)
+                .appFont(12.5, weight: .semibold)
                 .foregroundStyle(isRunning(template) ? Palette.muted : Palette.teal)
         }
-        .padding(.horizontal, 13).padding(.vertical, 11)
-        .card(border: Palette.cardBorderSoft, radius: 15)
     }
 
     private func window(_ challenge: Challenge) -> String {
@@ -136,16 +87,11 @@ struct ChallengeCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 9) {
-            HStack(spacing: 10) {
-                Image(systemName: symbol)
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(tint)
-                    .frame(width: 32, height: 32)
-                    .background(tint.opacity(0.16),
-                                in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        VStack(alignment: .leading, spacing: Space.xs) {
+            HStack(spacing: Space.sm) {
+                IconTile(symbol: symbol, color: tint)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(progress.challenge.title).appFont(14, weight: .semibold)
+                    Text(progress.challenge.title).appFont(14, weight: .medium)
                     Text(progress.detail)
                         .appFont(11.5).foregroundStyle(Palette.sub)
                         .lineLimit(2)
@@ -170,8 +116,8 @@ struct ChallengeCard: View {
                 }
             }
         }
-        .padding(.horizontal, 13).padding(.vertical, 12)
-        .card(border: Palette.cardBorderSoft, radius: 15)
+        .padding(Space.md)
+        .card()
     }
 
     private var symbol: String {
@@ -190,7 +136,5 @@ struct ChallengeCard: View {
 }
 
 #Preview {
-    ChallengesSheet()
-        .environmentObject(AppModel.preview)
-        .preferredColorScheme(.dark)
+    PreviewShell { ChallengesSheet() }
 }

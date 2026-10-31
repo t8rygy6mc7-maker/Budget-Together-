@@ -7,57 +7,30 @@ import SwiftUI
 
 struct RecurringSheet: View {
     @EnvironmentObject var model: AppModel
-    @Environment(\.dismiss) private var dismiss
 
     @State private var editing: Recurring?
     @State private var isAdding = false
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 0) {
-                header
-
+        Page(title: "Repeating",
+             subtitle: Fmt.count(model.recurring.count, "item"), displayMode: .inline) {
+            VStack(alignment: .leading, spacing: Space.md) {
                 if model.recurring.isEmpty {
                     Text("Nothing repeating yet. Add rent, a subscription or a payday and it'll log itself each month.")
                         .appFont(13)
                         .foregroundStyle(Palette.muted)
                         .fixedSize(horizontal: false, vertical: true)
-                        .padding(.vertical, 22)
-                } else {
-                    VStack(spacing: 8) {
+                    } else {
+                    RowGroup(footer: "Each item posts on its day and reminds you two days before.") {
                         ForEach(model.recurring) { item in
                             Button { editing = item } label: { row(item) }
-                                .buttonStyle(.plain)
+                                .buttonStyle(.row)
                         }
                     }
                 }
-
-                Button { isAdding = true } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: "plus").appFont(15, weight: .bold)
-                        Text("Add a repeating item").appFont(15, weight: .bold)
-                    }
-                    .frame(maxWidth: .infinity).padding(15)
-                    .foregroundStyle(Palette.tealInk)
-                    .background(Palette.tealGradient,
-                                in: RoundedRectangle(cornerRadius: 15, style: .continuous))
-                }
-                .padding(.top, 16)
-
-                Text("Each item posts on its day and reminds you two days before.")
-                    .appFont(12)
-                    .foregroundStyle(Palette.sub)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 12)
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
+        .toolbar { AddItem(label: "Add a repeating item") { isAdding = true } }
         .sheet(item: $editing) { item in
             RecurringForm(item: item).environmentObject(model)
         }
@@ -66,44 +39,10 @@ struct RecurringSheet: View {
         }
     }
 
-    private var header: some View {
-        HStack {
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Repeating").appFont(17, weight: .bold)
-                Text("^[\(model.recurring.count) item](inflect: true)")
-                    .appFont(12.5, weight: .medium)
-                    .foregroundStyle(Palette.sub)
-            }
-            Spacer()
-            Button { dismiss() } label: {
-                Image(systemName: "xmark")
-                    .appFont(14, weight: .semibold)
-                    .foregroundStyle(Palette.label9)
-                    .frame(width: 30, height: 30)
-                    .background(Palette.chip, in: Circle())
-            }
-            .accessibilityLabel("Close")
-        }
-        .padding(.top, 6).padding(.bottom, 16)
-    }
-
     private func row(_ item: Recurring) -> some View {
         let bucket = Bucket.named(item.bucket)
-        return HStack(spacing: 12) {
-            Image(systemName: bucket.symbol)
-                .appFont(15, weight: .semibold)
-                .foregroundStyle(bucket.color)
-                .frame(width: 34, height: 34)
-                .background(bucket.tint, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
-
-            VStack(alignment: .leading, spacing: 2) {
-                Text(item.place).appFont(14, weight: .semibold).lineLimit(1)
-                Text(item.scheduleLabel)
-                    .appFont(11.5).foregroundStyle(Palette.sub)
-            }
-
-            Spacer(minLength: 4)
-
+        return RowLabel(symbol: bucket.symbol, color: bucket.color, fill: bucket.tint,
+                        title: Text(item.place), subtitle: Text(item.scheduleLabel)) {
             VStack(alignment: .trailing, spacing: 2) {
                 Text(item.kind.sign + Fmt.money(item.amount))
                     .mono(13).foregroundStyle(item.kind.color)
@@ -115,8 +54,6 @@ struct RecurringSheet: View {
             }
         }
         .opacity(item.isActive ? 1 : 0.55)
-        .padding(.horizontal, 13).padding(.vertical, 11)
-        .card(border: Palette.cardBorderSoft, radius: 15)
     }
 }
 
@@ -147,94 +84,69 @@ struct RecurringForm: View {
     }
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack {
-                    Text(item == nil ? "New repeating item" : "Edit repeating item")
-                        .appFont(17, weight: .bold)
-                    Spacer()
-                    Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .appFont(14, weight: .semibold)
-                            .foregroundStyle(Palette.label9)
-                            .frame(width: 30, height: 30)
-                            .background(Palette.chip, in: Circle())
-                    }
-                    .accessibilityLabel("Close")
-                }
-                .padding(.top, 6)
-
-                HStack(spacing: 8) {
+        ModalPage(title: item == nil ? "New repeating item" : "Edit repeating item") {
+            VStack(alignment: .leading, spacing: Space.md) {
+                Picker("Kind", selection: $kind) {
                     ForEach(EntryKind.allCases, id: \.self) { candidate in
-                        let isSelected = kind == candidate
-                        Button { kind = candidate } label: {
-                            Text(candidate == .income ? "Money in" : "Bill")
-                                .appFont(13, weight: .semibold)
-                                .frame(maxWidth: .infinity).padding(9)
-                                .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
-                                .fieldBackground(isSelected ? AnyShapeStyle(Palette.teal.opacity(0.14))
-                                                            : AnyShapeStyle(Palette.card),
-                                                 border: isSelected ? Palette.teal : Palette.cardBorder,
-                                                 radius: 14)
-                        }
-                        .accessibilityAddTraits(isSelected ? .isSelected : [])
+                        Text(candidate == .income ? "Money in" : "Bill").tag(candidate)
                     }
                 }
+                .pickerStyle(.segmented)
 
                 TextField("", text: $place,
                           prompt: Text(kind == .income ? "e.g. Payroll" : "e.g. Rent")
                             .foregroundStyle(Palette.muted))
                     .textFieldStyle(.plain)
-                    .appFont(15, weight: .medium)
-                    .padding(.horizontal, 14).padding(.vertical, 13)
-                    .fieldBackground(radius: 13)
+                    .appFont(15)
+                    .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                    .fieldBackground()
                     .accessibilityLabel("Name")
 
                 HStack(spacing: 2) {
                     Text(Fmt.currencySymbol).mono(14, weight: .regular).foregroundStyle(Palette.muted)
                     TextField("0", text: $amount)
                         .keyboardType(.decimalPad)
-                        .appFont(15, weight: .bold, design: .monospaced)
+                        .appFont(15, weight: .medium)
+                        .monospacedDigit()
                         .accessibilityLabel("Amount")
                 }
-                .padding(.horizontal, 14).padding(.vertical, 13)
-                .fieldBackground(radius: 13)
+                .padding(.horizontal, Space.md).padding(.vertical, Space.sm)
+                .fieldBackground()
 
-                // Capped at 28 so the day exists in every month, February included.
-                Stepper(value: $day, in: 1...Recurring.maxDay) {
-                    HStack {
-                        Text("Day of month").appFont(14, weight: .medium)
-                        Spacer()
-                        Text("\(day)").mono(14)
+                RowGroup {
+                    GroupedRow {
+                        // Capped at 28 so the day exists in every month, February included.
+                        Stepper(value: $day, in: 1...Recurring.maxDay) {
+                            HStack {
+                                Text("Day of month").appFont(14)
+                                Spacer()
+                                Text("\(day)").mono(14)
+                            }
+                        }
+                    }
+                    GroupedRow {
+                        Toggle(isOn: $isActive) { Text("Active").appFont(14) }
                     }
                 }
-                .padding(.horizontal, 14).padding(.vertical, 8)
-                .fieldBackground(radius: 13)
 
-                Toggle(isOn: $isActive) {
-                    Text("Active").appFont(14, weight: .medium)
-                }
-                .padding(.horizontal, 14).padding(.vertical, 8)
-                .fieldBackground(radius: 13)
-
-                VStack(alignment: .leading, spacing: 9) {
-                    Text("Paid by").appFont(12, weight: .semibold)
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    Text("Paid by").appFont(12, weight: .medium)
                         .foregroundStyle(Palette.sub)
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: 8)], spacing: 8) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 104), spacing: Space.xs)],
+                              spacing: Space.xs) {
                         ForEach(model.members) { member in
                             let isSelected = memberID == member.id
                             Button { memberID = member.id } label: {
                                 HStack(spacing: 7) {
                                     MemberAvatar(member: member, size: 18)
                                     Text(member.name)
-                                        .appFont(13, weight: .semibold).lineLimit(1)
+                                        .appFont(13, weight: .medium).lineLimit(1)
                                 }
-                                .frame(maxWidth: .infinity).padding(9)
+                                .frame(maxWidth: .infinity).padding(Space.xs)
                                 .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
                                 .fieldBackground(isSelected ? AnyShapeStyle(member.color.opacity(0.14))
                                                             : AnyShapeStyle(Palette.card),
-                                                 border: isSelected ? member.color : Palette.cardBorder,
-                                                 radius: 14)
+                                                 border: isSelected ? member.color : nil)
                             }
                             .accessibilityLabel(member.name)
                             .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -242,28 +154,23 @@ struct RecurringForm: View {
                     }
                 }
 
-                VStack(alignment: .leading, spacing: 9) {
-                    Text("Category").appFont(12, weight: .semibold)
+                VStack(alignment: .leading, spacing: Space.xs) {
+                    Text("Category").appFont(12, weight: .medium)
                         .foregroundStyle(Palette.sub)
-                    LazyVGrid(columns: Self.columns, spacing: 8) {
+                    LazyVGrid(columns: Self.columns, spacing: Space.xs) {
                         ForEach(Bucket.list(for: kind, including: item?.bucket)) { candidate in
                             let isSelected = bucket == candidate.id
                             Button { bucket = candidate.id } label: {
                                 VStack(spacing: 5) {
-                                    Image(systemName: candidate.symbol)
-                                        .appFont(15, weight: .semibold)
-                                        .foregroundStyle(candidate.color)
-                                        .frame(width: 30, height: 30)
-                                        .background(candidate.color.opacity(0.18),
-                                                    in: RoundedRectangle(cornerRadius: 9, style: .continuous))
-                                    Text(candidate.short).appFont(10.5, weight: .semibold)
+                                    IconTile(symbol: candidate.symbol, color: candidate.color,
+                                             fill: candidate.color.opacity(0.18))
+                                    Text(candidate.short).appFont(10.5, weight: .medium)
                                 }
-                                .frame(maxWidth: .infinity).padding(9)
+                                .frame(maxWidth: .infinity).padding(Space.xs)
                                 .foregroundStyle(isSelected ? Palette.text : Palette.chipText)
                                 .fieldBackground(isSelected ? AnyShapeStyle(candidate.tint)
                                                             : AnyShapeStyle(Palette.card),
-                                                 border: isSelected ? candidate.color : Palette.cardBorder,
-                                                 radius: 14)
+                                                 border: isSelected ? candidate.color : nil)
                             }
                             .accessibilityLabel(candidate.label)
                             .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -271,39 +178,17 @@ struct RecurringForm: View {
                     }
                 }
 
-                let canSave = draft != nil
-                Button(action: save) {
-                    Text(item == nil ? "Add" : "Save changes")
-                        .appFont(15, weight: .bold)
-                        .frame(maxWidth: .infinity).padding(15)
-                        .foregroundStyle(canSave ? Palette.tealInk : Palette.muted)
-                        .background {
-                            if canSave { Palette.tealGradient } else { Palette.chip }
-                        }
-                        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
-                }
-                .disabled(!canSave)
-
                 if let item {
-                    Button {
+                    SecondaryButton(title: "Delete", color: Palette.over) {
                         model.deleteRecurring(item.id)
                         dismiss()
-                    } label: {
-                        Text("Delete")
-                            .appFont(14, weight: .semibold)
-                            .foregroundStyle(Palette.over)
-                            .frame(maxWidth: .infinity).padding(13)
                     }
                 }
             }
-            .padding(.horizontal, 22)
-            .padding(.bottom, 22)
+            .toolbar {
+                ConfirmItem(title: item == nil ? "Add" : "Save", isEnabled: draft != nil, action: save)
+            }
         }
-        .presentationDetents([.large])
-        .presentationDragIndicator(.visible)
-        .presentationBackground(Palette.sheetBg)
-        .foregroundStyle(Palette.text)
-        .tint(Palette.teal)
         .onAppear(perform: load)
         .onChange(of: kind) { _, new in
             if !Bucket.list(for: new, including: item?.bucket).contains(where: { $0.id == bucket }) {
@@ -345,7 +230,5 @@ struct RecurringForm: View {
 }
 
 #Preview {
-    RecurringSheet()
-        .environmentObject(AppModel.preview)
-        .preferredColorScheme(.dark)
+    PreviewShell { RecurringSheet() }
 }
