@@ -1,7 +1,7 @@
 # Privacy Policy for Even Keel
 
 **Effective date:** August 3, 2026
-**Last updated:** August 3, 2026
+**Last updated:** November 11, 2026
 
 ## The short version
 
