@@ -104,11 +104,15 @@ struct RuleQueryEngine: QueryEngine {
 
         guard case let .bucket(bucket)? = subject else {
             if case let .keyword(word)? = subject {
-                let spent = filter(scoped, by: subject).reduce(0) { $0 + $1.amount }
+                // Spending only, one-offs apart — or "you've spent" would be
+                // counting a refund from the same place as money gone.
+                let matched = filter(scoped, by: subject)
+                    .filter { $0.kind == .expense && !$0.belowTheLine }
+                let spent = matched.reduce(0) { $0 + $1.amount }
                 return QueryAnswer(
                     headline: "No limit on \"\(word)\"",
                     detail: "Caps are set per category, not per place. You've spent \(Fmt.money2(spent)) on it \(timeframe.label) — try asking about a category like Food & Drink.",
-                    entries: filter(scoped, by: subject)
+                    entries: matched
                 )
             }
             let cap = context.caps.values.reduce(0, +)
@@ -186,7 +190,7 @@ struct RuleQueryEngine: QueryEngine {
 
     private func parseTimeframe(_ text: String) -> Timeframe {
         if text.contains("today") { return .today }
-        if text.contains("this week") || text.contains("week") { return .thisWeek }
+        if text.contains("week") { return .thisWeek }
         if text.contains("last month") { return .lastMonth }
         return .thisMonth
     }

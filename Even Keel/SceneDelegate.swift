@@ -31,11 +31,6 @@ final class ShareInbox: ObservableObject {
     private init() {}
 
     func deliver(_ metadata: CKShare.Metadata) { pending = metadata }
-
-    func take() -> CKShare.Metadata? {
-        defer { pending = nil }
-        return pending
-    }
 }
 
 final class SceneDelegate: NSObject, UIWindowSceneDelegate {

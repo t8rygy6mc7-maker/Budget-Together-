@@ -436,10 +436,6 @@ final class BudgetStore {
                 return
             }
             self?.captureStore(for: desc)
-            // `AppModel` performs its first reload while the persistent store
-            // may still be opening. Tell it to retry once the store is ready so
-            // a returning household is not left at the pairing screen.
-            self?.onChange?()
         }
 
         guard let failure else {
@@ -674,10 +670,35 @@ final class BudgetStore {
             queue: .main
         ) { [weak self] _ in
             // queue: .main guarantees we're on the main thread here.
-            MainActor.assumeIsolated {
-                self?.viewContext.refreshAllObjects()
-                self?.onChange?()
-            }
+            MainActor.assumeIsolated { self?.storeDidChange() }
+        }
+    }
+
+    /// Whether a reload is already on its way for changes that have landed.
+    private var changePending = false
+
+    /// How long a burst of changes is given to finish before the app re-reads.
+    private static let changeSettle: Duration = .milliseconds(50)
+
+    /// Passes a store change on to the app, once per burst rather than once
+    /// per save.
+    ///
+    /// The store posts one of these for every save — this app's own as well as
+    /// the mirror's — and each one used to cost a full reload of the ledger.
+    /// That was a second reload behind every tap that wrote anything, and one
+    /// per row while the sample budget seeds itself or a sync lands a batch.
+    /// Nothing is lost by waiting a moment: the reload reads the store as it
+    /// stands when it runs, so one pass at the end sees everything the burst
+    /// wrote.
+    private func storeDidChange() {
+        guard !changePending else { return }
+        changePending = true
+        Task { @MainActor [weak self] in
+            try? await Task.sleep(for: Self.changeSettle)
+            guard let self else { return }
+            self.changePending = false
+            self.viewContext.refreshAllObjects()
+            self.onChange?()
         }
     }
 
@@ -776,16 +797,6 @@ final class BudgetStore {
         return (try? viewContext.fetch(request))?.first
     }
 
-    /// Ensures a household exists with the default caps seeded. Used in local
-    /// mode so the app is immediately usable; the explicit pairing flow (Step 2)
-    /// will drive this instead.
-    @discardableResult
-    func bootstrapHouseholdIfNeeded(name: String = "Together",
-                                    defaultCaps: [String: Double]) -> NSManagedObject {
-        if let existing = currentHousehold() { return existing }
-        return createHousehold(name: name, defaultCaps: defaultCaps)
-    }
-
     /// `defaultCaps` may be empty, and usually is: the app no longer demands a
     /// budget before it will open. A household with no caps runs in
     /// "just logging" mode until there's enough spending to suggest real ones.
@@ -852,7 +863,7 @@ final class BudgetStore {
         let capsMonth = month ?? Fmt.isoMonth(Date())
 
         backfillHouseholdIDs(for: house)
-        let rows = fetchEntryObjects(for: house)
+        let rows = droppingRepeatedPostings(fetchEntryObjects(for: house))
         migrateLegacyMembersIfNeeded(in: house, entries: rows)
 
         let entries: [Entry] = rows.compactMap { obj in
@@ -940,29 +951,95 @@ final class BudgetStore {
 
     // MARK: Erase
 
-    /// Deletes everything this app has ever stored on the device, including the
+    /// How an erase ended.
+    enum EraseOutcome: Equatable {
+        /// Gone from this device, and from iCloud where it was there.
+        case erased
+        /// Gone from the app and from iCloud, but the files on disk couldn't
+        /// be confirmed removed.
+        case filesRemain
+        /// iCloud couldn't be cleared, so nothing was deleted anywhere.
+        case cloudUnreachable(String)
+    }
+
+    /// Deletes everything this app has stored — in iCloud first, where the
+    /// budget is mirrored there, and then on the device, including the
     /// per-device preferences that live outside Core Data.
     ///
-    /// Deliberately blunt: it walks every entity rather than relying on the
-    /// household cascade, because entries and reactions are matched by id and
-    /// a private entry has no household relationship at all — a cascade would
-    /// leave exactly the most sensitive rows behind.
-    ///
-    /// Returns whether the on-disk files were actually confirmed gone. The
-    /// rows are deleted from the live context either way — the app is empty
-    /// from here regardless — but the caller needs to know if the bytes
-    /// behind them might not be, because "delete everything" that quietly
-    /// isn't is worse than one that says so.
-    @discardableResult
-    func eraseEverything() -> Bool {
-        let entities = [CDModel.entry, CDModel.reaction, CDModel.cap, CDModel.member,
-                        CDModel.recurring, CDModel.loan, CDModel.goal, CDModel.challenge,
-                        CDModel.monthFlag, CDModel.category, CDModel.household]
-        for name in entities {
-            let request = NSFetchRequest<NSManagedObject>(entityName: name)
-            for obj in (try? viewContext.fetch(request)) ?? [] { viewContext.delete(obj) }
+    /// The order is the point. Emptying the local store alone doesn't reach
+    /// iCloud: the deletions are queued for upload, the store is destroyed a
+    /// moment later with the queue inside it, and the next sync hands the
+    /// whole budget back. So the copy in iCloud goes first, and if it can't
+    /// be reached nothing is deleted at all — an erase that will quietly undo
+    /// itself is worse than one that says it couldn't happen yet.
+    func eraseEverything() async -> EraseOutcome {
+        if isCloudSyncActive {
+            do { try await clearCloud() }
+            catch { return .cloudUnreachable(error.localizedDescription) }
         }
-        save()
+        return eraseLocal() ? .erased : .filesRemain
+    }
+
+    /// Removes this account's copy from iCloud, and steps out of any budget
+    /// it was invited into.
+    ///
+    /// Two different operations, deliberately. A budget this account owns has
+    /// its zones purged, which deletes it for everyone it was shared with too —
+    /// that is what "delete everything" means to its owner. A budget somebody
+    /// else owns is only *left*: the rows there are theirs, and deleting them
+    /// through the shared store would wipe the owner's ledger from the owner's
+    /// own phone.
+    private func clearCloud() async throws {
+        let database = CKContainer(identifier: Self.containerIdentifier).privateCloudDatabase
+
+        // Asked before anything is touched, so being offline fails here with
+        // everything still intact rather than halfway through.
+        let zones: [CKRecordZone]
+        do {
+            zones = try await database.allRecordZones()
+        } catch let error as CKError where error.code == .notAuthenticated {
+            // No iCloud account on this device, so nothing of this device's is
+            // being mirrored and there is nothing in reach to clear.
+            return
+        }
+
+        if let sharedStore {
+            for share in try container.fetchShares(in: sharedStore) {
+                try await container.purgeObjectsAndRecordsInZone(with: share.recordID.zoneID,
+                                                                 in: sharedStore)
+            }
+        }
+        if let privateStore {
+            // Every zone the mirror made: the default one, and one per budget
+            // that has been shared out.
+            for zone in zones where zone.zoneID.zoneName.hasPrefix("com.apple.coredata.cloudkit.") {
+                try await container.purgeObjectsAndRecordsInZone(with: zone.zoneID,
+                                                                 in: privateStore)
+            }
+        }
+    }
+
+    /// The device's half of an erase. Returns whether the on-disk files were
+    /// actually confirmed gone — the app is empty from here regardless, but
+    /// the caller needs to know if the bytes behind it might not be.
+    ///
+    /// In local-only mode the rows are deleted first, every entity walked
+    /// rather than left to the household cascade: entries and reactions are
+    /// matched by id, and a cascade would leave exactly those behind. With
+    /// mirroring on that step is skipped — iCloud has already been dealt with,
+    /// and row-by-row deletions in the shared store are the one thing that
+    /// must never be queued for upload.
+    private func eraseLocal() -> Bool {
+        if !isCloudSyncActive {
+            let entities = [CDModel.entry, CDModel.reaction, CDModel.cap, CDModel.member,
+                            CDModel.recurring, CDModel.loan, CDModel.goal, CDModel.challenge,
+                            CDModel.monthFlag, CDModel.category, CDModel.household]
+            for name in entities {
+                let request = NSFetchRequest<NSManagedObject>(entityName: name)
+                for obj in (try? viewContext.fetch(request)) ?? [] { viewContext.delete(obj) }
+            }
+            save()
+        }
         let destroyed = rebuildStores()
 
         // Anything the app kept in UserDefaults is data about the user too.
@@ -975,6 +1052,7 @@ final class BudgetStore {
             }
         }
         localMemberIDInMemory = nil
+        selectedHouseholdIDInMemory = nil
         seenBadgesInMemory = [:]
         return destroyed
     }
@@ -1089,7 +1167,12 @@ final class BudgetStore {
             rows = (try? viewContext.fetch(request)) ?? []
         }
 
-        return rows.compactMap(category(from:)).sorted {
+        // One row per id. Seeding can race the first sync: a second device, or
+        // somebody who has just joined, can be handed the household a moment
+        // before its categories, find none, and seed a second set under the
+        // same ids. Left alone that's every built-in listed twice. The older
+        // row wins, since it's the one that may carry a rename.
+        return keepingEarliest(rows).compactMap(category(from:)).sorted {
             $0.kind == $1.kind ? $0.sortOrder < $1.sortOrder : $0.kind == .expense
         }
     }
@@ -1141,7 +1224,7 @@ final class BudgetStore {
     /// Inserts or updates by id.
     func saveCategory(_ bucket: Bucket) {
         guard let house = currentHousehold() else { return }
-        if let existing = categoryObject(id: bucket.id) {
+        if let existing = categoryObject(id: bucket.id, in: house) {
             write(bucket, to: existing)
         } else {
             insertCategory(bucket, in: house)
@@ -1151,40 +1234,54 @@ final class BudgetStore {
 
     /// Writes a whole reordering in one transaction.
     func saveCategoryOrder(_ buckets: [Bucket]) {
+        guard let house = currentHousehold() else { return }
         for bucket in buckets {
-            categoryObject(id: bucket.id)?
+            categoryObject(id: bucket.id, in: house)?
                 .setValue(Int64(bucket.sortOrder), forKey: "sortOrder")
         }
         save()
     }
 
     func deleteCategory(id: String) {
-        guard let obj = categoryObject(id: id) else { return }
+        guard let house = currentHousehold(),
+              let obj = categoryObject(id: id, in: house) else { return }
         viewContext.delete(obj)
         save()
     }
 
-    /// How many stored things point at a category. Deletion is only offered
-    /// when this is zero everywhere — a category with history behind it gets
-    /// hidden instead, so the ledger never develops holes.
+    /// How many stored things in this budget point at a category. Deletion is
+    /// only offered when this is zero everywhere — a category with history
+    /// behind it gets hidden instead, so the ledger never develops holes.
     func references(categoryID id: String) -> (entries: Int, caps: Int,
                                                recurring: Int, challenges: Int) {
+        guard let house = currentHousehold() else { return (0, 0, 0, 0) }
+        let houseID = house.value(forKey: "id") as? String ?? ""
         func count(_ entityName: String, _ predicate: NSPredicate) -> Int {
             let request = NSFetchRequest<NSManagedObject>(entityName: entityName)
             request.predicate = predicate
             return (try? viewContext.count(for: request)) ?? 0
         }
         return (
-            entries: count(CDModel.entry, NSPredicate(format: "bucket == %@", id)),
-            caps: count(CDModel.cap, NSPredicate(format: "bucket == %@ AND amount > 0", id)),
-            recurring: count(CDModel.recurring, NSPredicate(format: "bucket == %@", id)),
-            challenges: count(CDModel.challenge, NSPredicate(format: "bucket == %@", id))
+            // By id as well as by relationship, as everywhere entries are
+            // fetched: a private entry has no household relationship.
+            entries: count(CDModel.entry, NSPredicate(
+                format: "bucket == %@ AND (householdID == %@ OR household == %@)", id, houseID, house)),
+            caps: count(CDModel.cap, NSPredicate(
+                format: "bucket == %@ AND amount > 0 AND household == %@", id, house)),
+            recurring: count(CDModel.recurring, NSPredicate(
+                format: "bucket == %@ AND household == %@", id, house)),
+            challenges: count(CDModel.challenge, NSPredicate(
+                format: "bucket == %@ AND household == %@", id, house))
         )
     }
 
-    private func categoryObject(id: String) -> NSManagedObject? {
+    /// Scoped to one budget, and it has to be: the built-in categories carry
+    /// the same ids ("food", "housing") in every budget, so a phone holding two
+    /// — its own and one it was invited into — would otherwise rename, reorder
+    /// or hide whichever budget's row the store happened to hand back first.
+    private func categoryObject(id: String, in house: NSManagedObject) -> NSManagedObject? {
         let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.category)
-        request.predicate = NSPredicate(format: "id == %@", id)
+        request.predicate = NSPredicate(format: "id == %@ AND household == %@", id, house)
         request.fetchLimit = 1
         return (try? viewContext.fetch(request))?.first
     }
@@ -1329,9 +1426,76 @@ final class BudgetStore {
         return (try? viewContext.fetch(request)) ?? []
     }
 
-    /// Caps in force for an arbitrary month, without reloading everything else.
-    /// The alert check needs the live month's limits even while the user is
-    /// browsing an earlier one.
+    // MARK: Recurring postings
+
+    private static let postingPrefix = "rec-"
+
+    /// The id a recurring item's entry is written under for one month.
+    ///
+    /// Derived rather than random, so that the same bill posted for the same
+    /// month is recognisably the same entry wherever it was written. See
+    /// `droppingRepeatedPostings`.
+    static func postingID(recurring id: String, month: String) -> String {
+        "\(postingPrefix)\(id)-\(month)"
+    }
+
+    /// Keeps one copy of each recurring posting.
+    ///
+    /// A bill posts itself the first time the app is opened on or after its
+    /// day — on *each* device, from whatever that device knew at the time. Two
+    /// phones on one budget opened the same morning each post the rent before
+    /// either has heard from the other, and then both copies sync: two rents,
+    /// every month, on exactly the budgets that are shared.
+    private func droppingRepeatedPostings(_ rows: [NSManagedObject]) -> [NSManagedObject] {
+        keepingEarliest(rows) { $0.hasPrefix(Self.postingPrefix) }
+    }
+
+    /// Collapses rows that share an `id` to the one created first, deletes the
+    /// later ones, and returns what's left in its original order. `matters`
+    /// narrows which ids are looked at.
+    ///
+    /// For rows two devices can each write before hearing from the other. The
+    /// earliest is the same answer on every device, so they converge rather
+    /// than each deleting the other's copy. A dead heat is read once and left
+    /// in the store: there is nothing to break the tie with that both devices
+    /// would agree on, and guessing differently on each would delete both.
+    private func keepingEarliest(_ rows: [NSManagedObject],
+                                 where matters: (String) -> Bool = { _ in true }) -> [NSManagedObject] {
+        var kept: [String: NSManagedObject] = [:]
+        var repeats: [NSManagedObject] = []
+        var later: [NSManagedObject] = []
+
+        for row in rows {
+            guard let id = row.value(forKey: "id") as? String, !id.isEmpty, matters(id)
+            else { continue }
+            guard let current = kept[id] else {
+                kept[id] = row
+                continue
+            }
+            let a = current.value(forKey: "createdAt") as? Date ?? .distantFuture
+            let b = row.value(forKey: "createdAt") as? Date ?? .distantFuture
+            if b < a {
+                later.append(current)
+                repeats.append(current)
+                kept[id] = row
+            } else {
+                if a < b { later.append(row) }
+                repeats.append(row)
+            }
+        }
+        guard !repeats.isEmpty else { return rows }
+
+        if !later.isEmpty {
+            later.forEach(viewContext.delete)
+            save()
+        }
+        let dropped = Set(repeats.map(ObjectIdentifier.init))
+        return rows.filter { !dropped.contains(ObjectIdentifier($0)) }
+    }
+
+    /// Caps in force for an arbitrary month, without reloading everything else
+    /// — for a question about the live month asked from outside the model, or
+    /// while it has an earlier one on screen.
     func caps(for month: String) -> [String: Double] {
         guard let house = currentHousehold() else { return [:] }
         return loadCaps(for: house, month: month)
@@ -1372,6 +1536,19 @@ final class BudgetStore {
     /// member row, once, and point the entries at it.
     private func migrateLegacyMembersIfNeeded(in house: NSManagedObject, entries: [NSManagedObject]) {
         guard loadMembers(for: house).isEmpty else { return }
+
+        // No member rows is also what a current budget looks like for a moment
+        // while it's still syncing down: the household can arrive a batch
+        // ahead of its people. Running this then would invent a "You", point
+        // every entry already here at it — over the top of whoever really
+        // logged them — and sync that back to everyone else. So it only runs
+        // on what can actually be a pre-members budget: one this account
+        // owns, none of whose entries name a member yet.
+        guard isOwned(house) else { return }
+        let namesAMember = entries.contains {
+            !($0.value(forKey: "memberID") as? String ?? "").isEmpty
+        }
+        guard !namesAMember else { return }
 
         // Oldest first, so "you" (created at setup) tends to take colour 0.
         var order: [String] = []
@@ -1498,10 +1675,7 @@ final class BudgetStore {
     func updateEntry(id: String, date: String, place: String, amount: Double,
                      bucket: String, memberID: String, kind: EntryKind, mood: Mood?,
                      note: String, belowTheLine: Bool, isPrivate: Bool) {
-        let request = NSFetchRequest<NSManagedObject>(entityName: CDModel.entry)
-        request.predicate = NSPredicate(format: "id == %@", id)
-        request.fetchLimit = 1
-        guard let entry = (try? viewContext.fetch(request))?.first else { return }
+        guard let entry = entryObject(id: id) else { return }
 
         // Changing privacy means changing which store the row belongs in, and
         // an object can't be reassigned once saved. Recreate it instead, so a
@@ -1565,6 +1739,10 @@ final class BudgetStore {
     /// Puts a removed member back with their original id, so the entries being
     /// restored alongside them still resolve. `insertMember` can't be reused —
     /// it mints a fresh id, which would orphan every one of those entries.
+    ///
+    /// The seat's claim goes back with it. Without that, undoing the removal
+    /// of someone with their own phone on the budget returned them as a bare
+    /// name anybody could then claim.
     func restoreMember(_ member: Member) {
         guard let house = currentHousehold(), memberObject(id: member.id) == nil else { return }
         let obj = NSManagedObject(entity: entity(CDModel.member), insertInto: viewContext)
@@ -1572,6 +1750,7 @@ final class BudgetStore {
         obj.setValue(member.name, forKey: "name")
         obj.setValue(Int64(member.colorIndex), forKey: "colorIndex")
         obj.setValue(member.createdAt, forKey: "createdAt")
+        obj.setValue(member.userRecordName, forKey: "userRecordName")
         obj.setValue(house, forKey: "household")
         assign(obj, toStoreOf: house)
         save()

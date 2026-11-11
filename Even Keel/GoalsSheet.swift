@@ -341,8 +341,25 @@ struct GoalForm: View {
         return Goal(id: "preview", name: draft.name, target: draft.target,
                     saved: Fmt.amount(from: saved) ?? 0,
                     monthlyContribution: Fmt.amount(from: monthly) ?? 0,
-                    deadline: hasDeadline ? Fmt.isoDay(deadline) : "",
+                    deadline: deadlineToStore,
                     createdAt: Date())
+    }
+
+    /// The date to keep: what the picker shows, unless that's only today
+    /// standing in for a deadline that has already passed.
+    ///
+    /// `load` shows a past deadline as today because the picker can't hold an
+    /// earlier day — and saving then wrote today back, so renaming an overdue
+    /// goal quietly moved its deadline and it stopped reading as overdue. The
+    /// stored date changes only when a different day is actually picked.
+    private var deadlineToStore: String {
+        guard hasDeadline else { return "" }
+        let picked = Fmt.isoDay(deadline)
+        if let stored = goal?.deadline, !stored.isEmpty,
+           stored < picked, picked == Fmt.isoDay(Date()) {
+            return stored
+        }
+        return picked
     }
 
     private func previewSymbol(_ preview: Goal) -> String {
@@ -418,7 +435,7 @@ struct GoalForm: View {
             target: draft.target,
             saved: Fmt.amount(from: saved) ?? 0,
             monthlyContribution: Fmt.amount(from: monthly) ?? 0,
-            deadline: hasDeadline ? Fmt.isoDay(deadline) : "",
+            deadline: deadlineToStore,
             createdAt: goal?.createdAt ?? Date()
         ))
         dismiss()

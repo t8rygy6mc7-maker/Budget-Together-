@@ -717,8 +717,12 @@ struct AddSheet: View {
             Toggle(isOn: $isPrivate) {
                 VStack(alignment: .leading, spacing: 2) {
                     Text("Keep this private").appFont(13.5, weight: .semibold)
+                    // "Only you", not "stays on your device": it's kept out of
+                    // the shared budget, but with iCloud on it still reaches
+                    // this person's own other devices — which is what the
+                    // privacy policy says, and what this line used to deny.
                     Text(isPrivate
-                         ? "Stays on your device. It still counts toward the budget here, but never syncs to anyone else."
+                         ? "Only you can see it. It still counts toward the budget here, but never reaches anyone else on it."
                          : "Everyone on the budget will see it.")
                         .appFont(11.5).foregroundStyle(Palette.sub)
                         .fixedSize(horizontal: false, vertical: true)

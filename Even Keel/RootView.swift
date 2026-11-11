@@ -67,15 +67,26 @@ struct RootView: View {
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
-            case .background: lock.didEnterBackground()
-            case .active:     lock.didBecomeActive()
-            default:          break
+            case .background:
+                lock.didEnterBackground()
+            case .active:
+                lock.didBecomeActive()
+                // The app can sit in memory across midnight, or a month end.
+                model.refreshIfDayChanged()
+            default:
+                break
             }
         }
         // A cross-fade, so it keeps a plain animation rather than an
         // `appAnimation` — fading is already what Reduce Motion asks for here.
         // See the rule at the top of `Comfort.swift`.
-        .animation(.easeInOut(duration: 0.2), value: lock.isLocked)
+        //
+        // Only on the way *out* of the lock. Closing the gate is a cut: it
+        // closes as the app comes back to the front, while the privacy cover
+        // above is fading away, and a budget cross-fading out underneath a
+        // cover that's cross-fading out is a tenth of a second of exactly what
+        // the lock is for.
+        .animation(lock.isLocked ? nil : .easeInOut(duration: 0.2), value: lock.isLocked)
         // Covers the screen the moment the app stops being frontmost, before
         // iOS takes the picture it shows in the app switcher. See `PrivacyCover`.
         .overlay {

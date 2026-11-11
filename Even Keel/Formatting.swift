@@ -47,6 +47,17 @@ enum Fmt {
         return f
     }()
 
+    /// Writes an amount the way `input` will read it back: the user's own
+    /// decimal separator, two places, and no grouping. See `plain(_:)`.
+    private static let field: NumberFormatter = {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        f.usesGroupingSeparator = false
+        f.minimumFractionDigits = 2
+        f.maximumFractionDigits = 2
+        return f
+    }()
+
     /// Fixed-format storage dates. `en_US_POSIX` keeps the pattern stable
     /// regardless of the user's locale; the time zone stays local, because a
     /// "day" here means the user's calendar day.
@@ -65,7 +76,6 @@ enum Fmt {
         return f
     }()
     private static let monthYearFormatter = display("LLLL yyyy")
-    private static let shortMonthYearFormatter = display("LLL yyyy")
     private static let monthNameFormatter = display("LLLL")
     private static let shortMonthFormatter = display("LLL")
 
@@ -104,8 +114,16 @@ enum Fmt {
 
     /// Bare number for putting an existing amount back into a text field —
     /// no currency symbol, no grouping, and no trailing ".0" on whole dollars.
+    ///
+    /// In the user's own decimal separator, because the field's contents go
+    /// straight back through `amount(from:)` on save. This used to be
+    /// `String(format: "%.2f")`, which always writes a full stop — and wherever
+    /// the full stop is the *grouping* separator (most of Europe and Latin
+    /// America), the lenient parser read "12.50" back as 1,250. Opening an
+    /// entry and saving it untouched multiplied it by a hundred.
     static func plain(_ n: Double) -> String {
-        n == n.rounded() ? String(whole(n)) : String(format: "%.2f", n)
+        guard n != n.rounded() else { return String(whole(n)) }
+        return field.string(from: NSNumber(value: n)) ?? String(format: "%.2f", n)
     }
 
     /// The largest figure the app will accept on a single line.
@@ -188,9 +206,6 @@ enum Fmt {
 
     /// "July 2026" — screen subtitles.
     static func monthTitle(_ d: Date) -> String { monthYearFormatter.string(from: d) }
-
-    /// "Jul 2026" — the month stepper, where the full name doesn't fit.
-    static func shortMonthTitle(_ d: Date) -> String { shortMonthYearFormatter.string(from: d) }
 
     /// "June" — the comparison month in the home header.
     static func monthName(_ d: Date) -> String { monthNameFormatter.string(from: d) }

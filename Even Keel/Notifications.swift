@@ -121,6 +121,10 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
         billReminderTask?.cancel()
         billReminderTask = Task { @MainActor [weak self] in
             guard let self else { return }
+            // Asked, not remembered. This runs from the model's first reload,
+            // which is before `start()` has had its answer — and going by the
+            // flag then would clear every reminder at launch and add none back.
+            await refreshAuthorization()
             let requests = await center.pendingNotificationRequests()
             guard !Task.isCancelled else { return }
             let stale = requests.map(\.identifier).filter { $0.hasPrefix(Self.billPrefix) }
@@ -147,6 +151,15 @@ final class Notifier: NSObject, UNUserNotificationCenterDelegate {
                                                             content: content, trigger: trigger))
             }
         }
+    }
+
+    /// Takes back everything this app has put in front of the user or queued
+    /// to, for when the data behind it is erased. A reminder naming the rent
+    /// and what it costs is a copy of the ledger too.
+    func removeAll() {
+        billReminderTask?.cancel()
+        center.removeAllPendingNotificationRequests()
+        center.removeAllDeliveredNotifications()
     }
 
     // MARK: Plumbing

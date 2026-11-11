@@ -1,3 +1,4 @@
+import Foundation
 import Testing
 @testable import Even_Keel
 
@@ -120,7 +121,20 @@ struct TypedAmountTests {
         #expect(Fmt.count(3, "day") == "3 days")
         #expect(Fmt.count(2, "entry", plural: "entries") == "2 entries")
         #expect(Fmt.plain(12) == "12")
-        #expect(Fmt.plain(12.5) == "12.50")
+        // Formatted for wherever the tests are running, so the separator is
+        // asked for rather than assumed.
+        let separator = Locale.current.decimalSeparator ?? "."
+        #expect(Fmt.plain(12.5) == "12\(separator)50")
+    }
+
+    /// An amount put into a field has to read back as itself. Where the full
+    /// stop groups thousands, a hardcoded "12.50" read back as 1,250 — and
+    /// editing an entry puts its amount in a field and reads it back on save.
+    @Test("An amount written into a field reads back unchanged", arguments: [
+        12.5, 0.05, 4.1, 1234.56, 250, 999_999.99,
+    ])
+    func fieldRoundTrip(amount: Double) {
+        #expect(Fmt.amount(from: Fmt.plain(amount)) == amount)
     }
 
     @Test("Ordinals", arguments: [

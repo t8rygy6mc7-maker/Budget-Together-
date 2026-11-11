@@ -21,7 +21,7 @@ struct HomeView: View {
                 // which is a limits calculation. With no limits set it would report
                 // a confident $0, so the mode simply isn't available until there's
                 // a plan for it to subtract from.
-                if model.isSimplified, model.hasPlan {
+                if showsFunMoney {
                     simplified
                 } else {
                     full
@@ -62,15 +62,15 @@ struct HomeView: View {
         }
     }
 
+    /// Whether Home is showing the fun money rather than the whole plan.
+    private var showsFunMoney: Bool { model.isSimplified && model.hasPlan }
+
     /// How the month is going, in a sentence, above everything else.
     ///
     /// The screen used to open with a large number and a red percentage badge —
     /// a verdict, delivered before any context, in the position the eye lands
     /// first. The arithmetic hasn't changed and it's all still below; it just
     /// isn't the greeting any more.
-    /// Whether Home is showing the fun money rather than the whole plan.
-    private var showsFunMoney: Bool { model.isSimplified && model.hasPlan }
-
     private var summaryLine: some View {
         // In the simplified view the sentence has to be about the same money
         // as the number under it. Quoting the whole plan there put "$1,178
@@ -332,7 +332,7 @@ struct HomeView: View {
         }
     }
 
-    /// The compact form of `goalPromiseStrip`, for the full view, where the
+    /// The compact form of `goalPromiseRow`, for the full view, where the
     /// figure follows a stat row instead of standing alone on a card. Same
     /// claim, one line, and the same refusal to subtract anything.
     private var goalPromiseLine: some View {

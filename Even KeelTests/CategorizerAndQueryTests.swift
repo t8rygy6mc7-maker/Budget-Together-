@@ -46,6 +46,15 @@ struct CategorizerTests {
         #expect((guess?.confidence ?? 0) >= CategoryGuess.threshold)
     }
 
+    /// Two keywords in one name used to be settled by dictionary order, which
+    /// changes from one launch to the next.
+    @Test("The same name gets the same guess every time")
+    func keywordsAreDeterministic() {
+        let empty = HistoryCategorizer(entries: [])
+        #expect(empty.suggest(place: "Coffee store", kind: .expense)?.bucket == "food")
+        #expect(empty.suggest(place: "Gas bar", kind: .expense)?.bucket == "food")
+    }
+
     @Test("Says nothing for income, short names and places it hasn't met")
     func staysQuiet() {
         #expect(history.suggest(place: "Payday", kind: .income) == nil)

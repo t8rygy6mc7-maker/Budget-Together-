@@ -255,7 +255,7 @@ struct ForecastTests {
 
     private func forecast(spent: Double = 300, today: Int = 10,
                           recurring: [Recurring] = []) -> Forecast {
-        Forecast.make(spent: spent, byDay: [:], today: today, daysInMonth: 30,
+        Forecast.make(spent: spent, today: today, daysInMonth: 30,
                       plan: 1000, recurring: recurring, currentMonthKey: "2026-03")
     }
 
@@ -352,6 +352,20 @@ struct SubscriptionTests {
         #expect(found.first?.occurrences == 3)
         #expect(found.first?.isTracked == false)
         #expect(found.first?.looksLapsed == false)
+    }
+
+    /// The store hands the ledger over newest first, which is the order that
+    /// used to pick the oldest spelling and the category it started out in.
+    @Test("It's named and filed by its most recent charge")
+    func usesTheLatestCharge() {
+        let found = SubscriptionDetective.detect(entries: [
+            .make("2026-03-05", "Netflix", 15.99, bucket: "subs"),
+            .make("2026-02-05", "netflix", 15.99, bucket: "fun"),
+            .make("2026-01-05", "NETFLIX", 15.99, bucket: "fun"),
+        ], recurring: [], today: today)
+        #expect(found.first?.place == "Netflix")
+        #expect(found.first?.bucket == "subs")
+        #expect(found.first?.daysSinceLast == 36)
     }
 
     @Test("Three visits in one month, or wildly different amounts, are not")

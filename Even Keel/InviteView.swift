@@ -258,8 +258,11 @@ struct SeatClaimSheet: View {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 130), spacing: 8)], spacing: 8) {
                 ForEach(free) { member in
                     Button {
+                        // Only closes on a yes. Refused — the seat went to
+                        // someone else a moment ago — the question is still
+                        // open, and this sheet is the one place it gets asked.
+                        guard model.setMe(member.id) else { return }
                         Haptics.saved()
-                        model.setMe(member.id)
                         dismiss()
                     } label: {
                         HStack(spacing: 8) {

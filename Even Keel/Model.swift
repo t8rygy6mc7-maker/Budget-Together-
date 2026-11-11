@@ -183,10 +183,7 @@ struct Bucket: Identifiable, Equatable {
     /// set actually changes, so this stays a startup-ish cost.
     let color: Color
     let tint: Color
-    /// Halo under a bubble. A bright bloom on a dark screen becomes a heavy
-    /// smear on a light one, so the light scheme drops it to a hint.
-    let glow: Color
-    /// First word of `label`, for tight spots like bubbles and category chips.
+    /// First word of `label`, for tight spots like category chips.
     let short: String
     let cadence: Cadence
     /// Which direction this category belongs to. Spending and income are
@@ -212,7 +209,6 @@ struct Bucket: Identifiable, Equatable {
          symbol: String, cadence: Cadence = .variable, kind: EntryKind = .expense,
          isHidden: Bool = false, isBuiltIn: Bool = true, sortOrder: Int = 0) {
         let color = Color(dark: hex, light: light)
-        self.glow = Color(dark: hex, darkAlpha: 0.65, light: light, lightAlpha: 0.26)
         self.id = id
         self.label = label
         self.symbol = symbol
@@ -276,12 +272,6 @@ extension Bucket {
     /// Visible spending categories, in the user's order.
     static var all: [Bucket] { CategoryRegistry.visible(.expense) }
 
-    /// Visible income categories, in the user's order.
-    static var income: [Bucket] { CategoryRegistry.visible(.income) }
-
-    /// Discretionary categories — the ones anti-budget mode actually watches.
-    static var discretionary: [Bucket] { all.filter { $0.cadence == .variable } }
-
     static func list(for kind: EntryKind) -> [Bucket] { CategoryRegistry.visible(kind) }
 
     /// The pickable list, plus one extra id kept in it even if hidden.
@@ -333,20 +323,14 @@ enum CategoryRegistry {
     /// `nonisolated(unsafe)` on the same basis as the shared formatters in
     /// `Fmt`: every read is a SwiftUI body evaluation or an `AppModel` method,
     /// and every write is `AppModel.reload()` — all of it on the main actor.
-    nonisolated(unsafe) private static var storage: [Bucket] =
-        Bucket.builtInExpense + Bucket.builtInIncome
+    nonisolated(unsafe) private static var storage: [Bucket] = Bucket.builtInAll
     nonisolated(unsafe) private static var index: [String: Bucket] =
-        Dictionary(uniqueKeysWithValues: (Bucket.builtInExpense + Bucket.builtInIncome)
-            .map { ($0.id, $0) })
+        Dictionary(uniqueKeysWithValues: Bucket.builtInAll.map { ($0.id, $0) })
 
     static var allIncludingHidden: [Bucket] { storage }
 
     static func visible(_ kind: EntryKind) -> [Bucket] {
         storage.filter { $0.kind == kind && !$0.isHidden }
-    }
-
-    static func hidden(_ kind: EntryKind) -> [Bucket] {
-        storage.filter { $0.kind == kind && $0.isHidden }
     }
 
     static func bucket(_ id: String) -> Bucket? { index[id] }
@@ -361,9 +345,7 @@ enum CategoryRegistry {
     /// for every id in the app.
     @discardableResult
     static func replace(with categories: [Bucket]) -> Bool {
-        let incoming = categories.isEmpty
-            ? Bucket.builtInExpense + Bucket.builtInIncome
-            : categories
+        let incoming = categories.isEmpty ? Bucket.builtInAll : categories
         let sorted = incoming.sorted {
             $0.kind == $1.kind ? $0.sortOrder < $1.sortOrder : $0.kind == .expense
         }

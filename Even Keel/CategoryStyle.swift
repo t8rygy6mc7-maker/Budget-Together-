@@ -109,6 +109,4 @@ extension SymbolGroup {
             "envelope.fill", "globe", "hands.clap.fill", "star.fill", "questionmark.circle.fill",
         ]),
     ]
-
-    static let flattened: [String] = all.flatMap(\.symbols)
 }

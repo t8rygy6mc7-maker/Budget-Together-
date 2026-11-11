@@ -65,8 +65,13 @@ struct HistoryCategorizer: CategorySuggesting {
                                  reason: "Matches somewhere you've logged before")
         }
 
-        // Finally the built-in table, for a household with no history yet.
-        if let keyword = Self.keywords.first(where: { key.contains($0.key) }) {
+        // Finally the built-in table, for a household with no history yet. The
+        // longest keyword that fits wins, then the alphabetically first: a
+        // dictionary has no order of its own, so taking the first match let
+        // "coffee store" be Food on one launch and Shopping on the next.
+        if let keyword = Self.keywords
+            .filter({ key.contains($0.key) })
+            .max(by: { ($0.key.count, $1.key) < ($1.key.count, $0.key) }) {
             return CategoryGuess(bucket: keyword.value, confidence: 0.6,
                                  reason: "Usually a \(Bucket.named(keyword.value).short) sort of place")
         }

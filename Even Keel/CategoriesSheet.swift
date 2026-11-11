@@ -164,9 +164,9 @@ struct CategoriesSheet: View {
     private func subtitle(for bucket: Bucket) -> String {
         var parts: [String] = []
         if bucket.kind == .expense { parts.append(bucket.cadence.label) }
-        let usage = model.categoryUsage(bucket.id)
-        if usage.entries > 0 {
-            parts.append(Fmt.count(usage.entries, "entry", plural: "entries"))
+        let entries = model.entryCount(inCategory: bucket.id)
+        if entries > 0 {
+            parts.append(Fmt.count(entries, "entry", plural: "entries"))
         } else if !bucket.isBuiltIn {
             parts.append("Nothing filed here yet")
         }

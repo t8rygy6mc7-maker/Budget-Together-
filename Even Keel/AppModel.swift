@@ -162,10 +162,8 @@ final class AppModel: ObservableObject {
 
     // MARK: - Pairing
 
-    /// Creates the shared household (seeded with default caps) with its creator
-    /// as the first member, and marks this device the owner. In Step 3 this is
-    /// followed by generating a CloudKit invite link.
-    /// Creates the shared budget. `monthlyTotal` is genuinely optional now: with
+    /// Creates the budget, with its creator as the first member and this
+    /// device as theirs. `monthlyTotal` is genuinely optional: with
     /// nothing supplied the budget starts with **no limits at all** rather than
     /// a scaled guess, and the app runs in plain logging mode until there's
     /// enough real spending to propose limits from. Being asked to commit to a
@@ -186,8 +184,7 @@ final class AppModel: ObservableObject {
     func startLookingAround() {
         store.createHousehold(name: "Sample budget", ownerName: "You",
                               defaultCaps: Self.defaultCaps, isSample: true)
-        let ids = store.loadSnapshot().members.map(\.id)
-        var seatIDs = ids
+        var seatIDs = store.loadSnapshot().members.map(\.id)
         for (index, name) in ["Sam", "Alex"].enumerated() {
             if let member = store.addMember(name: name, colorIndex: index + 1) {
                 seatIDs.append(member.id)
@@ -282,12 +279,17 @@ final class AppModel: ObservableObject {
     /// shared it also stamps the seat with this device's iCloud account, which
     /// is what stops two people claiming the same name and what lets somebody's
     /// iPad recognise its own seat without being asked a second time.
-    func setMe(_ id: String) {
+    ///
+    /// Returns whether the seat was taken, so whoever asked can stay open on
+    /// a refusal rather than close over an unanswered question.
+    @discardableResult
+    func setMe(_ id: String) -> Bool {
         guard store.claimMember(id: id) else {
             seatConflict = membersByID[id]?.name
-            return
+            return false
         }
         reload()
+        return true
     }
 
     /// Clears the "that seat is taken" message.
@@ -299,7 +301,7 @@ final class AppModel: ObservableObject {
     func removeMember(_ id: String) {
         guard let member = membersByID[id] else { return }
         let theirs = allEntries.filter { $0.memberID == id }
-        offerUndo(.deletedMember(member, entries: theirs),
+        offerUndo(.deletedMember(member, entries: theirs, wasMe: me?.id == id),
                   message: "Removed \(member.name)"
                          + (theirs.isEmpty ? "." : " and \(Fmt.count(theirs.count, "entry", plural: "entries"))."))
         store.deleteMember(id: id)
@@ -484,7 +486,6 @@ final class AppModel: ObservableObject {
 
     var today: String { Fmt.isoDay(Date()) }
     var monthTitle: String { Fmt.monthTitle(selectedMonth) }
-    var shortMonthTitle: String { Fmt.shortMonthTitle(selectedMonth) }
     var monthKey: String { Fmt.isoMonth(selectedMonth) }
     var previousMonthName: String { Fmt.monthName(Self.month(before: selectedMonth)) }
 
@@ -522,6 +523,31 @@ final class AppModel: ObservableObject {
     func goToCurrentMonth() {
         guard !isCurrentMonth else { return }
         selectedMonth = Date()
+        reload()
+    }
+
+    /// The day the mirrors were last rebuilt on, and whether the month on
+    /// screen was the live one at the time.
+    private var loadedDay = ""
+    private var wasShowingLiveMonth = true
+
+    /// Catches the app up when it comes forward on a later day than it last
+    /// looked at.
+    ///
+    /// Nothing else would. iOS keeps the app in memory for days, and every
+    /// figure that depends on "today" — the streak, the forecast, which
+    /// challenges are running, which bills have come due — is worked out at
+    /// reload, which only a write or a sync ever triggered. Left open on the
+    /// 31st and picked up on the 1st, the app sat on last month calling it
+    /// finished, and filed the next thing logged into a month that wasn't on
+    /// screen.
+    ///
+    /// Someone who had deliberately stepped back to an earlier month stays
+    /// there; only a screen that was following the live month moves with it.
+    /// That half lives in `reload`, so a sync that happens to land first on
+    /// the new day can't use up the chance to make the move.
+    func refreshIfDayChanged() {
+        guard Fmt.isoDay(Date()) != loadedDay else { return }
         reload()
     }
 
@@ -577,11 +603,15 @@ final class AppModel: ObservableObject {
     /// February's plan and February's length, and the streak changed under
     /// someone who had only gone to look at something.
     var dailyAllowance: Double {
-        let now = Date()
-        let days = Calendar.current.range(of: .day, in: .month, for: now)?.count ?? 30
-        let limits = isCurrentMonth ? caps : store.caps(for: Fmt.isoMonth(now))
-        return limits.values.reduce(0, +) / Double(days)
+        let days = Calendar.current.range(of: .day, in: .month, for: Date())?.count ?? 30
+        return liveCaps.values.reduce(0, +) / Double(days)
     }
+
+    /// The live month's limits, whichever month is on screen. `caps` itself
+    /// when that *is* the live month, so an edit shows up before the reload
+    /// that follows it; otherwise the copy that reload worked out.
+    private var liveCaps: [String: Double] { isCurrentMonth ? caps : loadedLiveCaps }
+    private var loadedLiveCaps: [String: Double] = [:]
     var left: Double { max(0, plannedTotal - spent) }
     var safeDaily: Double { max(0, left - reservedForBills()) / Double(daysLeft) }
 
@@ -717,8 +747,6 @@ final class AppModel: ObservableObject {
             .reduce(0) { $0 + $1.amount }
     }
 
-    func spent(by memberID: String) -> Double { month.byMember[memberID] ?? 0 }
-
     /// Change in spending against the previous month. `nil` when there's nothing
     /// to compare against, so the header can omit the badge rather than show a
     /// meaningless figure.
@@ -833,12 +861,14 @@ final class AppModel: ObservableObject {
     /// ever positive — carrying an *overspend* forward would be a punishment
     /// mechanic, and this feature exists to be the opposite of one.
     var rollover: Double {
-        guard rolloverEnabled, isCurrentMonth else { return 0 }
-        let previousKey = Fmt.isoMonth(Self.month(before: selectedMonth))
-        let previousCaps = store.caps(for: previousKey).values.reduce(0, +)
-        guard previousCaps > 0 else { return 0 }
-        return max(0, previousCaps - month.previousSpent)
+        guard rolloverEnabled, isCurrentMonth, previousPlanTotal > 0 else { return 0 }
+        return max(0, previousPlanTotal - month.previousSpent)
     }
+
+    /// Last month's plan total, worked out at reload. `rollover` sits under
+    /// `left`, which half of Home reads, and it used to go to the store for
+    /// this on every one of those reads.
+    private var previousPlanTotal: Double = 0
 
     /// The plan as it actually stands this month, rollover included.
     var plannedTotal: Double { capTotal + rollover }
@@ -1002,8 +1032,7 @@ final class AppModel: ObservableObject {
         case deletedRecurring(Recurring)
         case deletedLoan(Loan)
         case deletedGoal(Goal)
-        case deletedMember(Member, entries: [Entry])
-        case capChanged(bucket: String, month: String, previous: Double)
+        case deletedMember(Member, entries: [Entry], wasMe: Bool)
         case capsMoved(from: String, to: String, month: String,
                        fromPrevious: Double, toPrevious: Double)
         case categoryChanged(before: Bucket)
@@ -1069,15 +1098,14 @@ final class AppModel: ObservableObject {
         case let .deletedGoal(goal):
             store.saveGoal(goal)
 
-        case let .deletedMember(member, entries):
+        case let .deletedMember(member, entries, wasMe):
             // The member row has to exist again before its entries can point at
             // it, and the id must be the original or every entry orphans.
             store.restoreMember(member)
             entries.forEach(restore)
-
-        case let .capChanged(bucket, month, previous):
-            store.setCap(bucket: bucket, month: month, amount: previous)
-            Notifier.shared.resetCapAlerts(bucketID: bucket, month: month)
+            // Removing yourself also made this device forget which member it
+            // is, and putting the row back doesn't remind it.
+            if wasMe { store.localMemberID = member.id }
 
         case let .capsMoved(from, to, month, fromPrevious, toPrevious):
             store.setCap(bucket: from, month: month, amount: fromPrevious)
@@ -1116,11 +1144,8 @@ final class AppModel: ObservableObject {
         var id: URL { url }
     }
 
-    private func fullSnapshot() -> BudgetStore.Snapshot { store.loadSnapshot() }
-
     func exportCSV() -> ExportFile? {
-        let snapshot = fullSnapshot()
-        let csv = DataExport.csv(entries: snapshot.entries) { [weak self] id in
+        let csv = DataExport.csv(entries: store.loadSnapshot().entries) { [weak self] id in
             self?.member(id).name ?? "Someone"
         }
         guard let data = csv.data(using: .utf8) else { return nil }
@@ -1129,7 +1154,7 @@ final class AppModel: ObservableObject {
     }
 
     func exportJSON() -> ExportFile? {
-        let snapshot = fullSnapshot()
+        let snapshot = store.loadSnapshot()
         guard let data = DataExport.json(
             name: store.householdName,
             entries: snapshot.entries,
@@ -1171,28 +1196,30 @@ final class AppModel: ObservableObject {
         return (allEntries.count, members.count, months.count)
     }
 
-    /// Destroys everything, irreversibly, on this device. Deliberately offers
-    /// no undo — `offerUndo` is for slips, and this one is guarded by typing
-    /// the word instead.
+    /// Destroys everything, irreversibly — in iCloud where it's mirrored
+    /// there, then on this device. Deliberately offers no undo: `offerUndo` is
+    /// for slips, and this one is guarded by typing the word instead.
     ///
-    /// Returns whether the files behind the data were actually confirmed
-    /// gone. The app is emptied either way — `reload` runs regardless — but
-    /// the caller needs the real answer to tell the user, rather than
-    /// assuming success because nothing threw.
-    @discardableResult
-    func eraseEverything() -> Bool {
+    /// The outcome is the real answer rather than an assumption that nothing
+    /// threw. If iCloud couldn't be cleared, nothing has been deleted and the
+    /// app is exactly as it was.
+    func eraseEverything() async -> BudgetStore.EraseOutcome {
         dismissUndo()
-        let destroyed = store.eraseEverything()
+        let outcome = await store.eraseEverything()
+        if case .cloudUnreachable = outcome { return outcome }
         // An export is the most complete copy the app ever makes. Leaving one
         // in the temporary directory would mean the single most revealing file
         // is the one thing that survives being erased.
         DataExport.purgeAllExports()
+        // So is a reminder that names the rent, or a banner still sitting in
+        // Notification Centre saying what a category has cost this month.
+        Notifier.shared.removeAll()
         revealedTabs = []
         isSimplified = false
         selectedMonth = Date()
         tab = .home
         reload()
-        return destroyed
+        return outcome
     }
 
     // MARK: - Categories
@@ -1208,7 +1235,6 @@ final class AppModel: ObservableObject {
     }
 
     var expenseCategories: [Bucket] { categories(for: .expense) }
-    var incomeCategories: [Bucket] { categories(for: .income) }
     func hiddenCategories(for kind: EntryKind) -> [Bucket] {
         categories.filter { $0.kind == kind && $0.isHidden }
     }
@@ -1270,11 +1296,19 @@ final class AppModel: ObservableObject {
     }
 
     /// What still points at a category, and therefore whether deleting it would
-    /// leave holes in the ledger.
+    /// leave holes in the ledger. Asks the store, so it's for the moment of
+    /// deciding — a row that only wants to say how much is filed under it
+    /// should use `entryCount(inCategory:)`.
     func categoryUsage(_ id: String) -> (entries: Int, caps: Int,
                                          recurring: Int, challenges: Int) {
         store.references(categoryID: id)
     }
+
+    /// How many entries are filed under a category, from the ledger already in
+    /// memory. The category list shows this on every row, every time it draws.
+    func entryCount(inCategory id: String) -> Int { entryCountByBucket[id] ?? 0 }
+
+    private var entryCountByBucket: [String: Int] = [:]
 
     /// Whether this category can be removed outright rather than hidden. A
     /// built-in never can — resetting it is the equivalent, and its id may be
@@ -1392,9 +1426,6 @@ final class AppModel: ObservableObject {
             : sorted[middle]
     }
 
-    /// The last thing logged, for "same again".
-    var lastEntry: Entry? { allEntries.first { !$0.isPrivate || $0.memberID == store.localMemberID } }
-
     /// Everyone *other than this device's owner* who has logged something
     /// today, in household order. Drives the presence line in the log.
     ///
@@ -1436,21 +1467,39 @@ final class AppModel: ObservableObject {
     /// Rebuilds the published mirrors from the persisted store, for whichever
     /// month is selected.
     func reload() {
+        // A new day since the last look. A screen that was following the live
+        // month goes on following it — see `refreshIfDayChanged`.
+        let now = Date()
+        let day = Fmt.isoDay(now)
+        if day != loadedDay {
+            if wasShowingLiveMonth { selectedMonth = now }
+            loadedDay = day
+        }
+
         hasHousehold = store.hasHousehold
         // Anything due on or before today gets written before we read, so the
         // month's totals already include it.
-        if hasHousehold, postDueRecurring() {
-            reload()
-            return
-        }
+        if hasHousehold { postDueRecurring() }
 
         let snapshot = store.loadSnapshot(capsFor: monthKey)
         // The registry has to be current *before* anything below reads a
         // category — the digest classifies spending by cadence, and the wins
         // and insights that follow it both resolve buckets by id.
         CategoryRegistry.replace(with: snapshot.categories)
-        categories = snapshot.categories
+        if snapshot.categories != categories {
+            categories = snapshot.categories
+            // Categories are user data, so the options behind the Siri/Shortcuts
+            // category parameter move when they do — and only then. Told on
+            // every reload, the system was being asked to re-read them after
+            // each entry logged.
+            BudgetShortcuts.refresh()
+        }
         caps = snapshot.caps
+        if snapshot.recurring != recurring {
+            // Whatever changed them: an edit here, an undo, a partner adding
+            // a bill on their phone, another budget being opened, an erase.
+            Notifier.shared.scheduleBillReminders(snapshot.recurring)
+        }
         recurring = snapshot.recurring
         loans = snapshot.loans
         goals = snapshot.goals
@@ -1466,24 +1515,42 @@ final class AppModel: ObservableObject {
         monthFlags = snapshot.monthFlags
         isSampleHousehold = snapshot.isSample
         rolloverEnabled = snapshot.rolloverEnabled
+        let previousKey = Fmt.isoMonth(Self.month(before: selectedMonth))
         month = Self.digest(snapshot.entries,
                             month: monthKey,
-                            previous: Fmt.isoMonth(Self.month(before: selectedMonth)),
+                            previous: previousKey,
                             previousThroughDay: isCurrentMonth
-                                ? Calendar.current.component(.day, from: Date()) : nil)
+                                ? Calendar.current.component(.day, from: now) : nil)
         history = Self.history(snapshot.entries, endingAt: selectedMonth,
                                length: Self.historyLength)
-        wins = buildWins(snapshot.entries)
+
+        // Every limit ever set, read once. The wins judge each closed month by
+        // it, and it answers for the two other months the screens ask about —
+        // the live one and the one before the one on screen — without a trip
+        // to the store for each.
+        let capRows = store.allCaps()
+        previousPlanTotal = Self.limits(in: previousKey, from: capRows).values.reduce(0, +)
+
+        // Streaks, the forecast and the limit alerts all describe the live
+        // month, whichever month is being browsed. When that's the month on
+        // screen it's already digested; when it isn't, it's digested here,
+        // once, rather than by each of the three that want it.
+        let liveKey = Fmt.isoMonth(now)
+        let live = isCurrentMonth ? month : Self.digest(snapshot.entries, month: liveKey)
+        loadedLiveCaps = isCurrentMonth ? caps : Self.limits(in: liveKey, from: capRows)
+
+        wins = buildWins(snapshot.entries, live: live, capRows: capRows)
         refreshNewBadges()
         allEntries = snapshot.entries
+        entryCountByBucket = snapshot.entries.reduce(into: [:]) { $0[$1.bucket, default: 0] += 1 }
         categorizer = HistoryCategorizer(entries: snapshot.entries)
-        buildInsights(snapshot.entries)
-        checkCapAlerts(snapshot.entries)
+        buildInsights(snapshot.entries, live: live)
+        // Alerts judge the live month even while an earlier one is on screen —
+        // otherwise browsing history would mute them.
+        Notifier.shared.checkCaps(totals: live.totals, caps: liveCaps, month: liveKey)
         // A tab that's just been hidden can't be left selected under the user.
         if !visibleTabs.contains(tab) { tab = .home }
-        // Categories are user data, so the options behind the Siri/Shortcuts
-        // category parameter move whenever they do.
-        BudgetShortcuts.refresh()
+        wasShowingLiveMonth = isCurrentMonth
     }
 
     // MARK: - Progressive disclosure
@@ -1529,16 +1596,15 @@ final class AppModel: ObservableObject {
     /// Forecast, suggestions and subscription detection. Like wins, these always
     /// describe the live month — advice about a month that already ended is just
     /// noise.
-    private func buildInsights(_ entries: [Entry]) {
+    private func buildInsights(_ entries: [Entry], live current: MonthDigest) {
         let currentKey = Fmt.isoMonth(Date())
-        let current = isCurrentMonth ? month : Self.digest(entries, month: currentKey, previous: "")
-        let limits = isCurrentMonth ? caps : store.caps(for: currentKey)
+        let limits = liveCaps
         let calendar = Calendar.current
         let daysInMonth = calendar.range(of: .day, in: .month, for: Date())?.count ?? 30
         let today = calendar.component(.day, from: Date())
 
         forecast = Forecast.make(
-            spent: current.spent, byDay: current.byDay, today: today,
+            spent: current.spent, today: today,
             daysInMonth: daysInMonth, plan: limits.values.reduce(0, +),
             recurring: recurring, currentMonthKey: currentKey
         )
@@ -1560,22 +1626,19 @@ final class AppModel: ObservableObject {
 
     /// Streaks and badges always describe the live month, whichever month is
     /// being browsed — a win isn't something you scroll back to.
-    private func buildWins(_ entries: [Entry]) -> Wins {
+    private func buildWins(_ entries: [Entry], live current: MonthDigest,
+                           capRows: [BudgetStore.CapRow]) -> Wins {
         let now = Date()
         let currentKey = Fmt.isoMonth(now)
         let today = Calendar.current.component(.day, from: now)
-        let current = isCurrentMonth
-            ? month
-            : Self.digest(entries, month: currentKey, previous: "")
 
         // Every earlier month with entries in it, each judged against the
         // limits that were in force then. All of them, not the six the trend
         // chart shows: a badge is asked of the whole ledger, and one read from
         // a six-month window would be taken back in the seventh.
-        let limits = store.allCaps()
         let closed = ClosedMonth.all(
             from: entries, before: currentKey,
-            planTotal: { Self.planTotal(in: $0, from: limits) },
+            planTotal: { Self.limits(in: $0, from: capRows).values.reduce(0, +) },
             isUnusual: isUnusual
         )
 
@@ -1586,16 +1649,17 @@ final class AppModel: ObservableObject {
         let startsOn = closed.isEmpty ? (firstLoggedDay ?? today + 1) : 1
 
         let loggers = Set(entries.map(\.memberID))
+        let allowance = dailyAllowance
         return Wins.make(WinsInput(
             byDay: current.byDay,
-            dailyAllowance: dailyAllowance,
+            dailyAllowance: allowance,
             today: today,
             streakStartsOn: startsOn,
             entryCount: entries.count,
             taggedCount: entries.filter { $0.kind == .expense && $0.mood != nil }.count,
             loggingRun: Wins.longestLoggingRun(entries),
             closedMonths: closed,
-            hasPlan: dailyAllowance > 0,
+            hasPlan: allowance > 0,
             recurringCount: recurring.count,
             goals: goals,
             challengesWon: challenges.filter(\.isWon).count,
@@ -1604,13 +1668,14 @@ final class AppModel: ObservableObject {
         ))
     }
 
-    /// The plan total in force in `month`: each category's most recent limit
-    /// set on or before it. `rows` arrive oldest first, so a later row simply
+    /// The limits in force in `month`: each category's most recent one set on
+    /// or before it. `rows` arrive oldest first, so a later row simply
     /// replaces an earlier one.
-    private static func planTotal(in month: String, from rows: [BudgetStore.CapRow]) -> Double {
+    private static func limits(in month: String,
+                               from rows: [BudgetStore.CapRow]) -> [String: Double] {
         var limits: [String: Double] = [:]
         for row in rows where row.month <= month { limits[row.bucket] = row.amount }
-        return limits.values.reduce(0, +)
+        return limits
     }
 
     /// Works out which earned badges this device hasn't shown anyone yet.
@@ -1817,10 +1882,13 @@ final class AppModel: ObservableObject {
 
     // MARK: - Recurring
 
+    // Neither of these schedules the reminders itself: `reload` does that
+    // whenever the list comes back different, which also covers the ways it
+    // changes that don't pass through here — an undo, a partner's edit.
+
     func saveRecurring(_ item: Recurring) {
         store.saveRecurring(item)
         reload()
-        Notifier.shared.scheduleBillReminders(recurring)
     }
 
     func deleteRecurring(_ id: String) {
@@ -1829,43 +1897,29 @@ final class AppModel: ObservableObject {
         }
         store.deleteRecurring(id: id)
         reload()
-        Notifier.shared.scheduleBillReminders(recurring)
     }
 
     /// Posts an entry for every active item whose day has arrived this month and
-    /// that hasn't posted yet. Returns whether anything was written, so the
-    /// caller knows to re-read. Idempotent: `lastPostedMonth` is the guard, so
-    /// relaunching mid-month doesn't duplicate rent.
-    private func postDueRecurring() -> Bool {
+    /// that hasn't posted yet. Idempotent on this device: `lastPostedMonth` is
+    /// the guard, so relaunching mid-month doesn't duplicate rent. Across
+    /// devices it's the entry's id that does the job — see
+    /// `BudgetStore.postingID`.
+    private func postDueRecurring() {
         let currentKey = Fmt.isoMonth(Date())
         let dayToday = Calendar.current.component(.day, from: Date())
-        var posted = false
 
         for var item in store.loadRecurringForCurrentHousehold() {
             guard item.isActive,
                   item.lastPostedMonth != currentKey,
                   item.dayOfMonth <= dayToday else { continue }
 
-            store.addEntry(id: UUID().uuidString,
+            store.addEntry(id: BudgetStore.postingID(recurring: item.id, month: currentKey),
                            date: "\(currentKey)-\(String(format: "%02d", item.dayOfMonth))",
                            place: item.place, amount: item.amount, bucket: item.bucket,
                            memberID: item.memberID, kind: item.kind)
             item.lastPostedMonth = currentKey
             store.saveRecurring(item)
-            posted = true
         }
-        return posted
-    }
-
-    /// Cap alerts always judge the *live* month, even while the user is looking
-    /// at an earlier one — otherwise browsing history would mute them.
-    private func checkCapAlerts(_ entries: [Entry]) {
-        let currentKey = Fmt.isoMonth(Date())
-        let totals = isCurrentMonth
-            ? month.totals
-            : Self.digest(entries, month: currentKey, previous: "").totals
-        let limits = isCurrentMonth ? caps : store.caps(for: currentKey)
-        Notifier.shared.checkCaps(totals: totals, caps: limits, month: currentKey)
     }
 
     /// Totals per month for the trend chart, oldest first. Months with nothing
@@ -1898,12 +1952,12 @@ final class AppModel: ObservableObject {
     /// accumulates every total in a single pass. Income is tallied separately at
     /// every step — it belongs in neither the spending totals nor the charts.
     ///
-    /// `previousThroughDay` cuts `previousSpentToDate` off at that day of the
-    /// previous month, for comparing a month that's still in progress.
-    private static func digest(_ entries: [Entry], month: String, previous: String,
+    /// `previous` is the month to total for the comparison, or `nil` when
+    /// nobody is going to ask. `previousThroughDay` cuts `previousSpentToDate`
+    /// off at that day of it, for comparing a month that's still in progress.
+    private static func digest(_ entries: [Entry], month: String, previous: String? = nil,
                                previousThroughDay: Int? = nil) -> MonthDigest {
         var digest = MonthDigest()
-        digest.entries.reserveCapacity(entries.count)
         var incomeTotals: [String: Double] = [:]
         var moodTotals: [Mood: (amount: Double, count: Int)] = [:]
 
@@ -1939,7 +1993,7 @@ final class AppModel: ObservableObject {
                     let current = moodTotals[mood] ?? (0, 0)
                     moodTotals[mood] = (current.amount + entry.amount, current.count + 1)
                 }
-            } else if entry.date.hasPrefix(previous), entry.kind == .expense,
+            } else if let previous, entry.date.hasPrefix(previous), entry.kind == .expense,
                       !entry.belowTheLine {
                 // Same exclusion as the current month, or the comparison would
                 // be measuring two different things against each other.

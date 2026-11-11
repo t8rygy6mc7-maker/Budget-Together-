@@ -104,12 +104,18 @@ struct LogSpendIntent: AppIntent {
         let typed = (place ?? "").trimmingCharacters(in: .whitespaces)
         let name = typed.isEmpty ? bucket.label : typed
 
+        // This device's member if it still has one. The id is a per-device
+        // preference, so it can outlive the row it names — removed on another
+        // phone, say — and filing under it then logs the spend to nobody.
+        let spender = snapshot.members.first { $0.id == store.localMemberID }
+            ?? snapshot.members[0]
+
         store.addEntry(id: UUID().uuidString,
                        date: Fmt.isoDay(Date()),
                        place: name,
                        amount: amount,
                        bucket: bucket.id,
-                       memberID: store.localMemberID ?? snapshot.members[0].id)
+                       memberID: spender.id)
         store.notifyChanged()
         WidgetCenter.shared.reloadAllTimelines()
 
@@ -152,8 +158,10 @@ struct CheckBudgetIntent: AppIntent {
         let snapshot = store.prepareForBackgroundWrite()
         let month = Fmt.isoMonth(Date())
 
+        // One-offs stay out, as they do from the figure on Home — or Siri and
+        // the app disagree about what's left by the price of a laptop.
         let spent = snapshot.entries
-            .filter { $0.date.hasPrefix(month) && $0.kind == .expense }
+            .filter { $0.date.hasPrefix(month) && $0.kind == .expense && !$0.belowTheLine }
             .reduce(0) { $0 + $1.amount }
         let plan = store.caps(for: month).values.reduce(0, +)
 

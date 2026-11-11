@@ -191,9 +191,16 @@ struct PeopleSheet: View {
                 Task {
                     let granted = await Notifier.shared.requestAuthorization()
                     Notifier.shared.limitAlertsEnabled = granted
-                    // If iOS said no, don't leave a switch sitting on that
-                    // silently does nothing.
-                    if !granted { alertsOn = false; deniedBySystem = true }
+                    if granted {
+                        // Permission is what the bill reminders were waiting
+                        // on too, and the bills may well have been set up first.
+                        Notifier.shared.scheduleBillReminders(model.recurring)
+                    } else {
+                        // If iOS said no, don't leave a switch sitting on that
+                        // silently does nothing.
+                        alertsOn = false
+                        deniedBySystem = true
+                    }
                 }
             }
 

@@ -130,7 +130,12 @@ struct ChallengeCard: View {
         let challenge = progress.challenge
         guard !progress.hasEnded else { return "Ended \(challenge.endDate)" }
         guard let end = Fmt.day(from: challenge.endDate) else { return "" }
-        let left = Calendar.current.dateComponents([.day], from: Date(), to: end).day ?? 0
+        // Midnight to midnight. Counted from the time of day, anything after
+        // midnight lost a day to rounding: a weekend challenge read "Last day"
+        // on the Saturday afternoon.
+        let calendar = Calendar.current
+        let left = calendar.dateComponents([.day], from: calendar.startOfDay(for: Date()),
+                                           to: end).day ?? 0
         return left <= 0 ? "Last day" : "\(Fmt.count(left + 1, "day")) to go"
     }
 }

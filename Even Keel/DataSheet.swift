@@ -23,6 +23,12 @@ struct DataSheet: View {
     /// promise on this screen that's worth telling the truth about even when
     /// the truth is worse than "done".
     @State private var eraseFailed = false
+    /// Why iCloud couldn't be cleared, when it couldn't. Nothing has been
+    /// deleted in that case, here or there.
+    @State private var cloudFailure: String?
+    /// The erase is in flight. Clearing iCloud is a round trip, and a second
+    /// tap in the middle of one has nothing useful to do.
+    @State private var erasing = false
     @FocusState private var confirmFocused: Bool
 
     /// Typed rather than tapped. A destructive-role button in a dialog is one
@@ -265,8 +271,11 @@ struct DataSheet: View {
                                         in: RoundedRectangle(cornerRadius: 10, style: .continuous))
                         VStack(alignment: .leading, spacing: 2) {
                             Text("Delete everything").appFont(14, weight: .semibold)
-                            Text("Every entry, person, category and limit. "
-                               + "There is no undo and no copy anywhere else.")
+                            Text(model.cloudStatus.isLeavingTheDevice
+                                 ? "Every entry, person, category and limit — on this "
+                                 + "phone and in your iCloud. There is no undo."
+                                 : "Every entry, person, category and limit. "
+                                 + "There is no undo and no copy anywhere else.")
                                 .appFont(11.5).foregroundStyle(Palette.sub)
                                 .fixedSize(horizontal: false, vertical: true)
                                 .multilineTextAlignment(.leading)
@@ -287,8 +296,15 @@ struct DataSheet: View {
         return VStack(alignment: .leading, spacing: 12) {
             Text("This deletes \(Fmt.count(footprint.entries, "entry", plural: "entries")) "
                + "and \(Fmt.count(footprint.people, "person", plural: "people")) from this "
-               + "phone. It cannot be undone, and there is no copy on a server to "
-               + "restore from — that's the whole point of the app.")
+               + (model.cloudStatus.isLeavingTheDevice
+                  // With mirroring on there *is* a copy elsewhere, and it has
+                  // to go too — along with everybody's access to a budget this
+                  // account shared out. A budget someone else owns is only left.
+                  ? "phone and from your iCloud, so it goes from your other devices "
+                  + "too. A budget you've shared stops being shared; one you were "
+                  + "invited into is left, not deleted. None of it can be undone."
+                  : "phone. It cannot be undone, and there is no copy on a server to "
+                  + "restore from — that's the whole point of the app."))
                 .appFont(12.5)
                 .foregroundStyle(Palette.text)
                 .fixedSize(horizontal: false, vertical: true)
@@ -317,22 +333,38 @@ struct DataSheet: View {
             if eraseFailed {
                 eraseFailureNotice
             }
+            if let cloudFailure {
+                notice("Nothing was deleted. iCloud has a copy of this budget, and it "
+                     + "couldn't be reached to remove it — deleting only what's on "
+                     + "this phone would let it come straight back. Try again when "
+                     + "you're online. (\(cloudFailure))")
+            }
 
             Button {
                 Haptics.warned()
                 eraseFailed = false
-                if model.eraseEverything() {
-                    dismiss()
-                } else {
-                    // The entries are gone from the app either way — this is
-                    // about the file behind them, which couldn't be confirmed
-                    // removed. Staying open and saying so beats a reassuring
-                    // dismiss over a promise that may not hold.
-                    Haptics.warned()
-                    eraseFailed = true
+                cloudFailure = nil
+                erasing = true
+                Task {
+                    let outcome = await model.eraseEverything()
+                    erasing = false
+                    switch outcome {
+                    case .erased:
+                        dismiss()
+                    case .filesRemain:
+                        // The entries are gone from the app either way — this
+                        // is about the file behind them, which couldn't be
+                        // confirmed removed. Staying open and saying so beats
+                        // a reassuring dismiss over a promise that may not hold.
+                        Haptics.warned()
+                        eraseFailed = true
+                    case .cloudUnreachable(let why):
+                        Haptics.warned()
+                        cloudFailure = why
+                    }
                 }
             } label: {
-                Text("Delete everything")
+                Text(erasing ? "Deleting…" : "Delete everything")
                     .appFont(15, weight: .bold)
                     .frame(maxWidth: .infinity).padding(15)
                     .foregroundStyle(matches ? .white : Palette.muted)
@@ -340,7 +372,7 @@ struct DataSheet: View {
                                         : AnyShapeStyle(Palette.chip))
                     .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
             }
-            .disabled(!matches)
+            .disabled(!matches || erasing)
 
             Button {
                 withAppAnimation(.easeInOut(duration: 0.2)) {
@@ -364,14 +396,18 @@ struct DataSheet: View {
     /// behind it — so the honest fix is the one place that's guaranteed to
     /// work regardless of what went wrong here: removing the app.
     private var eraseFailureNotice: some View {
+        notice("Your entries are cleared from the app, but the file on this "
+             + "phone couldn't be confirmed fully removed. Deleting the app "
+             + "itself guarantees it's gone.")
+    }
+
+    private func notice(_ text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .appFont(11, weight: .semibold)
                 .foregroundStyle(Palette.over)
                 .padding(.top, 1)
-            Text("Your entries are cleared from the app, but the file on this "
-               + "phone couldn't be confirmed fully removed. Deleting the app "
-               + "itself guarantees it's gone.")
+            Text(text)
                 .appFont(11.5)
                 .foregroundStyle(Palette.text)
                 .fixedSize(horizontal: false, vertical: true)

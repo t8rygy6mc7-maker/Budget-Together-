@@ -175,6 +175,67 @@ struct AppModelTests {
         #expect(model.recurring.first?.lastPostedMonth == Fmt.isoMonth(Date()))
     }
 
+    /// Two phones on one budget each post the rent before hearing from the
+    /// other. The copies carry the same id, and the earlier one is kept.
+    @Test("The same bill posted twice for one month collapses to one entry")
+    func repeatedPostingCollapses() {
+        let rent = Recurring.make("Rent", 1200, day: 1)
+        model.saveRecurring(rent)
+
+        let month = Fmt.isoMonth(Date())
+        let id = BudgetStore.postingID(recurring: rent.id, month: month)
+        #expect(store.loadSnapshot().entries.map(\.id) == [id])
+
+        // The other phone's copy arriving, written a minute before this one.
+        store.addEntry(id: id, date: month + "-01", place: "Rent (theirs)", amount: 1200,
+                       bucket: "housing", memberID: me,
+                       createdAt: Date().addingTimeInterval(-60))
+        model.reload()
+
+        let posted = store.loadSnapshot().entries.filter { $0.id == id }
+        #expect(posted.map(\.place) == ["Rent (theirs)"])
+        #expect(model.spent == 1200)
+    }
+
+    // MARK: More than one budget
+
+    /// Built-in categories have the same ids in every budget, so anything that
+    /// finds one by id alone can land on the wrong budget's row.
+    @Test("Renaming a category changes it in this budget only")
+    func categoriesBelongToTheirBudget() {
+        let first = store.currentHouseholdID ?? ""
+        _ = store.loadSnapshot()                      // seeds the first budget's categories
+        store.createHousehold(name: "Second", defaultCaps: [:])
+        let second = store.currentHouseholdID ?? ""
+        #expect(first != second)
+
+        let food = store.loadSnapshot().categories.first { $0.id == "food" }!
+        store.saveCategory(Bucket(id: food.id, label: "Eating", hex: food.hex,
+                                  light: food.lightHex, symbol: food.symbol,
+                                  sortOrder: food.sortOrder))
+        #expect(store.loadSnapshot().categories.first { $0.id == "food" }?.label == "Eating")
+
+        store.switchHousehold(to: first)
+        #expect(store.loadSnapshot().categories.first { $0.id == "food" }?.label == "Food & Drink")
+        #expect(store.loadSnapshot().categories.count == Bucket.builtInAll.count)
+    }
+
+    // MARK: Undo
+
+    @Test("Undoing your own removal makes this device you again")
+    func undoRestoresWhoYouAre() {
+        model.addMember(name: "Sam")
+        #expect(model.me?.id == me)
+        let mine = me
+
+        model.removeMember(mine)
+        #expect(model.me == nil)
+
+        model.undo()
+        #expect(model.me?.id == mine)
+        #expect(model.members.count == 2)
+    }
+
     // MARK: Browsing months
 
     @Test("Looking at another month doesn't re-judge this one")

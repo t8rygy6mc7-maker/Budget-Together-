@@ -31,7 +31,7 @@ struct Forecast {
     /// A projection from two days of spending is noise. Say nothing instead.
     var isReliable: Bool { daysElapsed >= 5 && plan > 0 }
 
-    static func make(spent: Double, byDay: [Int: Double], today: Int, daysInMonth: Int,
+    static func make(spent: Double, today: Int, daysInMonth: Int,
                      plan: Double, recurring: [Recurring], currentMonthKey: String) -> Forecast {
         var forecast = Forecast()
         forecast.plan = plan
@@ -52,7 +52,6 @@ struct Forecast {
         // implicitly there once spread across the month. Taking the larger of
         // the two rather than the sum keeps the estimate from double-counting.
         forecast.projected = max(forecast.fromPace, spent + forecast.billsToCome)
-        _ = byDay
         return forecast
     }
 }
@@ -208,14 +207,18 @@ enum SubscriptionDetective {
             let months = Set(rows.map { String($0.date.prefix(7)) })
             guard months.count >= minimumOccurrences else { return nil }
 
-            let latest = rows.map(\.date).max() ?? ""
+            // The most recent charge names it and files it, whichever way round
+            // the ledger arrives. It comes newest first from the store, so
+            // taking the last row meant the oldest spelling and the category
+            // it was filed under before anyone corrected it.
+            let latest = rows.max { $0.date < $1.date }
             return DetectedSubscription(
                 id: key,
-                place: rows.last?.place ?? key,
-                bucket: rows.last?.bucket ?? "subs",
+                place: latest?.place ?? key,
+                bucket: latest?.bucket ?? "subs",
                 typicalAmount: mean,
                 occurrences: rows.count,
-                daysSinceLast: days(since: latest, to: today),
+                daysSinceLast: days(since: latest?.date ?? "", to: today),
                 isTracked: tracked.contains(key)
             )
         }

@@ -52,7 +52,6 @@ enum Palette {
     // into it — the direction of the lift flips, the relationship does not.
     static let screen         = Color(dark: "141620", light: "F4F5F9")
     static let card           = Color(dark: "1D2130", light: "FFFFFF")
-    static let cardBorder     = Color(dark: "2A3042", light: "D6DBE9")
     static let cardBorderSoft = Color(dark: "23283A", light: "E5E9F3")
     static let sheetBg        = Color(dark: "1A1D29", light: "FBFCFE")
     static let field          = Color(dark: "141620", light: "EFF1F7")
@@ -74,7 +73,6 @@ enum Palette {
     static let tealInk   = Color(dark: "0C2B26", light: "FFFFFF")
     static let green     = Color(dark: "3FB984", light: "2B7E5A")
     static let purple    = Color(dark: "C69BFF", light: "390085")
-    static let purpleInk = Color(dark: "2A1740", light: "FFFFFF")
     static let over      = Color(dark: "E86A4A", light: "BC3918")
     static let overText  = Color(dark: "F6A5C8", light: "790C3B")
 
@@ -91,17 +89,11 @@ enum Palette {
         colors: [teal, green], startPoint: .topLeading, endPoint: .bottomTrailing
     )
 
-    /// Glow under the floating add button. A coloured bloom only reads as light
-    /// on a dark surface; on white the same shadow looks like a smudge, so the
-    /// light scheme uses a plain neutral drop shadow instead. Opacity is baked
-    /// into the colour because `.opacity()` at the call site cannot vary by
-    /// scheme.
-    static let addGlow = Color(dark: "5EEAD4", darkAlpha: 0.55,
-                               light: "0F1729", lightAlpha: 0.18)
-
     /// What lifts a card off the screen in light, where white on near-white has
     /// next to no contrast of its own. Nothing in dark: the surfaces already
-    /// step in lightness, and a shadow on navy reads as a smudge.
+    /// step in lightness, and a shadow on navy reads as a smudge. Opacity is
+    /// baked into the colour because `.opacity()` at the call site cannot vary
+    /// by scheme.
     static let cardShadow = Color(dark: "000000", darkAlpha: 0,
                                   light: "1B1F2B", lightAlpha: 0.05)
 }

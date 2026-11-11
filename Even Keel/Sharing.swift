@@ -49,8 +49,6 @@ extension BudgetStore {
         let name: String
         let isOwner: Bool
         let hasAccepted: Bool
-        /// Whether they can write, as opposed to only read.
-        let canEdit: Bool
     }
 
     // MARK: Reading the current state
@@ -61,8 +59,6 @@ extension BudgetStore {
         guard isCloudSyncActive, let house = householdObject(id: id) else { return nil }
         return try? container.fetchShares(matching: [house.objectID])[house.objectID]
     }
-
-    func isShared(householdID: String) -> Bool { existingShare(forHouseholdID: householdID) != nil }
 
     /// Everyone on the share, owner first. Empty for a budget nobody has been
     /// invited into, which is the normal state and not an error.
@@ -78,8 +74,7 @@ extension BudgetStore {
                         PersonNameComponentsFormatter.localizedString(from: $0, style: .default)
                     } ?? "",
                     isOwner: participant.role == .owner,
-                    hasAccepted: participant.acceptanceStatus == .accepted,
-                    canEdit: participant.permission == .readWrite
+                    hasAccepted: participant.acceptanceStatus == .accepted
                 )
             }
             .sorted { $0.isOwner && !$1.isOwner }
