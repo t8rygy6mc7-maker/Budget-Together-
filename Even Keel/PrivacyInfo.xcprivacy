@@ -26,8 +26,10 @@
 	<array>
 		<dict>
 			<!-- The appearance setting, the simplified-view toggle, which
-			     badges have already been shown, and the notification
-			     bookkeeping. CA92.1 is the reason for reading and
+			     badges have already been shown, the notification
+			     bookkeeping, and which significant updates this device has
+			     been through (see AgeAssurance — the age range itself is
+			     never stored). CA92.1 is the reason for reading and
 			     writing defaults that only this app can see — no app group and
 			     no shared suite, so nothing here is readable by anything else
 			     on the device. See AppModel and Notifications. -->
